@@ -1,59 +1,70 @@
-# cfdpost
+# pyTSFoil
 
-CFD post procedures.
+A python interface of TSFOIL2.
 
-## # post
+TSFOIL2 is an inviscid transonic small-disturbance (TSD) solver for ﬂow past lifting airfoils. The code was chosen for its rapid solution time, ease of use, and its open source architecture. It solves the transonically-scaled perturbation potential, and similarity variables that lead to the computation of the pressure coeﬃcient distribution, Cp, along the airfoil surface, that can then be integrated to yield lift and drag coeﬃcients.
 
-    Frequently used CFD post procedures.
+Murman, E.M., Bailey, F.R., and Johnson, M.L., "TSFOIL - A Computer Code for TwoDimensional Transonic Calculations, Including Wind-Tunnel Wall Effects and Wave Drag Evaluation," NASA SP-347, March 1975.
 
-### [ post_foil_cfl3d ]
+<http://www.dept.aoe.vt.edu/~mason/Mason_f/MRsoft.html#TSFOIL2>
 
-    post_foil_cfl3d(path, j0, j1, nHi=40, fname='feature2d.txt')
+## # TSFoil
 
-    Read in CFL3D foil result and extract flow features.
-        path:   folder that contains the output files
-        j0:     j index of the lower surface TE
-        j1:     j index of the upper surface TE
-        nHi:    maximum number of mesh points in k direction for boundary layer
+Generate foil and setup input/output files for TSFOIL2.
 
-    Single C-block cfl3d.prt index
-        i : 1 - 1   symmetry plane
-        j : 1 - nj  far field of lower surface TE to far field of upper surface TE
-        k : 1 - nk  surface to far field
+1. run(path)
 
-### [ feature_xfoil ]
+    Run TSFOIL2 in given path. If path is not provided, run in the local directory.
 
-    feature_xfoil(cst_u, cst_l, t, Minf, Re, AoA, n_crit=0.1, fname='feature-xfoil.txt')
+2. foil_byCST(cst_u, cst_l, t)
 
-    Evaluate by xfoil and extract features. 
+    Generate airfoil for TSFOIL by given CST coefficients.
+
         cst-u, cst-l:   list of upper/lower CST coefficients of the airfoil.
-        t:              airfoil thickness or None
-        Minf:           free stream Mach number for wall Mach number calculation
-        Re, AoA (deg):  flight condition (s), float or list, for Xfoil
-        n_crit:         critical amplification ratio for transition in xfoil
-        fname:          output file
+        t:              airfoil maximum thickness or None
 
-    Dependencies:
-        cst_modeling    pip install cst-modeling3d
-        xfoil           pip install xfoil
+3. set_foil(xu, yu, xl, yl, t)
 
-## # cfdresult
+    Set airfoil coordinates.
 
-    Read in CFD results.
+4. flight_condition(Minf, AoA, path=None, **kwargs)
 
-### cfl3d
+    Generate input file by given foil and flight conditions.
+    Must set foil coordinates in advance.
 
-    Read in CFL3D results.
+        Minf:   free stream Mach number (can not be 1.0)
+        AoA:    deg
+        path:   working directory. None means local directory.
 
-## # feature2d
+    kwargs:
 
-    Extract 2D flow features.
+        maxiter: maximum iteration. (default 1500)
+        simdef: similarity definition. (default 3)
+                1   Cole
+                2   Spreiter
+                3   Krupp
+        wedge:  control for viscous wedge inclusion
+                0   no wedge (default)
+                1   Murman bump, then set Re and wc
+                2   Yoshihara wedge
+        Re:     Reynolds number based on chord for wedge = 1 (default, 4.0e6)
+                If provided Re, automatically set wedge to 1
+        wc:     wedge constant for wedge = 1 (default, 4.0)
+        Amesh:  analytical mesh calculation (bool, default True)
+                T   X and Y mesh values are computed, ni, nj should also be supplied.
+                    ni is an odd number (4*n+1), nj is an even number.
+                F   X and Y points are the default values.
+        ni, nj: number of X and Y mesh points (less than 100)
 
-### FeatureSec
+5. get_result
 
-    Extract flow features of airfoils or wing sections.
+    Extract result from foil-cp.out.
 
-### FeatureXfoil
+## # tsfoil-modify.f
 
-    Extract features from Xfoil (low speed) results.
-"# pyTSFoil" 
+A modified version of TSFOIL2 for better collaboration with python.
+
+Compile with gfortran:
+
+    Windows: gfortran -w -o tsfoil2.exe tsfoil2-modify.f
+    Linux:   gfortran -w -o tsfoil2 tsfoil2-modify.f
