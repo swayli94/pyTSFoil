@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     plt.plot(tsfoil.x, tsfoil.mwu, 'g')
     plt.plot(tsfoil.x, tsfoil.mwl, 'g')
-    print(tsfoil.CL)
+    print(tsfoil.CL, tsfoil.Cd, tsfoil.Cdw, tsfoil.Cm)
 
     AoA  = 0.65
     tsfoil.flight_condition(Minf, AoA, Re=Re, wc=20.0)
@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     plt.plot(tsfoil.x, tsfoil.mwu, 'g--')
     plt.plot(tsfoil.x, tsfoil.mwl, 'g--')
-    print(tsfoil.CL)
+    print(tsfoil.CL, tsfoil.Cd, tsfoil.Cdw, tsfoil.Cm)
 
     AoA  = 0.70
     tsfoil.flight_condition(Minf, AoA, Re=Re, wc=20.0)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     plt.plot(tsfoil.x, tsfoil.mwu, 'b')
     plt.plot(tsfoil.x, tsfoil.mwl, 'b')
-    print(tsfoil.CL)
+    print(tsfoil.CL, tsfoil.Cd, tsfoil.Cdw, tsfoil.Cm)
 
     t1 = time.perf_counter()
     print('Time = %.3f s'%(t1-t0))

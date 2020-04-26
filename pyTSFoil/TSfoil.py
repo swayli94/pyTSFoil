@@ -185,8 +185,25 @@ class TSfoil():
 
     def get_result(self):
         '''
-        Extract result from foil-cp.out
+        Extract result from tsfoil2.out, foil-cp.out
         '''
+
+        with open(self.out, 'r') as f:
+            lines = f.readlines()
+
+            line = lines[-1].split()
+            self.Cd = float(line[-1])
+
+            line = lines[-4].split()
+            self.Cdw = float(line[-1])
+
+            for i in range(len(lines)):
+                if 'FINAL MESH' in  lines[i]:
+                    line = lines[i+1].split()
+                    self.CL = float(line[-1])
+                
+                    line = lines[i+2].split()
+                    self.Cm = float(line[-1])
 
         with open(self.fCp, 'r') as f:
             lines = f.readlines()
