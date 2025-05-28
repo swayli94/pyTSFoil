@@ -8,12 +8,13 @@ module airfoil_module
 
 contains
 
+  ! Initialize airfoil geometry
   subroutine initialize_airfoil()
-    ! Initialize airfoil geometry
+    
     ! This subroutine sets up the airfoil based on the boundary condition type
     ! and computes relevant geometric properties
     integer :: i, ic, ierr
-    real :: xp, delinv
+    real :: tmp_xp, delinv
     real :: z, z2 ! For diamond and parabolic airfoil calculation
     
     ! Set thickness ratio inverse for scaling
@@ -70,8 +71,8 @@ contains
       ic = 0
       do i = idx%ile, idx%ite
         ic = ic + 1
-        xp = mesh%xin(i)
-        airfoil%xfoil(ic) = xp
+        tmp_xp = mesh%xin(i)
+        airfoil%xfoil(ic) = tmp_xp
         xp_global = xp  ! Set global variable for spln1x
         call spln1x(boundary%xu, boundary%yu, boundary%nu)
         airfoil%fu(ic) = yp_global * delinv
@@ -90,8 +91,8 @@ contains
       ic = 0
       do i = idx%ile, idx%ite
         ic = ic + 1
-        xp = mesh%xin(i)
-        xp_global = xp  ! Set global variable for spln1x
+        tmp_xp = mesh%xin(i)
+        xp_global = tmp_xp  ! Set global variable for spln1x
         call spln1x(boundary%xl, boundary%yl, boundary%nl)
         airfoil%fl(ic) = yp_global * delinv
         airfoil%fxl(ic) = dyp_global * delinv
@@ -161,7 +162,7 @@ contains
     write(15, '(A)') ' '
   end subroutine initialize_airfoil
   
-    ! Setup a NACA 4-digit airfoil (specifically NACA 00xx)
+  ! Setup a NACA 4-digit airfoil (specifically NACA 00xx)
   subroutine setup_naca_airfoil()
     ! Implementation for NACA 00xx airfoil generation
     ! Formula for NACA 00XX shape from the original code
@@ -197,7 +198,8 @@ contains
     ! Set number of airfoil points
     airfoil%ifoil = ic
   end subroutine setup_naca_airfoil
-    ! Compute aerodynamic coefficients
+    
+  ! Compute aerodynamic coefficients
   subroutine compute_coefficients()
     ! Calculate lift, drag, and moment coefficients
     integer :: i, j, ic

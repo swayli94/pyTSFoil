@@ -20,7 +20,8 @@ contains
     allocate(pjump(size))
     pjump = 0.0
   end subroutine init_solver
-    ! Function to compute U = dp/dx at point (i,j)
+  
+  ! Function to compute U = dp/dx at point (i,j)
   function px(i, j) result(u)
     integer, intent(in) :: i, j
     real :: u
@@ -42,7 +43,8 @@ contains
                  mesh%xdiff(i) * (pji - grid%p(j,i-1)))
     end if
   end function px
-    ! Function to compute V = dp/dy at point (i,j)
+  
+  ! Function to compute V = dp/dy at point (i,j)
   function py(i, j) result(v)
     integer, intent(in) :: i, j
     real :: v
@@ -196,7 +198,7 @@ contains
     ! ...
   end subroutine difcoe
   
-    ! Set boundary conditions  
+  ! Set boundary conditions  
   subroutine setbc(ijump)
     use tsfoil_data, only: idx, flow, control, airfoil, wake, coeff, aparam ! Ensure types are accessible
     implicit none
@@ -204,25 +206,24 @@ contains
     integer :: i, n, if_val, int_val, jint, nfoil ! Declare nfoil
     
     ! Branch based on the jump parameter
-    if (ijump > 0) goto 20
+    if (ijump <= 0) then
+      ! Set limits on i and j indices
+      int_val = 0
+      if (flow%ak < 0.0) int_val = 1
+      idx%iup = idx%imin + 1 + int_val
+      idx%idown = idx%imax - 1 + int_val
+      
+      jint = 0
+      if (aparam%bctype == 1 .and. flow%ak > 0.0) jint = 1
+      if (aparam%bctype == 3) jint = 1
+      if (aparam%bctype == 5 .and. aparam%por > 1.5) jint = 1
+      
+      idx%jbot = idx%jmin + jint
+      idx%jtop = idx%jmax - jint
+      idx%j1 = idx%jbot + 1
+      idx%j2 = idx%jtop - 1
+    end if
     
-    ! Set limits on i and j indices
-    int_val = 0
-    if (flow%ak < 0.0) int_val = 1
-    idx%iup = idx%imin + 1 + int_val
-    idx%idown = idx%imax - 1 + int_val
-    
-    jint = 0
-    if (aparam%bctype == 1 .and. flow%ak > 0.0) jint = 1
-    if (aparam%bctype == 3) jint = 1
-    if (aparam%bctype == 5 .and. aparam%por > 1.5) jint = 1
-    
-    idx%jbot = idx%jmin + jint
-    idx%jtop = idx%jmax - jint
-    idx%j1 = idx%jbot + 1
-    idx%j2 = idx%jtop - 1
-    
-20  continue
     ! Airfoil body boundary condition
     ! Zero elements in arrays for upper and lower body boundary conditions
     do i = idx%imin, idx%imax
@@ -320,7 +321,8 @@ contains
       write(15, '(A, I8, A)') ' Solution did not converge after', maxitm, ' iterations'
     end if
   end subroutine solve
-    ! Recirculation boundary conditions
+  
+  ! Recirculation boundary conditions
   subroutine recirc()
     use tsfoil_data, only: circ, mesh, grid, idx, scale ! Ensure types are accessible
     implicit none
@@ -352,41 +354,48 @@ contains
       pjump(i) = circ%circte + (grid%x(i) - 1.0) * factor
     end do
   end subroutine recirc
-    ! Modify the diagonal and right-hand-side vectors for boundary conditions
+  
+  ! Modify the diagonal and right-hand-side vectors for boundary conditions
   subroutine bcend()
-    use tsfoil_data, only: coeff, flow, grid, idx, tri, mesh, aparam ! Ensure types are accessible
+    use tsfoil_data, only: coeff, flow, grid, idx, tri, mesh, aparam, circ ! Ensure circ is available for case default
     implicit none
     integer :: i, ii
     real :: dfacl, dfacu, rfacl, rfacu
     real :: pjmin, pjmax, term
-    
+
     pjmin = 0.0 ! Initialize pjmin
     pjmax = 0.0 ! Initialize pjmax
     term = 0.0 ! Initialize term
-    
+
     i = coeff%ival
-    
+
     ! Branch to appropriate address for boundary type
     select case (aparam%bctype)
-    
+
     case (1) ! BCTYPE = 1, FREE AIR
-      ! Dirchlet boundary condition for subsonic freestream
-      if (flow%ak > 0.0) return
-      
-      ! Neuman boundary condition for supersonic freestream
-      dfacl = -coeff%cyyd(idx%jbot) * flow%rtk * mesh%xdiff(i)
-      dfacu = -coeff%cyyu(idx%jtop) * flow%rtk * mesh%xdiff(i)
-      rfacl = dfacl * (grid%p(idx%jmin, i) - grid%p(idx%jmin, i-1))
-      rfacu = dfacu * (grid%p(idx%jmax, i) - grid%p(idx%jmax, i-1))
-      
-      ! Apply Neuman boundary conditions
-      go to 95
-      
+      if (flow%ak > 0.0) then
+        ! Dirchlet boundary condition for subsonic freestream
+        return
+      else
+        ! Neuman boundary condition for supersonic freestream
+        dfacl = -coeff%cyyd(idx%jbot) * flow%rtk * mesh%xdiff(i)
+        dfacu = -coeff%cyyu(idx%jtop) * flow%rtk * mesh%xdiff(i)
+        rfacl = dfacl * (grid%p(idx%jmin, i) - grid%p(idx%jmin, i-1))
+        rfacu = dfacu * (grid%p(idx%jmax, i) - grid%p(idx%jmax, i-1))
+
+        ! Apply Neuman boundary conditions (formerly block 95)
+        tri%diag(idx%jbot) = tri%diag(idx%jbot) + dfacl
+        tri%diag(idx%jtop) = tri%diag(idx%jtop) + dfacu
+        tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - rfacl + coeff%cyyd(idx%jbot) * grid%p(idx%jbot-1, i)
+        tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - rfacu + coeff%cyyu(idx%jtop) * grid%p(idx%jtop+1, i)
+        return
+      end if
+
     case (2) ! BCTYPE = 2, SOLID WALL
       ! Neuman boundary condition = 0
       ! No modification necessary to DIAG or RHS
       return
-      
+
     case (3) ! BCTYPE = 3, FREE JET
       ! Dirchlet boundary condition
       if (flow%ak < 0.0) then
@@ -396,15 +405,19 @@ contains
         pjmin = -0.75 * circ%circff
         pjmax = -0.25 * circ%circff
       end if
-      
-      ! Apply Dirchlet boundary conditions
-      go to 90
-      
+
+      ! Apply Dirchlet boundary conditions (formerly block 90)
+      tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - &
+                           (coeff%cyyd(idx%jbot) * (pjmin - grid%p(idx%jbot-1, i)))
+      tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - &
+                           (coeff%cyyu(idx%jtop) * (pjmax - grid%p(idx%jtop+1, i)))
+      return
+
     case (4) ! BCTYPE = 4, IDEAL SLOTTED WALL
       ! Neuman boundary condition
       dfacl = -aparam%fhinv * coeff%cyyd(idx%jbot)
       dfacu = -aparam%fhinv * coeff%cyyu(idx%jtop)
-      
+
       if (flow%ak < 0.0) then
         rfacl = dfacl * grid%p(idx%jbot, i)
         rfacu = dfacu * grid%p(idx%jtop, i)
@@ -412,10 +425,14 @@ contains
         rfacl = dfacl * (0.75 * circ%circff + grid%p(idx%jbot, i))
         rfacu = dfacu * (0.25 * circ%circff + grid%p(idx%jtop, i))
       end if
-      
-      ! Apply Neuman boundary conditions
-      go to 95
-      
+
+      ! Apply Neuman boundary conditions (formerly block 95)
+      tri%diag(idx%jbot) = tri%diag(idx%jbot) + dfacl
+      tri%diag(idx%jtop) = tri%diag(idx%jtop) + dfacu
+      tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - rfacl + coeff%cyyd(idx%jbot) * grid%p(idx%jbot-1, i)
+      tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - rfacu + coeff%cyyu(idx%jtop) * grid%p(idx%jtop+1, i)
+      return
+
     case (5) ! BCTYPE = 5, POROUS/PERFORATED WALL
       if (aparam%por <= 1.5) then
         ! Neuman boundary condition for POR < 1.5
@@ -423,62 +440,59 @@ contains
         dfacu = -coeff%cyyu(idx%jtop) * aparam%por * mesh%xdiff(i)
         rfacl = dfacl * (grid%p(idx%jmin, i) - grid%p(idx%jmin, i-1))
         rfacu = dfacu * (grid%p(idx%jmax, i) - grid%p(idx%jmax, i-1))
-        
-        ! Apply Neuman boundary conditions
-        go to 95
+
+        ! Apply Neuman boundary conditions (formerly block 95)
+        tri%diag(idx%jbot) = tri%diag(idx%jbot) + dfacl
+        tri%diag(idx%jtop) = tri%diag(idx%jtop) + dfacu
+        tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - rfacl + coeff%cyyd(idx%jbot) * grid%p(idx%jbot-1, i)
+        tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - rfacu + coeff%cyyu(idx%jtop) * grid%p(idx%jtop+1, i)
+        return
       else
         ! Dirchlet boundary condition for POR > 1.5
         if (i /= idx%iup) return
-        
+
         ! Set values of P on boundary by integrating PX using old values of potential
         pjmin = grid%p(idx%jmin, idx%iup)
         term = -0.5 / (aparam%por * (grid%y(idx%jmin) - grid%y(idx%jmin+1)))
-        
+
         do ii = idx%iup, idx%idown
           grid%p(idx%jmin, ii) = grid%p(idx%jmin, ii-1) - term * (grid%x(ii) - grid%x(ii-1)) * &
                               (grid%p(idx%jmin, ii) + grid%p(idx%jmin, ii-1) - &
                                grid%p(idx%jmin+1, ii) - grid%p(idx%jmin+1, ii-1))
         end do
-        
+
         pjmax = grid%p(idx%jmax, idx%iup)
         term = 0.5 / (aparam%por * (grid%y(idx%jmax) - grid%y(idx%jmax-1)))
-        
+
         do ii = idx%iup, idx%idown
           grid%p(idx%jmax, ii) = grid%p(idx%jmax, ii-1) - term * (grid%x(ii) - grid%x(ii-1)) * &
                               (grid%p(idx%jmax, ii) + grid%p(idx%jmax, ii-1) - &
                                grid%p(idx%jmax-1, ii) - grid%p(idx%jmax-1, ii-1))
         end do
-        
+
         tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - &
                              (coeff%cyyd(idx%jbot) * (grid%p(idx%jbot-1, i) - pjmin))
         tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - &
                              (coeff%cyyu(idx%jtop) * (grid%p(idx%jtop+1, i) - pjmax))
         return
       end if
-      
+
     case (6) ! BCTYPE = 6, GENERAL WALL BOUNDARY CONDITION
       ! General wall boundary conditions not implemented
       write(15, '(A)') 'ABNORMAL STOP IN SUBROUTINE BCEND'
       write(15, '(A)') 'BCTYPE=6 IS NOT USEABLE'
       stop
       
+    case default
+      ! Fall-through case, originally went to label 90 (Dirichlet with initialized pjmin/pjmax)
+      ! pjmin and pjmax are initialized to 0.0 at the start of this subroutine.
+      tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - &
+                           (coeff%cyyd(idx%jbot) * (pjmin - grid%p(idx%jbot-1, i)))
+      tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - &
+                           (coeff%cyyu(idx%jtop) * (pjmax - grid%p(idx%jtop+1, i)))
+      return
+
     end select
-    
-    ! Dirchlet boundary conditions
-90  continue
-    tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - &
-                         (coeff%cyyd(idx%jbot) * (pjmin - grid%p(idx%jbot-1, i)))
-    tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - &
-                         (coeff%cyyu(idx%jtop) * (pjmax - grid%p(idx%jtop+1, i)))
-    return
-    
-    ! Neuman boundary conditions
-95  continue
-    tri%diag(idx%jbot) = tri%diag(idx%jbot) + dfacl
-    tri%diag(idx%jtop) = tri%diag(idx%jtop) + dfacu
-    tri%rhs(idx%jbot) = tri%rhs(idx%jbot) - rfacl + coeff%cyyd(idx%jbot) * grid%p(idx%jbot-1, i)
-    tri%rhs(idx%jtop) = tri%rhs(idx%jtop) - rfacu + coeff%cyyu(idx%jtop) * grid%p(idx%jtop+1, i)
-    return
   end subroutine bcend
   
   ! Successive line overrelaxation
@@ -575,13 +589,13 @@ contains
       if (i >= idx%ile .and. i <= idx%ite) then
         ! Airfoil boundary condition
         j = idx%jup
-        tri%diag(j) = tri%diag(j) + coeff%cyyc(j) - coeff%cyybuc
+        tri%diag(j) = tri%diag(j) + coeff%cyyc(j) - coeff%cyyblc
         tri%sup(j) = 0.0
         tri%sub(j) = coeff%cyybuu
         tri%rhs(j) = tri%rhs(j) + coeff%cyyd(j) * grid%p(j-1, i) - &
                       coeff%cyyc(j) * grid%p(j, i) + &
                       coeff%cyyu(j) * grid%p(j+1, i) - &
-                      (-coeff%cyybuc * grid%p(j, i) + coeff%cyybuu * grid%p(j+1, i) + coeff%fxubc(i))
+                      (-coeff%cyyblc * grid%p(j, i) + coeff%cyybuu * grid%p(j+1, i) + coeff%fxubc(i))
         
         j = idx%jlow
         tri%diag(j) = tri%diag(j) + coeff%cyyc(j) - coeff%cyyblc
@@ -625,7 +639,7 @@ contains
       tri%rhs(idx%jbot) = tri%rhs(idx%jbot) * dnom
       
       do j = idx%j1, idx%jtop
-        dnom = 1.0 / (tri%diag(j) - tri%sup(j) * save(j-1))
+        dnom = 1.0 / (tri%diag(j) - tri%sup(j-1) * save(j-1))
         save(j) = tri%sub(j) * dnom
         tri%rhs(j) = (tri%rhs(j) - tri%sup(j) * tri%rhs(j-1)) * dnom
       end do

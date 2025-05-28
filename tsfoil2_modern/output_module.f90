@@ -225,8 +225,8 @@ contains
       velocity = (grid%p(j, i+1) - grid%p(j, i-1)) / (grid%x(i+1) - grid%x(i-1))
     end if
   end function calculate_velocity
-    ! Plot CP distribution
-    ! Plot CP distribution
+  
+  ! Plot CP distribution
   subroutine fixplt()
     ! Sets up arrays for CP plotting
     ! Called by - print_results
@@ -309,11 +309,8 @@ contains
     
   end subroutine fixplt
     
-
+  ! Prints pressure coefficient and flow angle on Y=-H and Y=+H, and plots CP along side of tabulation
   subroutine prtwal()
-    ! Prints pressure coefficient and flow angle on Y=-H and Y=+H,
-    ! and plots CP along side of tabulation
-    ! Called by - print_results
     
     real :: thh, porf
     integer :: i1_bc, i2_bc, i_loop ! Renamed i1 to i1_bc, i2 to i2_bc, i to i_loop
@@ -529,7 +526,8 @@ contains
     end do
     
   end subroutine prtfld
-    ! Print M=1 line information
+  
+  ! Print M=1 line information
   subroutine m1line()
     ! Prints coordinates where sonic velocity is computed
     ! Linear interpolation between mesh points is used

@@ -27,7 +27,8 @@ contains
     a = 0.0
     b = 0.0
   end subroutine initialize_spline
-    ! Cleanup spline module
+  
+  ! Cleanup spline module
   subroutine cleanup_spline()
     if (allocated(a)) deallocate(a)
     if (allocated(b)) deallocate(b)
@@ -103,7 +104,7 @@ contains
 
   end subroutine spln1
 
-    ! Subroutine for spline interpolation
+  ! Subroutine for spline interpolation
   subroutine spln1x(x, y, n)
     implicit none
     integer, intent(in) :: n

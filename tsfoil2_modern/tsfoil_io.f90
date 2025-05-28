@@ -86,9 +86,9 @@ contains
     
   end subroutine write_header
   
+  ! Setup the working directory
   subroutine setup_directory()
-    ! Setup the working directory
-    
+
     character(len=200) :: newdir
     integer :: istatus
     integer :: n_args
@@ -124,9 +124,10 @@ contains
     open(unit=15, file='tsfoil2.out', status='replace')
     
   end subroutine setup_directory
-    subroutine read_input_data()
-    ! Read all input data for the program using Fortran namelist
-    
+  
+  ! Read all input data for the program using Fortran namelist
+  subroutine read_input_data()
+
     ! Define namelist variables
     real :: alpha, delta, emach, dub, cverge, dverge
     real :: gam, clset, wcirc, h, f, por
@@ -294,7 +295,8 @@ contains
     do j = 1, 41
       mesh%yin(j) = y0 + (j-1) * dy
     end do
-      ! Update grid dimensions
+    
+    ! Update grid dimensions
     idx%imax = 41
     idx%jmax = 41
     old%imaxi = 41

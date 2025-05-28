@@ -266,14 +266,16 @@ module tsfoil_data
 
 contains
 
+  ! Allocate and initialize all data structures
   subroutine initialize_data_structures()
-    ! Allocate and initialize all data structures
+    
     ! This subroutine allocates all arrays with proper sizes
     
     ! Grid arrays
     allocate(grid%p(102, 101))
     allocate(grid%x(100), grid%y(100))
-      ! Airfoil geometry
+    
+    ! Airfoil geometry
     allocate(airfoil%fl(100), airfoil%fxl(100))
     allocate(airfoil%fu(100), airfoil%fxu(100))
     allocate(airfoil%camber(100), airfoil%thick(100))
@@ -306,7 +308,8 @@ contains
     
     ! Tridiagonal solver arrays
     allocate(tri%diag(100), tri%rhs(100), tri%sub(100), tri%sup(100))
-      ! Additional geometry arrays
+    
+    ! Additional geometry arrays
     allocate(ageom%xmid(100), ageom%ymid(100))
     allocate(ageom%dtop(100), ageom%dbot(100))
     allocate(ageom%dup(100), ageom%ddown(100))
@@ -400,11 +403,12 @@ contains
     shock%nvwprt = 0
     
     aparam%theta = 0.0
+
   end subroutine initialize_data_structures
   
+  ! Deallocate all arrays to prevent memory leaks
   subroutine cleanup_data_structures()
-    ! Deallocate all arrays to prevent memory leaks
-    
+
     deallocate(grid%p, grid%x, grid%y)
     deallocate(airfoil%fl, airfoil%fxl, airfoil%fu, airfoil%fxu)
     deallocate(airfoil%camber, airfoil%thick, airfoil%xfoil)
