@@ -11,6 +11,7 @@ module common_data
   public :: P, X, Y  ! Main solution and coordinate arrays
   public :: FL, FXL, FU, FXU, CAMBER, THICK, XFOIL, VOL, IFOIL
   public :: BCFOIL, NL, NU, XL, XU, YL, YU, PERCENT, CHORD
+  public :: RIGF, IFLAP, DELFLP, FLPLOC, FSYM
   public :: SIMDEF, DELTA, EMACH, PRTFLO
   public :: CDFACT, CLFACT, CMFACT, CPFACT, YFACT, VFACT
   public :: F, H, HALFPI, PI, RTKPOR, TWOPI
@@ -19,7 +20,14 @@ module common_data
   public :: PSAVE, TITLE, TITLEO, XOLD, YOLD
   public :: XMID, YMID  ! Additional public declarations for io_module and other modules
   public :: JERROR, BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
+  public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, XDIFF, YDIFF
+  public :: CJUP, CJUP1, CJLOW, CJLOW1, CYYBUD, CYYBUC, CYYBUU
+  public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC  
+  public :: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
+  public :: DIAG, RHS, SUB, SUP
   public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
+  public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
+  public :: initialize_common
   
   ! Mesh indices (from COMMON /COM1/)
   integer :: IMIN, IMAX       ! grid i-range
@@ -73,6 +81,13 @@ module common_data
   integer :: BCFOIL, NL, NU
   real :: XL(100), XU(100), YL(100), YU(100), PERCENT, CHORD
   
+  ! Airfoil control parameters
+  real :: RIGF        ! rigidity factor for transonic effects
+  integer :: IFLAP    ! flap flag
+  real :: DELFLP      ! flap deflection angle  
+  real :: FLPLOC      ! flap location
+  integer :: FSYM     ! symmetry flag
+  
   ! COM10: free-stream/tunnel arrays
   real :: YFREE(100), YTUN(100), GAM
   integer :: JMXF, JMXT
@@ -84,14 +99,16 @@ module common_data
   integer :: PSTART
   character(len=20) :: TITLE, TITLEO
   real :: XOLD(100), YOLD(100)
-    ! COM12: wall/tunnel constants  
+  
+  ! COM12: wall/tunnel constants  
   real :: F, H, HALFPI, PI, RTKPOR, TWOPI
   
   ! COM13: coefficient scaling factors
   real :: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR
   
   ! COM14: Kutta and circulation flags
-  real :: CLSET, FCR
+  real :: CLSET
+  logical :: FCR
   integer :: KUTTA
   
   ! COM15: vortex/doublet parameters
@@ -104,10 +121,13 @@ module common_data
   real :: CYYBLC, CYYBLD, CYYBLU, CYYBUC, CYYBUD, CYYBUU
   real :: FXLBC(100), FXUBC(100)
   integer :: ITEMP1, ITEMP2
-  
+    
   ! COM18: error tracking and diagnostics
   real :: ERROR
   integer :: I1, I2, IERROR, JERROR, IPRINT, LERR, NVAR, STATUS, NEXT
+  
+  ! COM19: jump arrays and pressure jump
+  real :: PJUMP(100)
   
   ! COM19: tridiagonal solver arrays
   real :: DIAG(100), RHS(100), SUB(100), SUP(100)
@@ -139,7 +159,8 @@ module common_data
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
   
-  ! COM30: general workspace arrays  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
+  ! COM30: general workspace arrays  
+  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
   ! integer :: INP = 15           ! Input file unit number - conflicts with namelist
   integer :: JLIN(3)           ! Line indices for printing
   character(len=1) :: IPC(100) ! Flow regime indicators
@@ -181,6 +202,13 @@ contains
     DELTA = 0.1
     EMACH = 0.8
     PRTFLO = 1
+    
+    ! Initialize airfoil control parameters
+    RIGF = 1.0
+    IFLAP = 0
+    DELFLP = 0.0
+    FLPLOC = 0.8
+    FSYM = 0
     
     ! Initialize constants    
     PI = 3.1415926535897932384626

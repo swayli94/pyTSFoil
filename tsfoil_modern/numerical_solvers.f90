@@ -3,6 +3,7 @@
 
 module numerical_solvers
   use common_data
+  use solver_module, only: BCEND
   implicit none
   public :: SYOR, SOLVE, RECIRC, REDUB, RESET
 
