@@ -45,8 +45,16 @@ contains
       EX2 = EX*EX
       EX22 = A2*A2 * EX2
       EX72 = A7*A7 * EX2
-      TEX7 = merge(exp(-EX72), 0.0, EX72 < 173.0)
-      TEX2 = merge(exp(-EX22), 0.0, EX22 < 173.0)
+      if (EX72 >= 173.0) then
+        TEX7 = 0.0
+      else
+        TEX7 = exp(-EX72)
+      end if
+      if (EX22 >= 173.0) then
+        TEX2 = 0.0
+      else
+        TEX2 = exp(-EX22)
+      end if
       BXH(I) = A1*EX*TEX2 + (1.0 - TEX7)*ARF(A4*EX)
     end do
     XH(401) = 1.0E30; BXH(401) = 1.0
@@ -54,7 +62,7 @@ contains
       XH(I) = -XH(402-I)
       BXH(I) = -BXH(402-I)
     end do
-    TOOPI = TWOPI
+    TOOPI = 2.0 / PI
     do I = 1, 401
       BXH(I) = BXH(I)*(1.0-A0) + TOOPI*A0*atan(A5*(XH(I)+A6))
     end do
@@ -122,20 +130,29 @@ contains
 
   ! Ensure odd/even mesh counts before/after tail and slit
   subroutine CKMESH()
-    use common_data, only: XIN, YIN, IMIN, IMAX, ILE, ITE, JMIN, JMAX, JLOW, JUP, ICUT, IREF
+    use common_data, only: XIN, YIN, IMIN, IMAX, ILE, ITE, JMIN, JMAX, JLOW, JUP, ICUT, IREF, UNIT_OUTPUT
     implicit none
     integer :: I, LP, L, J
 
-    ! If mesh has been coarsened, skip adjustment
-    if (ICUT > 0) then
+    ! Check ICUT first - if <= 0, set IREF=-1 and return
+    if (ICUT <= 0) then
       IREF = -1
       return
     end if    
     
-    ! Add extra X-point ahead of airfoil if needed
+    ! Test to be sure that adjusting the number of points won't make IMAX or JMAX larger than 100
+    if (IMAX > 98 .or. JMAX > 98) then
+      write(UNIT_OUTPUT, '(A)') &
+        'THE MESH CANNOT BE ADJUSTED FOR CUTOUT, BECAUSE IMAX OR JMAX IS TOO CLOSE TO THE LIMIT OF 100.'
+      write(UNIT_OUTPUT, '(A)') 'IREF WAS SET TO  0'
+      IREF = -1
+      return
+    end if
+    
+    ! Add extra X-point ahead of airfoil if needed (check for even number of points)
     if (mod(ITE - IMIN + 1, 2) == 0) then
       LP = IMAX + IMIN + 1
-      do I = IMAX, IMIN, -1
+      do I = IMIN, IMAX
         L = LP - I
         XIN(L) = XIN(L - 1)
       end do
@@ -144,16 +161,17 @@ contains
       call ISLIT(XIN)
     end if
 
-    ! Add extra X-point after airfoil if needed
+    ! Add extra X-point after airfoil if needed (check for even number of points)
     if (mod(IMAX - ITE + 1, 2) == 0) then
       IMAX = IMAX + 1
       XIN(IMAX) = 2.0 * XIN(IMAX - 1) - XIN(IMAX - 2)
     end if    
     
-    ! Add extra Y-point below slit if needed
+    ! Check Y mesh and adjust to contain even number of points above and below slit
+    ! Add extra Y-point below slit if needed (check for even number of points)
     if (mod(JLOW - JMIN, 2) == 0) then
       LP = JMAX + JMIN + 1
-      do J = JMAX, JMIN, -1
+      do J = JMIN, JMAX
         L = LP - J
         YIN(L) = YIN(L - 1)
       end do
@@ -162,7 +180,7 @@ contains
       call JSLIT(YIN)
     end if
 
-    ! Add extra Y-point above slit if needed
+    ! Add extra Y-point above slit if needed (check for even number of points)
     if (mod(JMAX - JUP, 2) == 0) then
       JMAX = JMAX + 1
       YIN(JMAX) = 2.0 * YIN(JMAX - 1) - YIN(JMAX - 2)
@@ -171,23 +189,24 @@ contains
 
   ! Coarsen mesh by halving for initial solution pass
   subroutine CUTOUT()
-    use common_data, only: XMID, YMID, IREF, ICUT, XIN, YIN, IMIN, IMAX, JMIN, JMAX, JLOW, JUP
+    use common_data, only: X, Y, XMID, YMID, IREF, ICUT, XIN, YIN, IMIN, IMAX, JMIN, JMAX, JLOW, JUP, ITE
     implicit none
     integer :: I, J, K, JE, JST
 
-    ! On first call (IREF=-1), load current mesh into XMID/YMID arrays
+    ! Check if IREF = -1 (mesh cannot be refined)
     if (IREF == -1) then
+      ! Load XIN,YIN into X,Y
       do I = IMIN, IMAX
-        XMID(I) = XIN(I)
+        X(I) = XIN(I)
       end do
       do J = JMIN, JMAX
-        YMID(J) = YIN(J)
+        Y(J) = YIN(J)
       end do
       IREF = 0
       return
     end if
 
-    ! Halve mesh in X-direction
+    ! First halving: X-direction
     K = IMIN - 1
     do I = IMIN, IMAX, 2
       K = K + 1
@@ -195,8 +214,8 @@ contains
     end do
     IMAX = (IMAX - IMIN) / 2 + IMIN
     call ISLIT(XMID)
-
-    ! Halve mesh in Y-direction, splitting above and below slit
+    
+    ! First halving: Y-direction, splitting above and below slit
     K = JMIN - 1
     JE = JLOW - 1
     do J = JMIN, JE, 2
@@ -211,133 +230,195 @@ contains
     JMAX = (JMAX - JMIN) / 2 + JMIN
     call JSLIT(YMID)
 
-    ! Update IREF flag
+    ! Set IREF to 1 indicating first halving
     IREF = 1
-
-    ! If only one refinement requested, load XMID/YMID back into XIN/YIN
-    if (ICUT == 1) then
+    
+    ! First halving complete. Check if no. of points is odd.
+    if (ICUT == 1 .or. &
+        mod(ITE - IMIN + 1, 2) == 0 .or. &
+        mod(IMAX - ITE + 1, 2) == 0 .or. &
+        mod(JLOW - JMIN, 2) == 0 .or. &
+        mod(JMAX - JUP, 2) == 0) then
+      ! Only one mesh refinement possible.
       do I = IMIN, IMAX
-        XIN(I) = XMID(I)
+        X(I) = XMID(I)
       end do
       do J = JMIN, JMAX
-        YIN(J) = YMID(J)
+        Y(J) = YMID(J)
       end do
       return
     end if
 
-    ! Additional halving not implemented: further refinements can be added here
-    ! If two refinements requested, perform second halving
-    if (ICUT >= 2) then
-      ! Halve mesh in X-direction again
-      K = IMIN - 1
-      do I = IMIN, IMAX, 2
-        K = K + 1
-        XIN(K) = XMID(I)
-      end do
-      IMAX = (IMAX - IMIN) / 2 + IMIN
-      call ISLIT(XIN)
-
-      ! Halve mesh in Y-direction again, splitting above and below slit
-      K = JMIN - 1
-      JE = JLOW - 1
-      do J = JMIN, JE, 2
-        K = K + 1
-        YIN(K) = YMID(J)
-      end do
-      JST = JUP + 1
-      do J = JST, JMAX, 2
-        K = K + 1
-        YIN(K) = YMID(J)
-      end do
-      JMAX = (JMAX - JMIN) / 2 + JMIN
-      call JSLIT(YIN)
-
-      IREF = 2
-      return
-    end if
+    ! All points are odd so cut again.
+    K = IMIN - 1
+    do I = IMIN, IMAX, 2
+      K = K + 1
+      X(K) = XMID(I)
+    end do
+    IMAX = (IMAX - IMIN) / 2 + IMIN
+    call ISLIT(X)
+    
+    K = JMIN - 1
+    JE = JLOW - 1
+    do J = JMIN, JE, 2
+      K = K + 1
+      Y(K) = YMID(J)
+    end do
+    JST = JUP + 1
+    do J = JST, JMAX, 2
+      K = K + 1
+      Y(K) = YMID(J)
+    end do
+    JMAX = (JMAX - JMIN) / 2 + JMIN
+    call JSLIT(Y)
+    
+    ! Set IREF to 2 indicating second halving
+    IREF = 2
   end subroutine CUTOUT
   
   ! Refine mesh and interpolate solution onto finer grid
   subroutine REFINE()
-    use common_data, only: XIN, YIN, XMID, YMID, P, IMIN, IMAX, JMIN, JMAX, ILE, ITE, JLOW, JUP, IREF, ICUT
+    use common_data, only: XIN, YIN, XMID, YMID, P, X, Y, IMIN, IMAX, JMIN, JMAX, ILE, ITE, JLOW, JUP, IREF, ICUT
+    use common_data, only: NWDGE, WSLP
     implicit none
-    integer :: I, J, K, IMAX_OLD, JMAX_OLD, JE, JST, IM2, JM2
+    integer :: I, J, K, JMAXO_LOCAL, JE, JST, IM2, JM2, JL
+    integer :: XLEO_LOCAL, ILEO, INC, M, ISTEP, ISTRT, IEND, IM, IMM
     real :: PT(100)
+    real :: D1, D2, CL1, CL2, CU1, CU2, RATIO
 
-    ! Save original limits
-    IMAXO = IMAX; JMAXO = JMAX
+    ! Store original leading edge position and index for viscous wedge processing
+    XLEO_LOCAL = X(ILE)    
+    ILEO = ILE
+    JMAXO_LOCAL = JMAX
 
     ! Compute new grid size
     IMAX = 2*(IMAX - IMIN) + IMIN
     JMAX = 2*(JMAX - JMIN) + JMIN + 1
-    IM2 = IMAX - 2; JM2 = JMAX - 2
+    IM2 = IMAX - 2
+    JM2 = JMAX - 2
 
-    ! Choose source mesh (coarse or mid)
+    ! Choose source mesh (coarse or mid) based on IREF
     if (IREF <= 1) then
-      do I = IMIN, IMAXO
-        XMID(I) = XIN(I)
+      do I = IMIN, IMAX
+        X(I) = XIN(I)
       end do
-      do J = JMIN, JMAXO
-        YMID(J) = YIN(J)
+      do J = JMIN, JMAX
+        Y(J) = YIN(J)
+      end do
+      IREF = 0
+    else
+      do I = IMIN, IMAX
+        X(I) = XMID(I)
+      end do
+      do J = JMIN, JMAX
+        Y(J) = YMID(J)
       end do
       IREF = 1
-    else
-      do I = IMIN, IMAXO
-        XMID(I) = XMID(I)
-      end do
-      do J = JMIN, JMAXO
-        YMID(J) = YMID(J)
-      end do
     end if
 
-    ! Spread grid
-    call ISLIT(XMID)
-    call JSLIT(YMID)
-
-    ! X-direction: copy P to new odd points
-    do J = JMIN, JMAXO
+    ! Update mesh indices
+    call ISLIT(X)
+    call JSLIT(Y)    ! Spread P(J,I) to alternate I(X-MESH) points
+    do J = JMIN, JMAXO_LOCAL
       K = IMIN - 1
       do I = IMIN, IMAX, 2
         K = K + 1
-        P(J,I) = P(J,K)
+        PT(I) = P(J,K)
+      end do
+      do I = IMIN, IMAX, 2
+        P(J,I) = PT(I)
       end do
     end do
 
-    ! Y-direction: copy P to new odd points
-    do I = IMIN, IMAX
+    ! Spread P(J,I) to alternate J (Y-MESH) points
+    do I = IMIN, IMAX, 2
       K = JMIN - 1
       JE = JLOW - 1
+      JL = JLOW - 2
       do J = JMIN, JE, 2
         K = K + 1
-        P(J,I) = P(K,I)
+        PT(J) = P(K,I)
       end do
       JST = JUP + 1
       do J = JST, JMAX, 2
         K = K + 1
-        P(J,I) = P(K,I)
+        PT(J) = P(K,I)
+      end do
+      do J = JMIN, JE, 2
+        P(J,I) = PT(J)
+      end do
+      do J = JST, JMAX, 2
+        P(J,I) = PT(J)
       end do
     end do
 
-    ! Interpolate missing values in X direction
+    ! Interpolate to fill in the missing P values
     do I = IMIN, IM2
-      PT(I) = (XIN(I+1)-XIN(I)) / (XIN(I+2)-XIN(I))
+      PT(I) = (X(I+1)-X(I)) / (X(I+2)-X(I))
     end do
-    do J = JMIN, JMAX, 2
+    do J = JMIN, JE, 2
       do I = IMIN, IM2, 2
-        P(J,I+1) = P(J,I) + PT(I)*(P(J,I+2)-P(J,I))
+        P(J,I+1) = P(J,I) + PT(I) * (P(J,I+2) - P(J,I))
       end do
     end do
-
-    ! Interpolate missing values in Y direction
+    do J = JST, JMAX, 2
+      do I = IMIN, IM2, 2
+        P(J,I+1) = P(J,I) + PT(I) * (P(J,I+2) - P(J,I))
+      end do
+    end do
     do J = JMIN, JM2
-      PT(J) = (YIN(J+1)-YIN(J)) / (YIN(J+2)-YIN(J))
+      PT(J) = (Y(J+1)-Y(J)) / (Y(J+2)-Y(J))
     end do
     do I = IMIN, IMAX
-      do J = JMIN, JM2, 2
-        P(J+1,I) = P(J,I) + PT(J)*(P(J+2,I)-P(J,I))
+      do J = JMIN, JL, 2
+        P(J+1,I) = P(J,I) + PT(J) * (P(J+2,I) - P(J,I))
+      end do
+      do J = JST, JM2, 2
+        P(J+1,I) = P(J,I) + PT(J) * (P(J+2,I) - P(J,I))
       end do
     end do
-  end subroutine REFINE  
+
+    ! Use extrapolation for JLOW, JUP
+    D1 = Y(JLOW) - Y(JLOW-1)
+    D2 = Y(JLOW-1) - Y(JLOW-2)
+    CL1 = (D1 + D2) / D2
+    CL2 = D1/D2
+    D1 = Y(JUP+1) - Y(JUP)
+    D2 = Y(JUP+2) - Y(JUP+1)
+    CU1 = (D1 + D2) / D2
+    CU2 = D1 / D2
+    do I = IMIN, IMAX
+      P(JUP,I) = CU1*P(JUP+1,I) - CU2*P(JUP+2,I)
+      P(JLOW,I) = CL1*P(JLOW-1,I) - CL2*P(JLOW-2,I)
+    end do
+
+    ! Expand viscous wedge slopes to new grid
+    if (NWDGE == 0) return
+    INC = 0
+    if (X(ILE) < XLEO_LOCAL) INC = 1
+    M = 0
+    do while (M < 2)
+      M = M + 1
+      do I = IMIN, IMAX
+        PT(I) = 0.0
+      end do
+      ISTEP = ILEO - 1
+      ISTRT = ILE + INC
+      IEND = ITE + INC
+      do I = ISTRT, IEND, 2
+        ISTEP = ISTEP + 1
+        PT(I) = WSLP(ISTEP,M)
+      end do
+      do I = ISTRT, IEND, 2
+        IM = I - 1
+        IMM = IM - 1
+        WSLP(I,M) = PT(I)
+        RATIO = (X(IM)-X(IMM))/(X(I)-X(IMM))
+        WSLP(IM,M) = PT(IMM)+(PT(I)-PT(IMM))*RATIO
+      end do
+      if (M >= 2) exit
+    end do
+  end subroutine REFINE
   
   ! Compute ILE and ITE for mesh X array
   subroutine ISLIT(X_MESH)
@@ -347,15 +428,18 @@ contains
     integer :: i
 
     ! Find first point where X >= 0.0 (leading edge)
-    i = IMIN
-    do while (i <= IMAX .and. X_MESH(i) < 0.0)
+    ! Exactly matching original FORTRAN logic
+    i = IMIN - 1
+    do
       i = i + 1
+      if (X_MESH(i) >= 0.0) exit
     end do
     ILE = i
-
-    ! Find first point where X > 1.0 (trailing edge)
-    do while (i <= IMAX .and. X_MESH(i) <= 1.0)
+    
+    ! Find first point where X > 1.0 (trailing edge) 
+    do
       i = i + 1
+      if (X_MESH(i) > 1.0) exit
     end do
     ITE = i - 1
   end subroutine ISLIT

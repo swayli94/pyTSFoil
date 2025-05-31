@@ -17,12 +17,11 @@ contains
     use common_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1
     use common_data, only: CYYC, CYYD, CYYU, DIAG, RHS, SUB, SUP
     use common_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD, FXUBC, FXLBC
-    use common_data, only: PJUMP, FCR, KUTTA
+    use common_data, only: PJUMP, FCR, KUTTA, EPS, WI
     implicit none
     integer :: I, J, K, IM2, JA, JB, J1_LOC, J2_LOC
     real :: EPSX, VC_VAL, EMU_VAL, ARHS, DNOM
     real, dimension(100) :: VC, EMU_CUR, EMU_PREV, SAVE_ARR, POLD_CUR
-    real, parameter :: EPS = 1.0E-6, WI = 1.0
 
     IM2 = IUP - 1
     if (AK < 0.0) IM2 = IUP - 2
@@ -202,7 +201,7 @@ contains
     use common_data, only: DUB, ALPHA, KUTTA
     implicit none
     
-    if (KUTTA == 0) return
+    if (.not. KUTTA) return
     
     ! Simple update - in practice this would use circulation calculation
     DUB = DUB + 0.1 * ALPHA

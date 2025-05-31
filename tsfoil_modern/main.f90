@@ -27,16 +27,16 @@ program tsfoil_main
   call initialize_spline(200)
 
   ! Open input and output files  
-  open(unit=2, file='tsfoil.inp', status='old', iostat=case_number)
+  open(unit=UNIT_INPUT, file='tsfoil.inp', status='old', iostat=case_number)
   if (case_number /= 0) then
     write(*,'(A)') 'Error: Cannot open input file tsfoil.inp'
     stop 1
   end if
 
-  open(unit=15, file='tsfoil.out', status='replace')
-  write(15,'(A)') 'TSFOIL Output File'
-  write(15,'(A)') '=================='
-  write(15,*)
+  open(unit=UNIT_OUTPUT, file='tsfoil.out', status='replace')
+  write(UNIT_OUTPUT,'(A)') 'TSFOIL Output File'
+  write(UNIT_OUTPUT,'(A)') '=================='
+  write(UNIT_OUTPUT,*)
   
   ! Initialize case counter
   case_number = 0
@@ -46,9 +46,8 @@ program tsfoil_main
   
   ! Call READIN to read one case
   call READIN()
-  
-  ! Check if we've reached the end (FINISHED card read)
-  if (TITLE(1:8) == 'FINISHED') then
+    ! Check if we've reached the end (FINISHED card read)
+  if (trim(TITLE(1)) == 'FINI' .or. trim(TITLE(2)) == 'SHED') then
     write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
     goto 999
   end if
@@ -56,14 +55,14 @@ program tsfoil_main
   ! Increment case counter
   case_number = case_number + 1
   write(*,'(A,I0)') 'Processing case ', case_number
-  write(15,'(A,I0)') 'Processing case ', case_number
-  write(15,'(A)') trim(TITLE)
-  write(15,*)
+  write(UNIT_OUTPUT,'(A,I0)') 'Processing case ', case_number
+  write(UNIT_OUTPUT,'(20A4)') TITLE
+  write(UNIT_OUTPUT,*)
   
   ! Continue with complete TSFOIL solution workflow
   write(*,'(A)') 'Starting TSFOIL solution sequence...'
-  write(15,'(A)') 'TSFOIL Solution Sequence'
-  write(15,'(A)') '========================'
+  write(UNIT_OUTPUT,'(A)') 'TSFOIL Solution Sequence'
+  write(UNIT_OUTPUT,'(A)') '========================'
   
   ! SCALE: Rescale all physical variables to transonic similarity form
   write(*,'(A)') 'Scaling variables to similarity form...'
@@ -117,8 +116,8 @@ program tsfoil_main
   call SAVEP()
   
   write(*,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
-  write(15,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
-  write(15,*)
+  write(UNIT_OUTPUT,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
+  write(UNIT_OUTPUT,*)
   
   ! Return to read next case
   goto 1
@@ -129,8 +128,8 @@ program tsfoil_main
   ! Cleanup
   call cleanup_spline()
   call close_output_files()
-  close(2)
-  close(15)
+  close(UNIT_INPUT)
+  close(UNIT_OUTPUT)
   
   write(*,'(A)') 'Program completed normally'
 

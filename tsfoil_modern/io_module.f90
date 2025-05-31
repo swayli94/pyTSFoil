@@ -3,32 +3,21 @@
 
 module io_module
   use common_data
-  use mesh_module, only: ISLIT, JSLIT
+  use mesh_module, only: ISLIT, JSLIT, CKMESH, AYMESH
   implicit none
-  
-  ! File unit numbers for different output files
-  integer, parameter :: UNIT_INPUT = 2          ! Input file (like original iread=2)
-  integer, parameter :: UNIT_OUTPUT = 6         ! Standard output  
-  integer, parameter :: UNIT_LOG = 10           ! Main log file (tsfoil.log)
-  integer, parameter :: UNIT_ECHO = 11          ! Input echo file (tsfoil.ech)
-  integer, parameter :: UNIT_CP = 12            ! Cp distribution file (tsfoil.cp)
-  integer, parameter :: UNIT_FIELD = 13         ! Field data file (tsfoil.fld)
-  integer, parameter :: UNIT_FLOW = 14          ! Flow map file (tsfoil.map)
-  integer, parameter :: UNIT_SHOCK = 15         ! Shock analysis file (tsfoil.shk)
-  integer, parameter :: UNIT_WALL = 16          ! Wall data file (tsfoil.wal)
-  integer, parameter :: UNIT_RESTART = 17       ! Restart file (tsfoil.rst)
-  
-  ! Complete namelist matching the original /INP/ namelist with variables available 
-  ! in common_data  
+
+  ! Complete namelist matching the original /INP/ namelist exactly
   namelist /INP/ AK, ALPHA, AMESH, BCFOIL, BCTYPE, CLSET, &
-                 CVERGE, DELTA, DVERGE, EMACH, EPS, F, &
-                 FCR, GAM, H, ICUT, IMAXI, IMIN, &
-                 IPRTER, JMAXI, JMIN, KUTTA, MAXIT, NL, &
-                 NU, NWDGE, PHYS, POR, PRTFLO, PSAVE, &
-                 PSTART, REYNLD, RIGF, SIMDEF, WCONST, WE, &
-                 XIN, YIN, XL, YL, XU, YU, &
-                 IFLAP, DELFLP, FLPLOC, IDLA
+                  CVERGE, DELTA, DVERGE, EMACH, EPS, F, &
+                  FCR, GAM, H, ICUT, IMAXI, IMIN, &
+                  IPRTER, JMAXI, JMIN, KUTTA, MAXIT, NL, &
+                  NU, PHYS, POR, PRTFLO, PSAVE, &
+                  PSTART, RIGF, SIMDEF, WCIRC, WE, &
+                  XIN, YIN, XL, YL, XU, YU, &
+                  NWDGE, REYNLD, WCONST, IFLAP, DELFLP, &
+                  FLPLOC, IDLA
   
+  ! Declare public procedures
   public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP
   public :: open_output_files, close_output_files
 
@@ -59,7 +48,6 @@ contains
   ! Close all output files
   subroutine close_output_files()
     implicit none
-    
     close(UNIT_LOG)
     close(UNIT_ECHO)
     close(UNIT_CP)
@@ -68,129 +56,248 @@ contains
     close(UNIT_SHOCK)
     close(UNIT_WALL)
   end subroutine close_output_files
+  
   ! Main input reading routine - reads one case at a time
   ! Reads title card, namelist input, and manages restart data for current case
+  ! This matches the original TSFoil READIN functionality exactly
   subroutine READIN()
     use common_data
-    use mesh_module, only: AYMESH, CKMESH, CUTOUT
-    implicit none
-    
-    character(len=80) :: title_card
-    character(len=8), parameter :: FINISHED = 'FINISHED'
-    integer :: ios
+    implicit none    
+    character(len=4), parameter :: DONE = 'FINI'  ! Declare DONE to match original exactly
+    integer :: I, J, IM1, JM1
+    real :: TERM, HTM, HTP, YS, YE, TIME1, TIME2, ELPTM
     logical, save :: first_call = .true.
+    character(len=20) :: IN_FILENAME
     
-    ! Open output files on first call only
+    ! Open output files and handle input file on first call only  
     if (first_call) then
+
+      ! Handle command line argument for input file (match original exactly)
+      call get_command_argument(1, IN_FILENAME)
+
+      if (IN_FILENAME == '') then
+        IN_FILENAME = 'tsfoil.inp'  ! Default input file name
+      end if
+
+      open(unit=UNIT_INPUT, file=IN_FILENAME, status='old')
+      
       call open_output_files()
       call ECHINP()
       first_call = .false.
     end if
-    
-    ! Read title card for this case
-    read(UNIT_INPUT, '(A)', iostat=ios, end=999) title_card
-    if (ios /= 0) then
-      write(UNIT_LOG, '(A,I0)') 'Error reading title card: ', ios
-      title_card = 'FINISHED'
+
+5   continue
+    ! Timing code to match original (TIME2 would need system-specific implementation)
+    TIME1 = TIME2
+    ! TIME2 = get_time()  ! Would need system-specific timing
+    ELPTM = TIME2 - TIME1
+    if (ELPTM >= 0.01) then
+      write(UNIT_OUTPUT, '(25H0  TIME TO RUN CASE WAS  ,F6.2,9H SECONDS.)') ELPTM
     end if
     
-    ! Store title in TITLE array (convert to 20*4-byte format)
-    TITLE = title_card
+    ! Read title card for this case with exact original format
+    read(UNIT_INPUT, '(20A4)', END=999) TITLE
     
-    ! Write title to output
-    write(UNIT_LOG, '(A)') title_card
-    
-    ! Check for termination string
-    if (title_card(1:8) == FINISHED) then
-      write(UNIT_LOG, '(A)') 'End of cases detected'
-      return  ! Return with FINISHED title
+    ! Write title to output files exactly as original    
+    write(UNIT_OUTPUT, '(1H1,4X,20A4)') TITLE
+      ! Check for termination string exactly as original
+    if (TITLE(1) == DONE) then
+        goto 999
     end if
     
+10  continue
     ! Read namelist input for this case
-    read(UNIT_INPUT, nml=INP, iostat=ios)
-    if (ios /= 0) then
-      write(UNIT_LOG, '(A,I0)') 'Error reading namelist: ', ios
-      call INPERR(1)
-    end if
+    read(UNIT_INPUT, INP)
     
-    ! Handle PSTART=3 case - check if previous solution is usable
+    ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then
       if (ABORT1) then
-        write(UNIT_LOG, '(A)') 'Previous solution not usable, setting PSTART=1'
-        PSTART = 1
+        write(UNIT_OUTPUT, '(21H0 CALCULATION ABORTED//43H OUTPUT OF PREVIOUS SOLUTION NOT AVAILABLE.)')
+        goto 5
       end if
     end if
     
+13  continue
     ! Set AK=0 for physical coordinates
     if (PHYS) AK = 0.0
     
-    ! Set IMAX and JMAX to the actual mesh size from input (not maximum array dimension)
-    ! This is critical - original TSFoil sets IMAX = IMAXI in READIN
-    IMAX = IMAXI
-    JMAX = JMAXI
-    write(UNIT_LOG, '(A,I0,A,I0)') 'Mesh size set to IMAX=', IMAX, ', JMAX=', JMAX
-
-    ! Handle mesh generation
+    ! Handle automatic mesh generation
     if (AMESH) then
       call AYMESH()
-    else
-      ! Check if YIN needs default initialization
-      call check_yin_defaults()
+      goto 18
     end if
     
-    ! Compute critical mesh indices before calling CKMESH
-    call ISLIT(XIN)   ! Computes ILE and ITE from XIN array
-    call JSLIT(YIN)   ! Computes JLOW and JUP from YIN array
+14  continue
+    ! Check if YIN needs default initialization for tunnel or free air case
+    if (YIN(JMIN) /= 0.0) goto 18
     
-    ! Process mesh
+    if (BCTYPE == 1) then
+      ! Free air case
+      JMAXI = JMXF
+      do J = JMIN, JMAXI
+        YIN(J) = YFREE(J)
+      end do
+      goto 18
+    end if
+    
+16  continue
+    ! Tunnel case
+    JMAXI = JMXT
+    do J = JMIN, JMAXI
+      YIN(J) = YTUN(J)
+    end do
+    
+18  continue
+    ! Echo input parameters to output file with exact original format strings
+    write(UNIT_OUTPUT, '(1H0,4X,7HEMACH =,F9.5,5X,5HPOR =,F9.5,3X,6HIMIN =,I4,3X,8HBCTYPE =,I3,5X,8HAMESH = ,L1)') &
+      EMACH, POR, IMIN, BCTYPE, AMESH
+    write(UNIT_OUTPUT, '(1H0,4X,7HDELTA =,F9.5,3X,7HCLSET =,F9.5,2X,7HIMAXI =,I4,3X,8HBCFOIL =,I3,6X,7HPHYS = ,L1)') &
+      DELTA, CLSET, IMAXI, BCFOIL, PHYS    
+    write(UNIT_OUTPUT, '(1H0,4X,7HALPHA =,F9.5,5X,5HEPS =,F9.5,3X,6HJMIN =,I4,3X,8HPSTART =,I3,5X,8HPSAVE = ,L1)') &
+      ALPHA, EPS, JMIN, PSTART, PSAVE
+    write(UNIT_OUTPUT, '(1H0,7X,4HAK =,F9.5,4X,6HRIGF =,F9.5,2X,7HJMAXI =,I4,3X,8HPRTFLO =,I3,5X,8HKUTTA = ,L1)') &
+      AK, RIGF, JMAXI, PRTFLO, KUTTA
+    write(UNIT_OUTPUT, '(1H0,6X,5HGAM =,F9.5,3X,7HWCIRC =,F9.5,2X,7HMAXIT =,I4,3X,8HIPRTER =,I3,7X,6HFCR = ,L1)') &
+      GAM, WCIRC, MAXIT, IPRTER, FCR
+    write(UNIT_OUTPUT, '(1H0,8X,3HF =,F9.5,2X,8HCVERGE =,F9.5,5X,4HNU =,I4,3X,8HSIMDEF =,I3)') &
+      F, CVERGE, NU, SIMDEF
+    write(UNIT_OUTPUT, '(1H0,8X,3HH =,F9.5,2X,8HDVERGE =,F9.1,5X,4HNL =,I4,5X,6HICUT =,I3)') &
+      H, DVERGE, NL, ICUT
+    write(UNIT_OUTPUT, '(1H0,7X,5HWE = ,F4.2,2(1H,,F4.2))') WE
+    
+    if (NWDGE == 1) write(UNIT_OUTPUT, '(1H0,15X,12HMURMAN WEDGE,5X,8HREYNLD =,E10.3,5X,8HWCONST =,F9.5)') REYNLD, WCONST
+    if (NWDGE == 2) write(UNIT_OUTPUT, '(1H0,15X,15HYOSHIHARA WEDGE)')
+    if (IFLAP /= 0) write(UNIT_OUTPUT, '(1H0,15X,17HFLAP IS DEFLECTED,F5.2,20H DEGREES FROM H.L. =,F6.3,8H TO T.E.)') &
+      DELFLP, FLPLOC
+    
+    write(UNIT_OUTPUT, '(1H0,4X,3HXIN)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XIN(I), I=IMIN, IMAXI)
+    write(UNIT_OUTPUT, '(1H0,4X,3HYIN)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YIN(J), J=JMIN, JMAXI)
+    
+    if (BCFOIL <= 2) goto 19
+    if (BCFOIL == 5) goto 19
+    write(UNIT_OUTPUT, '(1H0,15X,2HXU)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XU(I), I=1, NU)
+    write(UNIT_OUTPUT, '(1H0,15X,2HYU)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YU(I), I=1, NU)
+    write(UNIT_OUTPUT, '(1H0,15X,2HXL)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XL(I), I=1, NL)
+    write(UNIT_OUTPUT, '(1H0,15X,2HYL)')
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YL(I), I=1, NL)
+    
+19  continue
+    ! Set derived constants
+    GAM1 = GAM + 1.0
+    IREF = 0
+    IMAX = IMAXI
+    JMAX = JMAXI
+    IM1 = IMAX - 1
+    JM1 = JMAX - 1
+    
+    ! Check array bounds (any call to INPERR causes message to be printed and execution stopped)
+    if (IMAXI > 100 .or. JMAXI > 100) call INPERR(1)
+    
+    ! Check input mesh for monotonically increasing values
+    do I = IMIN, IM1
+      if (XIN(I) >= XIN(I+1)) call INPERR(2)
+    end do
+    
+    do J = JMIN, JM1
+      if (YIN(J) >= YIN(J+1)) call INPERR(3)
+    end do
+    
+    ! Check parameter ranges
+    if (EMACH < 0.5 .or. EMACH > 2.0) call INPERR(4)
+    if (ALPHA < -9.0 .or. ALPHA > 9.0) call INPERR(5)
+    if (DELTA < 0.0 .or. DELTA > 1.0) call INPERR(6)
+    if (NWDGE > 0 .and. EMACH > 1.0) call INPERR(8)
+    
+    ! Compute ILE and ITE (leading and trailing edge)
+    call ISLIT(XIN)
+    
+    ! Compute JLOW and JUP (location of body slit)
+    call JSLIT(YIN)
+    
+    ! Check number of mesh points, if not odd add points to appropriate areas to make odd no.
     call CKMESH()
     
-    ! Handle mesh refinement
-    if (ICUT > 0) then
-      IREF = -1
-      call CUTOUT()
+    ! Check bounds of YMESH for tunnel calculations
+    if (BCTYPE == 1) goto 90
+    HTM = H - 0.00001
+    HTP = H + 0.00001
+    YS = abs(YIN(JMIN))
+    YE = abs(YIN(JMAX))
+    if (YS >= HTM .and. YS <= HTP) then
+      if (YE >= HTM .and. YE <= HTP) goto 90
     end if
     
-    ! Handle restart data if PSTART=2
+40  continue
+    ! Rescale Y mesh to -H,+H bounds
+    TERM = -H / YIN(JMIN)
+    do J = JMIN, JLOW
+      YIN(J) = TERM * YIN(J)
+    end do
+    TERM = H / YIN(JMAX)
+    do J = JUP, JMAX
+      YIN(J) = TERM * YIN(J)
+    end do
+    
+90  continue    
+    ! If PSTART = 2 read old values from restart file (exact original implementation)
     if (PSTART == 2) then
-      call LOADP()
+      rewind(UNIT_RESTART)
+      read(UNIT_RESTART, '(20A4)') TITLEO
+      read(UNIT_RESTART, '(4I5)') IMAXO, JMAXO, IMINO, JMINO
+      read(UNIT_RESTART, '(8F10.6)') CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
+      read(UNIT_RESTART, '(8F10.6)') (XOLD(I), I=IMINO, IMAXO)
+      read(UNIT_RESTART, '(8F10.6)') (YOLD(J), J=JMINO, JMAXO)
+      do I = IMINO, IMAXO
+        read(UNIT_RESTART, '(8F10.6)') (P(J,I), J=JMINO, JMAXO)
+      end do
+      write(UNIT_OUTPUT, '(39H1P INITIALIZED FROM PREVIOUS RUN TITLED/1X,20A4/31H WHICH HAD THE FOLLOWING VALUES/8H IMIN  =,I4/8H IMAX  =,I4/8H JMIN  =,I4/8H JMAX  =,I4/8H CL    =,F12.8/8H EMACH =,F12.8/8H ALPHA =,F12.8/8H DELTA =,F12.8/8H VOL   =,F12.8/8H DUB   =,F12.8/)') &
+        TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
     end if
     
-    ! Initialize solution based on PSTART
-    call GUESSP()
-    
-    ! Case setup completed - return to main program for solution sequence
-    write(UNIT_LOG, '(A)') 'Case setup completed - ready for solution sequence'
+100 continue
     return
     
-999 continue
-    ! End of file - set FINISHED title
-    TITLE = 'FINISHED'
-    return
+  ! End of file or FINISHED card - use STOP to match original
+999 stop
   end subroutine READIN
-
+  
   ! Convert physical variables to similarity variables
   subroutine SCALE()
     use common_data, only: PHYS, DELTA, EMACH, SIMDEF
-    use common_data, only: AK, YFACT, CPFACT, CLFACT, CDFACT, CMFACT, VFACT
+    use common_data, only: AK, ALPHA, GAM1, RTK, YFACT, CPFACT, CLFACT, CDFACT, CMFACT, VFACT
+    use common_data, only: YIN, YOLD, JMIN, JMAX, JMINO, JMAXO, PSTART
+    use common_data, only: H, POR, SONVEL, CPSTAR, DELRT2, EMROOT
     implicit none
-    real :: BETA, DELRT1, DELRT2, EMROOT
+    real :: BETA, DELRT1
+    real :: YFACIV
+    integer :: J
 
     if (.not. PHYS) then
-      CPFACT = 1.0; CLFACT = 1.0; CDFACT = 1.0; CMFACT = 1.0; YFACT = 1.0; VFACT = 1.0
-      AK = 0.0
+      ! PHYS = .FALSE.  NO SCALING
+      CPFACT = 1.0
+      CDFACT = 1.0
+      CLFACT = 1.0
+      CMFACT = 1.0
+      YFACT = 1.0
+      VFACT = 1.0
       write(UNIT_LOG,'(A)') 'Using non-physical (similarity) variables'
-      return
+      goto 600
     end if
 
-    ! Compute scaling parameters
+    ! PHYS = .TRUE.  COMPUTE CONSTANTS
     BETA = 1.0 - EMACH**2
     DELRT1 = DELTA**(1.0/3.0)
     DELRT2 = DELTA**(2.0/3.0)
 
+    ! BRANCH TO APPROPRIATE SCALING
     select case (SIMDEF)
     case (1)
-      ! Cole scaling
+      ! SIMDEF = 1: COLE SCALING
       AK = BETA / DELRT2
       YFACT = 1.0 / DELRT1
       CPFACT = DELRT2
@@ -201,7 +308,7 @@ contains
       write(UNIT_LOG,'(A)') 'Using Cole scaling'
 
     case (2)
-      ! Spreiter scaling
+      ! SIMDEF = 2: SPREITER SCALING
       EMROOT = EMACH**(2.0/3.0)
       AK = BETA / (DELRT2 * EMROOT * EMROOT)
       YFACT = 1.0 / (DELRT1 * EMROOT)
@@ -213,7 +320,7 @@ contains
       write(UNIT_LOG,'(A)') 'Using Spreiter scaling'
 
     case (3)
-      ! Krupp scaling
+      ! SIMDEF = 3: KRUPP SCALING
       AK = BETA / (DELRT2 * EMACH)
       YFACT = 1.0 / (DELRT1 * sqrt(EMACH))
       CPFACT = DELRT2 / (EMACH**0.75)
@@ -223,20 +330,66 @@ contains
       VFACT = DELTA * 57.295779
       write(UNIT_LOG,'(A)') 'Using Krupp scaling'
 
+    case (4)
+      ! SIMDEF = 4: USER SCALING - NOT USEABLE
+      write(UNIT_OUTPUT,'(A)') '1ABNORMAL STOP IN SUBROUTINE SCALE'
+      write(UNIT_OUTPUT,'(A)') ' SIMDEF=4 IS NOT USEABLE'
+      stop 'SIMDEF=4 is not useable'
+
     case default
       write(UNIT_LOG,'(A,I0)') 'ERROR: Unsupported SIMDEF = ', SIMDEF
       stop 'Unsupported SIMDEF'
     end select
 
+    ! SCALE Y MESH
+    YFACIV = 1.0 / YFACT
+    do J = JMIN, JMAX
+      YIN(J) = YIN(J) * YFACIV
+    end do
+    
+    if (PSTART /= 1) then
+      do J = JMINO, JMAXO
+        YOLD(J) = YOLD(J) * YFACIV
+      end do
+    end if
+
+    ! SCALE TUNNEL PARAMETERS
+    H = H / YFACT
+    POR = POR * YFACT
+    write(UNIT_OUTPUT,'(//10X,11HSCALED POR=,F10.5)') POR
+
+    ! SCALE ANGLE OF ATTACK
+    ALPHA = ALPHA / VFACT
+
+600 continue
+    ! CHECK VALUE OF AK FOR DEFAULT.
+    if (AK == 0.0) call INPERR(7)
+    
+    ! COMPUTE SQUARE ROOT OF AK
+    RTK = sqrt(abs(AK))
+    
+    ! COMPUTE SONIC VELOCITY
+    if (abs(GAM1) <= 0.0001) then
+      SONVEL = 1.0
+      CPSTAR = 0.0
+      return
+    end if
+    
+    SONVEL = AK / GAM1
+    CPSTAR = -2.0 * SONVEL * CPFACT
+
     ! Log scaling parameters to main log file
     write(UNIT_LOG,'(A)') 'Scaling parameters computed:'
     write(UNIT_LOG,'(A,F10.6)') '  AK = ', AK
+    write(UNIT_LOG,'(A,F10.6)') '  RTK = ', RTK
     write(UNIT_LOG,'(A,F10.6)') '  YFACT = ', YFACT
     write(UNIT_LOG,'(A,F10.6)') '  CPFACT = ', CPFACT
     write(UNIT_LOG,'(A,F10.6)') '  CLFACT = ', CLFACT
     write(UNIT_LOG,'(A,F10.6)') '  CMFACT = ', CMFACT
     write(UNIT_LOG,'(A,F10.6)') '  CDFACT = ', CDFACT
     write(UNIT_LOG,'(A,F10.6)') '  VFACT = ', VFACT
+    write(UNIT_LOG,'(A,F10.6)') '  SONVEL = ', SONVEL
+    write(UNIT_LOG,'(A,F10.6)') '  CPSTAR = ', CPSTAR
 
   end subroutine SCALE
 
@@ -269,24 +422,175 @@ contains
     call PRTWAL()
     write(UNIT_LOG,'(A)') 'Output generation completed'
   end subroutine PRINT
-
+  
   ! Print Cp and Mach along body and build plot arrays
+  ! Prints pressure coefficient and Mach number on Y=0 line, and plots CP along side of print
+  ! This matches the original PRINT1 functionality exactly
   subroutine PRINT1()
-    use common_data, only: CPFACT, XIN, ILE, ITE, P, CPL, CPU, JUP, JLOW
+    use common_data
+    use math_module, only: PX, EMACH1, LIFT, PITCH
     implicit none
-    integer :: I
-    real :: CP
     
-    write(UNIT_CP,'(A)') '# X/C     CP'
-    write(UNIT_CP,'(A)') '# Pressure coefficient distribution along airfoil'
+    ! Local variables matching original
+    integer :: I, K, NCOL, NCOLS, NCOLU, NCOLL, IEM, KT, IPLOT
+    real :: CL_local, CM, CPMIN, CPMAX, CPLARG, UNPCOL, COL
+    real :: UL, UU, CJ01, CJ02
+    real :: EM1L(100), EM1U(100), YM(100)
+    character(len=1) :: LINE1(60)
+    character(len=2) :: TMAC(2)
+    character(len=1), parameter :: IB = ' ', IL = 'L', IU = 'U', IS = '*', IBB = 'B'
     
-    do I = ILE, ITE
-      CP = -2.0*(P(JUP,I)-P(JLOW,I)) / (XIN(I+1)-XIN(I-1))
-      CPL(I-ILE+1) = CP; CPU(I-ILE+1) = CP
-      write(UNIT_CP,'(F8.5,2X,F10.6)') XIN(I), CP
+    ! Initialize data arrays like original
+    TMAC(1) = 'M1'
+    TMAC(2) = 'K1'
+    
+    ! Compute lift and moment coefficients
+    CL_local = LIFT(CLFACT)
+    CM = PITCH(CMFACT)
+    
+    ! Initialize CP min/max tracking
+    CPMIN = 1.0E37
+    CPMAX = -CPMIN
+    IEM = 0
+    
+    ! Compute interpolation coefficients
+    CJ01 = -Y(JLOW)/(Y(JUP)-Y(JLOW))
+    CJ02 = Y(JUP)/(Y(JUP)-Y(JLOW))
+    
+    ! Main loop over airfoil points
+    do I = IMIN, IMAX
+      ! Compute lower surface velocity
+      UL = CJLOW*PX(I,JLOW) - CJLOW1*PX(I,JLOW-1)
+      if (I > ITE) UL = CJ01*PX(I,JUP) + CJ02*PX(I,JLOW)
+      if (I < ILE) UL = CJ01*PX(I,JUP) + CJ02*PX(I,JLOW)
+      CPL(I) = -2.0 * UL * CPFACT
+      EM1L(I) = EMACH1(UL)
+      if (EM1L(I) > 1.3) IEM = 1
+      
+      ! Compute upper surface velocity
+      UU = CJUP*PX(I,JUP) - CJUP1*PX(I,JUP+1)
+      if (I > ITE) UU = UL
+      if (I < ILE) UU = UL
+      CPU(I) = -2.0 * UU * CPFACT
+      EM1U(I) = EMACH1(UU)
+      if (EM1U(I) > 1.3) IEM = 1
+      
+      ! Track min/max CP values
+      CPMAX = max(CPMAX, CPU(I), CPL(I))
+      CPMIN = min(CPMIN, CPU(I), CPL(I))
     end do
     
-    write(UNIT_LOG,'(A,I0,A)') 'Cp distribution written with ', ITE-ILE+1, ' points'
+    ! Set up plotting scale
+    CPLARG = max(CPMAX, abs(CPMIN))
+    UNPCOL = CPLARG / 29.0
+    
+    ! Locate CP* for printer plot
+    COL = -CPSTAR / UNPCOL
+    NCOL = sign(int(abs(COL) + 0.5), nint(COL))
+    NCOLS = NCOL + 30
+    
+    ! Print header information
+    write(UNIT_OUTPUT,'(A)') '1 FORCE COEFFICIENTS, PRESSURE COEFFICIENT, AND MACH NUMBER'
+    write(UNIT_OUTPUT,'(A)') '  (OR SIMILARITY PARAMETER) ON BODY AND DIVIDING STREAM LINE.'
+    
+    if (IREF == 2) write(UNIT_OUTPUT,'(A)') '                    COARSE MESH'
+    if (IREF == 1) write(UNIT_OUTPUT,'(A)') '                    MEDIUM MESH'
+    if (IREF == 0) write(UNIT_OUTPUT,'(A)') '                     FINAL MESH'
+    
+    ! Print coefficients
+    write(UNIT_OUTPUT,'(A,F10.6)') '         CL =', CL_local
+    write(UNIT_OUTPUT,'(A,F10.6)') '          CM =', CM
+    write(UNIT_OUTPUT,'(A,F10.6)') '         CP* =', CPSTAR
+    
+    ! Also write to other output files like original
+    write(UNIT_SHOCK,'(A,F10.6)') '         CL =', CL_local
+    write(UNIT_SHOCK,'(A,F10.6)') '          CM =', CM
+    write(UNIT_SHOCK,'(A,F10.6)') '         CP* =', CPSTAR
+    
+    write(UNIT_WALL,'(A,F16.12)') '         CL =', CL_local
+    write(UNIT_WALL,'(A,F16.12)') '          CM =', CM
+    write(UNIT_WALL,'(A,F16.12)') '         CP* =', CPSTAR
+    
+    ! Check for detached shock
+    if (CPL(IMIN) < CPSTAR .and. CPL(IMIN+1) > CPSTAR) then
+      write(UNIT_OUTPUT,'(A)') '0'
+      write(UNIT_OUTPUT,'(A)') ' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.'
+      if (IREF /= 2) ABORT1 = .true.
+      return
+    end if
+    
+    ! Print column headers
+    write(UNIT_OUTPUT,'(A)') '0                           LOWER                       UPPER'
+    write(UNIT_OUTPUT,'(A)') '                            Y=0-                        Y=0+'
+    
+    KT = 2
+    if (PHYS) KT = 1
+    write(UNIT_OUTPUT,'(A,A2,A,A2,A)') '   I        X          CP          ', TMAC(KT), '              CP          ', TMAC(KT), ''
+    
+    IPLOT = 0
+    
+    ! Output header for plotting file if final mesh
+    if (IREF == 0) then
+      write(UNIT_SHOCK,'(A,F7.3,A,F7.3)') '  TSFOIL2   Mach = ', EMACH, '   CL = ', CL_local
+      write(UNIT_SHOCK,'(A)') '    i     X/C        Cp-up     M-up      Cp-low    M-low'
+    end if
+    
+    ! Main output loop
+    do I = IMIN, IMAX
+      ! Initialize line for plotting
+      do K = 1, 60
+        LINE1(K) = IB
+      end do
+      
+      ! Plot upper surface CP
+      COL = -CPU(I) / UNPCOL
+      NCOL = sign(int(abs(COL) + 0.5), nint(COL))
+      NCOLU = NCOL + 30
+      if (NCOLU >= 1 .and. NCOLU <= 60) LINE1(NCOLU) = IU
+      
+      ! Plot lower surface CP  
+      COL = -CPL(I) / UNPCOL
+      NCOL = sign(int(abs(COL) + 0.5), nint(COL))
+      NCOLL = NCOL + 30
+      if (NCOLL >= 1 .and. NCOLL <= 60) LINE1(NCOLL) = IL
+      if (NCOLL == NCOLU .and. NCOLL >= 1 .and. NCOLL <= 60) LINE1(NCOLL) = IBB
+      if (abs(NCOLS) <= 60 .and. NCOLS >= 1) LINE1(NCOLS) = IS
+      
+      ! Print leading edge marker
+      if (I == ILE) write(UNIT_OUTPUT,'(A)') '                         AIRFOIL LEADING EDGE                             AIRFOIL LEADING EDGE'
+      
+      ! Print main data line
+      write(UNIT_OUTPUT,'(I4,3F12.6,4X,2F12.6,2X,60A1)') I, X(I), CPL(I), EM1L(I), CPU(I), EM1U(I), LINE1
+      
+      ! Print trailing edge marker
+      if (I == ITE) write(UNIT_OUTPUT,'(A)') '                         AIRFOIL TRAILING EDGE                            AIRFOIL TRAILING EDGE'
+      
+      ! Save data for plotting (final mesh only)
+      if (IREF == 0) then
+        write(UNIT_SHOCK,'(2X,I3,2X,F7.4,2X,F10.5,2X,F7.4,2X,F10.5,2X,F7.4)') IPLOT, X(I), CPU(I), EM1U(I), CPL(I), EM1L(I)
+      end if
+    end do
+    
+    ! Print Mach number warning if needed
+    if (IEM == 1 .and. PHYS) then
+      write(UNIT_OUTPUT,'(A)') '0***** CAUTION *****'
+      write(UNIT_OUTPUT,'(A)') ' MAXIMUM MACH NUMBER EXCEEDS 1.3'
+      write(UNIT_OUTPUT,'(A)') ' SHOCK JUMPS IN ERROR IF UPSTREAM NORMAL MACH NUMBER GREATER THAN 1.3'
+    end if
+    
+    ! Print coordinate arrays
+    do I = JMIN, JMAX
+      YM(I) = Y(I) * YFACT
+    end do
+    
+    write(UNIT_OUTPUT,'(A,I3,A,I3)') '0        Y(J) J=', JMIN, ' TO', JMAX
+    write(UNIT_OUTPUT,'(6F12.6)') (YM(I), I=JMIN, JMAX)
+    
+    ! Also write X coordinates 
+    write(15,'(A,I3,A,I3)') '0        X(I) I=', IMIN, ' TO', IMAX
+    write(15,'(6F12.6)') (X(I), I=IMIN, IMAX)
+    
+    write(UNIT_LOG,'(A)') 'PRINT1: Pressure coefficient and Mach number output completed'
   end subroutine PRINT1
 
   ! Print Cp, flow angle (theta), and Mach number on selected j-lines
@@ -468,33 +772,38 @@ contains
     
     write(UNIT_LOG,'(A)') 'Wall data written to tsfoil.wal'
   end subroutine PRTWAL
-
-  ! Save current solution P to restart file
+  ! Save current solution P to restart file - matches original SAVEP exactly
   subroutine SAVEP()
-    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX
+    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX, TITLE
     implicit none
     integer :: I, J
     
-    open(unit=UNIT_RESTART, file='tsfoil.rst', status='replace', action='write')
+    ! Original used unit 15, but we'll use UNIT_RESTART (now 7) for consistency
+    open(unit=UNIT_RESTART, file='fort.7', status='replace', action='write')
+    rewind(UNIT_RESTART)
     
-    write(UNIT_RESTART,'(A)') '# TSFOIL Restart File'
-    write(UNIT_RESTART,'(4I6)') IMIN, IMAX, JMIN, JMAX
+    ! Write title using original format 900: FORMAT(20A4)
+    write(UNIT_RESTART, 900) TITLE
     
-    ! Write grid coordinates
-    write(UNIT_RESTART,'(A)') '# Grid X coordinates'
-    write(UNIT_RESTART,'(*(F12.8))') (X(I), I=IMIN, IMAX)
+    ! Write mesh dimensions using original format 902: FORMAT(4I5)
+    write(UNIT_RESTART, 902) IMIN, IMAX, JMIN, JMAX
     
-    write(UNIT_RESTART,'(A)') '# Grid Y coordinates' 
-    write(UNIT_RESTART,'(*(F12.8))') (Y(J), J=JMIN, JMAX)
+    ! Write grid coordinates using original format 903: FORMAT(8F10.6)
+    write(UNIT_RESTART, 903) (X(I), I=IMIN, IMAX)
+    write(UNIT_RESTART, 903) (Y(J), J=JMIN, JMAX)
     
-    ! Write solution array P
-    write(UNIT_RESTART,'(A)') '# Solution array P(J,I)'
+    ! Write solution array P using original format 903: FORMAT(8F10.6)
     do J = JMIN, JMAX
-      write(UNIT_RESTART,'(*(F16.12))') (P(J,I), I=IMIN, IMAX)
+      write(UNIT_RESTART, 903) (P(J,I), I=IMIN, IMAX)
     end do
     
     close(UNIT_RESTART)
-    write(UNIT_LOG,'(A)') 'Solution saved to restart file tsfoil.rst'
+    write(UNIT_LOG,'(A)') 'Solution saved to restart file fort.7'
+    
+    ! Original format statements
+    900 format(20A4)
+    902 format(4I5)
+    903 format(8F10.6)
   end subroutine SAVEP
 
   ! Initialize YIN array if not read from namelist
@@ -527,73 +836,73 @@ contains
       end do
     end if
   end subroutine check_yin_defaults
-
-  ! Read restart file (PSTART=2 case)
+  
+  ! Read restart file (PSTART=2 case) - matches original exactly
   subroutine LOADP()
     use common_data
     implicit none
     integer :: I, J, ios_restart
-      write(UNIT_LOG, '(A)') 'Reading restart data from tsfoil.rst'
     
-    open(unit=UNIT_RESTART, file='tsfoil.rst', status='old', action='read', iostat=ios_restart)
+    write(UNIT_LOG, '(A)') 'Reading restart data from fort.7'
+    
+    open(unit=UNIT_RESTART, file='fort.7', status='old', action='read', iostat=ios_restart)
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error: Cannot open restart file tsfoil.rst'
+      write(UNIT_LOG, '(A)') 'Error: Cannot open restart file fort.7'
       call INPERR(2)
       return
     end if
     
-    ! Skip comment lines
-    read(UNIT_RESTART, '(A)')  ! Skip header
+    rewind(UNIT_RESTART)
     
-    ! Read old title
-    read(UNIT_RESTART, '(A)', iostat=ios_restart) TITLEO
+    ! Read title using original format 900: FORMAT(20A4)
+    read(UNIT_RESTART, 900, iostat=ios_restart) TITLEO
     if (ios_restart /= 0) then
       write(UNIT_LOG, '(A)') 'Error reading title from restart file'
       call INPERR(2)
+      return
     end if
     
-    ! Read old mesh dimensions
-    read(UNIT_RESTART, *, iostat=ios_restart) IMAXO, JMAXO, IMINO, JMINO
+    ! Read mesh dimensions using original format 902: FORMAT(4I5)
+    read(UNIT_RESTART, 902, iostat=ios_restart) IMINO, IMAXO, JMINO, JMAXO
     if (ios_restart /= 0) then
       write(UNIT_LOG, '(A)') 'Error reading mesh dimensions from restart file'
       call INPERR(2)
+      return
     end if
     
-    ! Read old solution parameters
-    read(UNIT_RESTART, *, iostat=ios_restart) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
-    if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading solution parameters from restart file'
-      call INPERR(2)
-    end if
-    
-    ! Read old grid coordinates
-    read(UNIT_RESTART, *)  ! Skip X coordinate header
-    read(UNIT_RESTART, *, iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
+    ! Read grid coordinates using original format 903: FORMAT(8F10.6)
+    read(UNIT_RESTART, 903, iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
     if (ios_restart /= 0) then
       write(UNIT_LOG, '(A)') 'Error reading X coordinates from restart file'
       call INPERR(2)
+      return
     end if
     
-    read(UNIT_RESTART, *)  ! Skip Y coordinate header
-    read(UNIT_RESTART, *, iostat=ios_restart) (YOLD(J), J=JMINO, JMAXO)
+    read(UNIT_RESTART, 903, iostat=ios_restart) (YOLD(J), J=JMINO, JMAXO)
     if (ios_restart /= 0) then
       write(UNIT_LOG, '(A)') 'Error reading Y coordinates from restart file'
       call INPERR(2)
+      return
     end if
     
-    ! Read old solution array P
-    read(UNIT_RESTART, *)  ! Skip P array header
+    ! Read solution array P using original format 903: FORMAT(8F10.6)
     do J = JMINO, JMAXO
-      read(UNIT_RESTART, *, iostat=ios_restart) (P(J,I), I=IMINO, IMAXO)
+      read(UNIT_RESTART, 903, iostat=ios_restart) (P(J,I), I=IMINO, IMAXO)
       if (ios_restart /= 0) then
         write(UNIT_LOG, '(A,I0)') 'Error reading P array at J=', J
         call INPERR(2)
-        exit
+        close(UNIT_RESTART)
+        return
       end if
     end do
     
     close(UNIT_RESTART)
     write(UNIT_LOG, '(A)') 'Restart data successfully loaded'
+    
+    ! Original format statements
+    900 format(20A4)
+    902 format(4I5)
+    903 format(8F10.6)
   end subroutine LOADP
 
   ! Initialize potential array P based on PSTART value

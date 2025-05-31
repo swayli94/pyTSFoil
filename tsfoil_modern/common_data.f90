@@ -12,8 +12,8 @@ module common_data
   public :: FL, FXL, FU, FXU, CAMBER, THICK, XFOIL, VOL, IFOIL
   public :: BCFOIL, NL, NU, XL, XU, YL, YU, PERCENT, CHORD
   public :: RIGF, IFLAP, DELFLP, FLPLOC, FSYM
-  public :: SIMDEF, DELTA, EMACH, PRTFLO
-  public :: CDFACT, CLFACT, CMFACT, CPFACT, YFACT, VFACT
+  public :: SIMDEF, DELTA, EMACH, PRTFLO, DELRT2, EMROOT, CL
+  public :: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR, YFACT, VFACT, SONVEL
   public :: F, H, HALFPI, PI, RTKPOR, TWOPI
   public :: ALPHAO, CLOLD, DELTAO, DUBO, EMACHO, VOLO
   public :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
@@ -28,11 +28,14 @@ module common_data
   public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
   public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
   public :: CLSET, IDLA
-  public :: EPS, WE, NWDGE, REYNLD, WCONST
-  public :: DVERGE, GAM, POR, FHINV
+  public :: EPS, WE, NWDGE, REYNLD, WCONST, WSLP, WI
+  public :: DVERGE, GAM, POR, FHINV, WCIRC
+  public :: YFREE, YTUN, JMXF, JMXT
   public :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
   public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
   public :: initialize_common
+  public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
+  public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
   
   ! Mesh indices (from COMMON /COM1/)
   integer :: IMIN, IMAX       ! grid i-range
@@ -79,9 +82,10 @@ module common_data
 
   ! COM8: solver control parameters
   real :: CVERGE, DVERGE, TOL, RSAVE
-  real :: EPS, WE(3)
+  real :: EPS = 1.0e-6              ! Convergence tolerance
+  real, parameter :: WI = 1.05      ! SOR relaxation factor
+  real :: WE(3)
   integer :: IPRTER, MAXIT, NEX, N_O, NPRINT, NPT
-  logical :: WCIRC
   
   ! COM9: airfoil definition flags
   integer :: BCFOIL, NL, NU
@@ -103,7 +107,7 @@ module common_data
   integer :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
   logical :: PSAVE
   integer :: PSTART
-  character(len=20) :: TITLE, TITLEO
+  character(len=4) :: TITLE(20), TITLEO(20)
   real :: XOLD(100), YOLD(100)
   
   ! COM12: wall/tunnel constants  
@@ -113,9 +117,8 @@ module common_data
   real :: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR
   
   ! COM14: Kutta and circulation flags
-  real :: CLSET
-  logical :: FCR
-  integer :: KUTTA
+  real :: CLSET, WCIRC
+  logical :: FCR, KUTTA
   
   ! COM15: vortex/doublet parameters
   real :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
@@ -168,13 +171,25 @@ module common_data
   ! COM34: viscous wedge parameters  
   integer :: NWDGE
   real :: REYNLD, WCONST
+  real :: WSLP(100,2)  ! Viscous wedge slopes
   
   ! COM30: general workspace arrays  
   real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
-  ! integer :: INP = 15           ! Input file unit number - conflicts with namelist
   integer :: JLIN(3)           ! Line indices for printing
   character(len=1) :: IPC(100) ! Flow regime indicators
   real :: VT(100,2)            ! Velocity time history
+
+  ! File unit numbers for different output files
+  integer, parameter :: UNIT_INPUT = 2          ! Input file (like original iread=2)
+  integer, parameter :: UNIT_LOG = 10           ! Main log file (tsfoil.log)
+  integer, parameter :: UNIT_ECHO = 11          ! Input echo file (tsfoil.ech)
+  integer, parameter :: UNIT_CP = 12            ! Cp distribution file (tsfoil.cp)
+  integer, parameter :: UNIT_FIELD = 13         ! Field data file (tsfoil.fld)
+  integer, parameter :: UNIT_FLOW = 14          ! Flow map file (tsfoil.map)
+  integer, parameter :: UNIT_OUTPUT = 15        ! Standard output (tsfoil.out)
+  integer, parameter :: UNIT_WALL = 16          ! Wall data file (tsfoil.wal)
+  integer, parameter :: UNIT_RESTART = 7        ! Restart file (fort.7)
+  integer, parameter :: UNIT_SHOCK = 18         ! Shock analysis file (tsfoil.shk)
 
 contains
 
@@ -236,6 +251,12 @@ contains
     FLPLOC = 0.8
     FSYM = 0
     
+    ! Initialize viscous wedge parameters
+    NWDGE = 0
+    REYNLD = 0.0
+    WCONST = 4.0
+    WSLP = 0.0
+    
     ! Initialize constants    
     PI = 3.1415926535897932384626
     HALFPI = PI * 0.5
@@ -243,6 +264,7 @@ contains
     RTKPOR = 0.0
     F = 0.0
     H = 0.0
+
   end subroutine initialize_common
 
 end module common_data
