@@ -1,5 +1,0 @@
-TEST OF TSFOIL2, 10% thick biconvex airfoil
- $INP
- ALPHA=0.0,DELTA=0.10,EMACH=0.82
- BCFOIL=2,MAXIT=1500
- $END

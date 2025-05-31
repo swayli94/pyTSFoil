@@ -8,3 +8,13 @@ build/
 *.mod
 
 temp*
+plot*
+*.cp
+*.ech
+*.fld
+*.log
+*.map
+*.out
+*.shk
+*.wal
+
