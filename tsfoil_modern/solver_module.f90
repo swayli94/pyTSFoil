@@ -167,9 +167,11 @@ contains
     use common_data, only: BCTYPE, F, H, POR, PI, TWOPI, HALFPI
     use common_data, only: B, ALPHA0, ALPHA1, ALPHA2, BETA0, BETA1, BETA2
     use common_data, only: PSI0, PSI1, PSI2, OMEGA0, OMEGA1, OMEGA2, JET
-    use common_data, only: XSING, FHINV, RTKPOR
+    use common_data, only: XSING, FHINV, RTKPOR    
     implicit none
-    integer :: I, J    real :: YT, YB, XUP, XDN, YT2, YB2, XUP2, XDN2, COEF1, COEF2
+    integer :: I, J
+    real :: YT, YB, XUP, XDN, YT2, YB2, XUP2, XDN2, COEF1, COEF2
+    real :: XU2, XD2  ! Additional variables for far-field calculation
     real :: XP, XP2, YJ, YJ2, Q, ARG0, ARG1, ARG2
     real :: EXARG0, EXARG1, EXARG2, TERM
 
@@ -212,12 +214,12 @@ contains
       ! Set boundary ordinates
       YT = YIN(JMAX) * RTK
       YB = YIN(JMIN) * RTK
-      XU = XIN(IMIN) - XSING
-      XD = XIN(IMAX) - XSING
+      XUP = XIN(IMIN) - XSING
+      XDN = XIN(IMAX) - XSING
       YT2 = YT * YT
       YB2 = YB * YB
-      XU2 = XU * XU
-      XD2 = XD * XD
+      XU2 = XUP * XUP
+      XD2 = XDN * XDN
       COEF1 = 1.0 / TWOPI
       COEF2 = 1.0 / (TWOPI * RTK)
 
@@ -235,11 +237,11 @@ contains
       do J = JMIN, JMAX
         YJ = YIN(J) * RTK
         YJ2 = YJ * YJ
-        DUP(J) = XU / (XU2 + YJ2) * COEF2
-        DDOWN(J) = XD / (XD2 + YJ2) * COEF2
+        DUP(J) = XUP / (XU2 + YJ2) * COEF2
+        DDOWN(J) = XDN / (XD2 + YJ2) * COEF2
         Q = PI - sign(PI, YJ)
-        VUP(J) = -(atan2(YJ, XU) + Q) * COEF1
-        VDOWN(J) = -(atan2(YJ, XD) + Q) * COEF1
+        VUP(J) = -(atan2(YJ, XUP) + Q) * COEF1
+        VDOWN(J) = -(atan2(YJ, XDN) + Q) * COEF1
       end do
 
       if (AK > 0.0) then
@@ -311,17 +313,17 @@ contains
     subroutine compute_tunnel_conditions()
       ! Compute functional forms for upstream and downstream boundary conditions
       ! for doublet and vortex
-      XU = (XIN(IMIN) - XSING) / (RTK * H)
-      XD = (XIN(IMAX) - XSING) / (RTK * H)
+      XUP = (XIN(IMIN) - XSING) / (RTK * H)
+      XDN = (XIN(IMAX) - XSING) / (RTK * H)
 
       ! Doublet terms
       COEF1 = 0.5 / AK / H
       ARG0 = ALPHA0
       ARG1 = PI - ALPHA1
       ARG2 = TWOPI - ALPHA2
-      EXARG0 = exp(-ARG0 * XD)
-      EXARG1 = exp(ARG1 * XU)
-      EXARG2 = exp(ARG2 * XU)
+      EXARG0 = exp(-ARG0 * XDN)
+      EXARG1 = exp(ARG1 * XUP)
+      EXARG2 = exp(ARG2 * XUP)
 
       do J = JMIN, JMAX
         YJ = YIN(J) / H
@@ -334,9 +336,9 @@ contains
       ARG0 = BETA0
       ARG1 = PI + BETA1
       ARG2 = PI - BETA2
-      EXARG0 = exp(-ARG0 * XD)
-      EXARG1 = exp(-ARG1 * XD)
-      EXARG2 = exp(ARG2 * XU)
+      EXARG0 = exp(-ARG0 * XDN)
+      EXARG1 = exp(-ARG1 * XDN)
+      EXARG2 = exp(ARG2 * XUP)
 
       do J = JMIN, JMAX
         YJ = YIN(J) / H

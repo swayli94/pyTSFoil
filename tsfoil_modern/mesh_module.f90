@@ -359,7 +359,7 @@ contains
     end do
     ITE = i - 1
   end subroutine ISLIT
-
+  
   ! Compute JLOW and JUP for mesh Y array
   subroutine JSLIT(Y_MESH)
     use common_data, only: JMIN, JMAX, JLOW, JUP
@@ -367,9 +367,10 @@ contains
     real, intent(in) :: Y_MESH(:)
     integer :: j
 
-    j = JMIN
-    do while (j <= JMAX .and. Y_MESH(j) < 0.0)
+    j = JMIN - 1
+    do
       j = j + 1
+      if (Y_MESH(j) >= 0.0) exit
     end do
     JLOW = j - 1
     JUP  = j

@@ -29,7 +29,9 @@ module common_data
   public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
   public :: CLSET, IDLA
   public :: EPS, WE, NWDGE, REYNLD, WCONST
-  public :: DVERGE, GAM, POR
+  public :: DVERGE, GAM, POR, FHINV
+  public :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
+  public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
   public :: initialize_common
   
   ! Mesh indices (from COMMON /COM1/)
@@ -196,12 +198,11 @@ contains
     Y = 0.0    
     XIN = 0.0
     YIN = 0.0
-    
-    ! default initial values
+    ! Default initial values (will be overridden by READIN with IMAXI/JMAXI from input)
     IMIN = 1
-    IMAX = 100    ! Original X(100) limit, can grow to 102 in CKMESH
+    IMAX = 100    ! Temporary default - will be set to IMAXI in READIN
     JMIN = 1
-    JMAX = 100    ! Original Y(100) limit, can grow to 102 in CKMESH
+    JMAX = 100    ! Temporary default - will be set to JMAXI in READIN
     
     ! Initialize mesh indices to safe defaults (will be recalculated later)
     IUP = 2
@@ -222,6 +223,7 @@ contains
     PHYS = .true.
     SIMDEF = 1
     BCFOIL = 1
+    BCTYPE = 1  ! Default to free air boundary condition
     DELTA = 0.1
     EMACH = 0.8
     PRTFLO = 1

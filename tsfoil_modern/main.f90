@@ -37,8 +37,28 @@ program tsfoil_main
   write(15,'(A)') 'TSFOIL Output File'
   write(15,'(A)') '=================='
   write(15,*)
-  ! Call READIN which handles all input processing like the original
+  
+  ! Initialize case counter
+  case_number = 0
+  
+  ! Main case processing loop - similar to original TSFOIL structure
+1 continue
+  
+  ! Call READIN to read one case
   call READIN()
+  
+  ! Check if we've reached the end (FINISHED card read)
+  if (TITLE(1:8) == 'FINISHED') then
+    write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
+    goto 999
+  end if
+  
+  ! Increment case counter
+  case_number = case_number + 1
+  write(*,'(A,I0)') 'Processing case ', case_number
+  write(15,'(A,I0)') 'Processing case ', case_number
+  write(15,'(A)') trim(TITLE)
+  write(15,*)
   
   ! Continue with complete TSFOIL solution workflow
   write(*,'(A)') 'Starting TSFOIL solution sequence...'
@@ -93,11 +113,22 @@ program tsfoil_main
     call REFINE()
   end if
   
-  write(*,'(A)') 'TSFOIL analysis completed successfully'
-  write(15,'(A)') 'Analysis completed successfully'
+  ! Store solution for potential next case
+  call SAVEP()
+  
+  write(*,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
+  write(15,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
+  write(15,*)
+  
+  ! Return to read next case
+  goto 1
+  
+999 continue
+  write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
   
   ! Cleanup
   call cleanup_spline()
+  call close_output_files()
   close(2)
   close(15)
   

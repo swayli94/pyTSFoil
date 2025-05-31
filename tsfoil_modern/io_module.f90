@@ -68,9 +68,8 @@ contains
     close(UNIT_SHOCK)
     close(UNIT_WALL)
   end subroutine close_output_files
-
-  ! Main input reading routine - handles multiple cases
-  ! Reads title cards, namelist input, and manages restart data
+  ! Main input reading routine - reads one case at a time
+  ! Reads title card, namelist input, and manages restart data for current case
   subroutine READIN()
     use common_data
     use mesh_module, only: AYMESH, CKMESH, CUTOUT
@@ -78,89 +77,95 @@ contains
     
     character(len=80) :: title_card
     character(len=8), parameter :: FINISHED = 'FINISHED'
-    logical :: case_finished
     integer :: ios
+    logical, save :: first_call = .true.
     
-    ! Open output files first
-    call open_output_files()
+    ! Open output files on first call only
+    if (first_call) then
+      call open_output_files()
+      call ECHINP()
+      first_call = .false.
+    end if
     
-    ! Echo input parameters
-    call ECHINP()
+    ! Read title card for this case
+    read(UNIT_INPUT, '(A)', iostat=ios, end=999) title_card
+    if (ios /= 0) then
+      write(UNIT_LOG, '(A,I0)') 'Error reading title card: ', ios
+      title_card = 'FINISHED'
+    end if
     
-    ! Main case processing loop
-    case_loop: do
-      ! Read title card for this case
-      read(UNIT_INPUT, '(A)', iostat=ios, end=999) title_card
-      if (ios /= 0) exit case_loop
-      
-      ! Store title in TITLE array (convert to 20*4-byte format)
-      TITLE = title_card
-      
-      ! Write title to output
-      write(UNIT_LOG, '(A)') title_card
-      
-      ! Check for termination string
-      if (title_card(1:8) == FINISHED) then
-        write(UNIT_LOG, '(A)') 'End of cases detected'
-        exit case_loop
+    ! Store title in TITLE array (convert to 20*4-byte format)
+    TITLE = title_card
+    
+    ! Write title to output
+    write(UNIT_LOG, '(A)') title_card
+    
+    ! Check for termination string
+    if (title_card(1:8) == FINISHED) then
+      write(UNIT_LOG, '(A)') 'End of cases detected'
+      return  ! Return with FINISHED title
+    end if
+    
+    ! Read namelist input for this case
+    read(UNIT_INPUT, nml=INP, iostat=ios)
+    if (ios /= 0) then
+      write(UNIT_LOG, '(A,I0)') 'Error reading namelist: ', ios
+      call INPERR(1)
+    end if
+    
+    ! Handle PSTART=3 case - check if previous solution is usable
+    if (PSTART == 3) then
+      if (ABORT1) then
+        write(UNIT_LOG, '(A)') 'Previous solution not usable, setting PSTART=1'
+        PSTART = 1
       end if
-      
-      ! Read namelist input for this case
-      read(UNIT_INPUT, nml=INP, iostat=ios)
-      if (ios /= 0) then
-        write(UNIT_LOG, '(A,I0)') 'Error reading namelist: ', ios
-        call INPERR(1)
-      end if
-      
-      ! Handle PSTART=3 case - check if previous solution is usable
-      if (PSTART == 3) then
-        if (ABORT1) then
-          write(UNIT_LOG, '(A)') 'Previous solution not usable, setting PSTART=1'
-          PSTART = 1
-        end if
-      end if
-      
-      ! Set AK=0 for physical coordinates
-      if (PHYS) AK = 0.0
-      
-      ! Handle mesh generation
-      if (AMESH) then
-        call AYMESH()
-      else
-        ! Check if YIN needs default initialization
-        call check_yin_defaults()
-      end if
-      
-      ! Compute critical mesh indices before calling CKMESH
-      call ISLIT(XIN)   ! Computes ILE and ITE from XIN array
-      call JSLIT(YIN)   ! Computes JLOW and JUP from YIN array
-      
-      ! Process mesh
-      call CKMESH()
-      
-      ! Handle mesh refinement
-      if (ICUT > 0) then
-        IREF = -1
-        call CUTOUT()
-      end if
-      
-      ! Handle restart data if PSTART=2
-      if (PSTART == 2) then
-        call LOADP()
-      end if
-      
-      ! Scale physical variables
-      call SCALE()
-        ! Initialize solution based on PSTART
-      call GUESSP()
-      
-      ! Case setup completed - return to main program to continue solution
-      write(UNIT_LOG, '(A)') 'Case setup completed - ready for solution sequence'
-      return  ! Return to main program for full solution workflow
-      
-    end do case_loop
+    end if
+    
+    ! Set AK=0 for physical coordinates
+    if (PHYS) AK = 0.0
+    
+    ! Set IMAX and JMAX to the actual mesh size from input (not maximum array dimension)
+    ! This is critical - original TSFoil sets IMAX = IMAXI in READIN
+    IMAX = IMAXI
+    JMAX = JMAXI
+    write(UNIT_LOG, '(A,I0,A,I0)') 'Mesh size set to IMAX=', IMAX, ', JMAX=', JMAX
+
+    ! Handle mesh generation
+    if (AMESH) then
+      call AYMESH()
+    else
+      ! Check if YIN needs default initialization
+      call check_yin_defaults()
+    end if
+    
+    ! Compute critical mesh indices before calling CKMESH
+    call ISLIT(XIN)   ! Computes ILE and ITE from XIN array
+    call JSLIT(YIN)   ! Computes JLOW and JUP from YIN array
+    
+    ! Process mesh
+    call CKMESH()
+    
+    ! Handle mesh refinement
+    if (ICUT > 0) then
+      IREF = -1
+      call CUTOUT()
+    end if
+    
+    ! Handle restart data if PSTART=2
+    if (PSTART == 2) then
+      call LOADP()
+    end if
+    
+    ! Initialize solution based on PSTART
+    call GUESSP()
+    
+    ! Case setup completed - return to main program for solution sequence
+    write(UNIT_LOG, '(A)') 'Case setup completed - ready for solution sequence'
+    return
     
 999 continue
+    ! End of file - set FINISHED title
+    TITLE = 'FINISHED'
     return
   end subroutine READIN
 
