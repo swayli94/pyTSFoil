@@ -130,12 +130,12 @@ contains
     if (ICUT > 0) then
       IREF = -1
       return
-    end if
-
+    end if    
+    
     ! Add extra X-point ahead of airfoil if needed
     if (mod(ITE - IMIN + 1, 2) == 0) then
       LP = IMAX + IMIN + 1
-      do I = IMIN, IMAX
+      do I = IMAX, IMIN, -1
         L = LP - I
         XIN(L) = XIN(L - 1)
       end do
@@ -148,12 +148,12 @@ contains
     if (mod(IMAX - ITE + 1, 2) == 0) then
       IMAX = IMAX + 1
       XIN(IMAX) = 2.0 * XIN(IMAX - 1) - XIN(IMAX - 2)
-    end if
-
+    end if    
+    
     ! Add extra Y-point below slit if needed
     if (mod(JLOW - JMIN, 2) == 0) then
       LP = JMAX + JMIN + 1
-      do J = JMIN, JMAX
+      do J = JMAX, JMIN, -1
         L = LP - J
         YIN(L) = YIN(L - 1)
       end do
@@ -337,40 +337,39 @@ contains
         P(J+1,I) = P(J,I) + PT(J)*(P(J+2,I)-P(J,I))
       end do
     end do
-  end subroutine REFINE
-
+  end subroutine REFINE  
+  
   ! Compute ILE and ITE for mesh X array
   subroutine ISLIT(X_MESH)
-    use common_data, only: IMIN, ILE, ITE
+    use common_data, only: IMIN, IMAX, ILE, ITE
     implicit none
     real, intent(in) :: X_MESH(:)
     integer :: i
 
-    i = IMIN - 1
-    do
+    ! Find first point where X >= 0.0 (leading edge)
+    i = IMIN
+    do while (i <= IMAX .and. X_MESH(i) < 0.0)
       i = i + 1
-      if (X_MESH(i) >= 0.0) exit
     end do
     ILE = i
 
-    do
+    ! Find first point where X > 1.0 (trailing edge)
+    do while (i <= IMAX .and. X_MESH(i) <= 1.0)
       i = i + 1
-      if (X_MESH(i) > 1.0) exit
     end do
     ITE = i - 1
   end subroutine ISLIT
 
   ! Compute JLOW and JUP for mesh Y array
   subroutine JSLIT(Y_MESH)
-    use common_data, only: JMIN, JLOW, JUP
+    use common_data, only: JMIN, JMAX, JLOW, JUP
     implicit none
     real, intent(in) :: Y_MESH(:)
     integer :: j
 
-    j = JMIN - 1
-    do
+    j = JMIN
+    do while (j <= JMAX .and. Y_MESH(j) < 0.0)
       j = j + 1
-      if (Y_MESH(j) >= 0.0) exit
     end do
     JLOW = j - 1
     JUP  = j

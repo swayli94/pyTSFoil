@@ -4,7 +4,7 @@
 module solver_module
   use common_data
   implicit none
-  public :: DIFCOE, SETBC, BCEND
+  public :: DIFCOE, SETBC, BCEND, FARFLD
 
 contains
 
@@ -159,5 +159,197 @@ contains
     end do
 
   end subroutine BCEND
+
+  ! Compute far-field boundary conditions for outer boundaries
+  subroutine FARFLD()
+    use common_data, only: AK, RTK, XIN, YIN, IMIN, IMAX, JMIN, JMAX
+    use common_data, only: DTOP, DBOT, DUP, DDOWN, VTOP, VBOT, VUP, VDOWN
+    use common_data, only: BCTYPE, F, H, POR, PI, TWOPI, HALFPI
+    use common_data, only: B, ALPHA0, ALPHA1, ALPHA2, BETA0, BETA1, BETA2
+    use common_data, only: PSI0, PSI1, PSI2, OMEGA0, OMEGA1, OMEGA2, JET
+    use common_data, only: XSING, FHINV, RTKPOR
+    implicit none
+    integer :: I, J    real :: YT, YB, XUP, XDN, YT2, YB2, XUP2, XDN2, COEF1, COEF2
+    real :: XP, XP2, YJ, YJ2, Q, ARG0, ARG1, ARG2
+    real :: EXARG0, EXARG1, EXARG2, TERM
+
+    ! Test for supersonic or subsonic freestream
+    if (AK <= 0.0) then
+      ! Supersonic freestream
+      if (F /= 0.0 .and. H /= 0.0) then
+        FHINV = 1.0 / (F * H)
+      else
+        FHINV = 1.0
+      end if
+      ! For supersonic case, upstream boundary conditions correspond to uniform
+      ! undisturbed flow. Downstream boundary required to be supersonic.
+      ! Top and bottom boundaries use simple wave solution.
+      return
+    end if
+
+    ! Subsonic freestream
+    ! Functional form of the potential on outer boundaries is prescribed.
+    ! Equations represent asymptotic form for doublet and vortex in free air
+    ! and wind tunnel environment. Doublet and vortex are located at X=XSING, Y=0.
+
+    ! Set location of singular vortex and doublet
+    XSING = 0.5
+
+    ! Set default values for tunnel wall parameters
+    B = 0.0
+    OMEGA0 = 1.0
+    OMEGA1 = 1.0
+    OMEGA2 = 1.0
+    JET = 0.0
+    PSI0 = 1.0
+    PSI1 = 1.0
+    PSI2 = 1.0
+
+    ! Branch to appropriate formulas depending on BCTYPE
+    select case (BCTYPE)
+    case (1)
+      ! BCTYPE = 1: FREE AIR BOUNDARY CONDITION
+      ! Set boundary ordinates
+      YT = YIN(JMAX) * RTK
+      YB = YIN(JMIN) * RTK
+      XU = XIN(IMIN) - XSING
+      XD = XIN(IMAX) - XSING
+      YT2 = YT * YT
+      YB2 = YB * YB
+      XU2 = XU * XU
+      XD2 = XD * XD
+      COEF1 = 1.0 / TWOPI
+      COEF2 = 1.0 / (TWOPI * RTK)
+
+      ! Compute doublet and vortex terms on top and bottom boundaries
+      do I = IMIN, IMAX
+        XP = XIN(I) - XSING
+        XP2 = XP * XP
+        DTOP(I) = XP / (XP2 + YT2) * COEF2
+        DBOT(I) = XP / (XP2 + YB2) * COEF2
+        VTOP(I) = -atan2(YT, XP) * COEF1
+        VBOT(I) = -(atan2(YB, XP) + TWOPI) * COEF1
+      end do
+
+      ! Compute doublet and vortex terms on upstream and downstream boundaries
+      do J = JMIN, JMAX
+        YJ = YIN(J) * RTK
+        YJ2 = YJ * YJ
+        DUP(J) = XU / (XU2 + YJ2) * COEF2
+        DDOWN(J) = XD / (XD2 + YJ2) * COEF2
+        Q = PI - sign(PI, YJ)
+        VUP(J) = -(atan2(YJ, XU) + Q) * COEF1
+        VDOWN(J) = -(atan2(YJ, XD) + Q) * COEF1
+      end do
+
+      if (AK > 0.0) then
+        ! call ANGLE() ! This may need to be implemented if needed
+      end if
+
+    case (2)
+      ! BCTYPE = 2: SOLID WALL TUNNEL
+      POR = 0.0
+      B = 0.5
+      ALPHA0 = PI
+      ALPHA1 = PI
+      ALPHA2 = PI
+      BETA0 = HALFPI
+      BETA1 = HALFPI
+      BETA2 = HALFPI
+      call compute_tunnel_conditions()
+
+    case (3)
+      ! BCTYPE = 3: FREE JET
+      F = 0.0
+      RTKPOR = 0.0
+      ALPHA0 = HALFPI
+      ALPHA1 = HALFPI
+      ALPHA2 = HALFPI
+      JET = 0.5
+      BETA0 = 0.0
+      BETA1 = 0.0
+      BETA2 = 0.0
+      call compute_tunnel_conditions()
+
+    case (4)
+      ! BCTYPE = 4: IDEAL SLOTTED WALL
+      RTKPOR = 0.0
+      FHINV = 1.0 / (F * H)
+      ! SET CONSTANTS FOR DOUBLET SOLUTION
+      ! call DROOTS() ! Would need to implement
+      ! SET CONSTANTS FOR VORTEX SOLUTION
+      JET = 0.5
+      ! call VROOTS() ! Would need to implement
+      call compute_tunnel_conditions()
+
+    case (5)
+      ! BCTYPE = 5: IDEAL PERFORATED/POROUS WALL
+      F = 0.0
+      RTKPOR = RTK / POR
+      ALPHA0 = HALFPI - atan(-RTKPOR)
+      ALPHA1 = ALPHA0
+      ALPHA2 = ALPHA0
+      BETA0 = atan(RTKPOR)
+      BETA1 = BETA0
+      BETA2 = BETA1
+      call compute_tunnel_conditions()
+
+    case (6)
+      ! BCTYPE = 6: GENERAL HOMOGENEOUS WALL BOUNDARY CONDITION
+      ! This boundary condition is not operable yet in finite difference subroutines
+      write(15, '(A)') 'ABNORMAL STOP IN SUBROUTINE FARFLD'
+      write(15, '(A)') 'BCTYPE=6 IS NOT USEABLE'
+      stop 'FARFLD: BCTYPE=6 is not implemented'
+
+    case default
+      write(15, '(A,I0)') 'FARFLD: Invalid BCTYPE = ', BCTYPE
+      stop 'FARFLD: Invalid BCTYPE'
+    end select
+
+  contains
+
+    subroutine compute_tunnel_conditions()
+      ! Compute functional forms for upstream and downstream boundary conditions
+      ! for doublet and vortex
+      XU = (XIN(IMIN) - XSING) / (RTK * H)
+      XD = (XIN(IMAX) - XSING) / (RTK * H)
+
+      ! Doublet terms
+      COEF1 = 0.5 / AK / H
+      ARG0 = ALPHA0
+      ARG1 = PI - ALPHA1
+      ARG2 = TWOPI - ALPHA2
+      EXARG0 = exp(-ARG0 * XD)
+      EXARG1 = exp(ARG1 * XU)
+      EXARG2 = exp(ARG2 * XU)
+
+      do J = JMIN, JMAX
+        YJ = YIN(J) / H
+        DDOWN(J) = COEF1 * (B + OMEGA0 * cos(YJ * ARG0) * EXARG0)
+        DUP(J) = -COEF1 * ((1.0 - B) * OMEGA1 * cos(YJ * ARG1) * EXARG1 + &
+                            OMEGA2 * cos(YJ * ARG2) * EXARG2)
+      end do
+
+      ! Vortex terms
+      ARG0 = BETA0
+      ARG1 = PI + BETA1
+      ARG2 = PI - BETA2
+      EXARG0 = exp(-ARG0 * XD)
+      EXARG1 = exp(-ARG1 * XD)
+      EXARG2 = exp(ARG2 * XU)
+
+      do J = JMIN, JMAX
+        YJ = YIN(J) / H
+        TERM = YJ
+        if (JET == 0.0) TERM = sin(YJ * ARG0) / ARG0
+        VDOWN(J) = -0.5 * (1.0 - sign(1.0, YJ) + (1.0 - JET) * PSI0 * TERM * EXARG0 + &
+                           PSI1 * sin(YJ * ARG1) * EXARG1 / ARG1)
+        TERM = 0.0
+        if (JET /= 0.0) TERM = JET * YJ / (1.0 + F)
+        VUP(J) = -0.5 * (1.0 - TERM - PSI2 * sin(YJ * ARG2) * EXARG2 / ARG2)
+      end do
+    end subroutine compute_tunnel_conditions
+
+  end subroutine FARFLD
 
 end module solver_module

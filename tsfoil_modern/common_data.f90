@@ -22,11 +22,14 @@ module common_data
   public :: JERROR, BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
   public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, XDIFF, YDIFF
   public :: CJUP, CJUP1, CJLOW, CJLOW1, CYYBUD, CYYBUC, CYYBUU
-  public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC  
+  public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC    
   public :: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
   public :: DIAG, RHS, SUB, SUP
   public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
   public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
+  public :: CLSET, IDLA
+  public :: EPS, WE, NWDGE, REYNLD, WCONST
+  public :: DVERGE, GAM, POR
   public :: initialize_common
   
   ! Mesh indices (from COMMON /COM1/)
@@ -71,9 +74,10 @@ module common_data
   
   ! COM7: boundary extrapolation/coefficient flags
   real :: CJUP, CJUP1, CJLOW, CJLOW1
-  
+
   ! COM8: solver control parameters
   real :: CVERGE, DVERGE, TOL, RSAVE
+  real :: EPS, WE(3)
   integer :: IPRTER, MAXIT, NEX, N_O, NPRINT, NPT
   logical :: WCIRC
   
@@ -159,6 +163,10 @@ module common_data
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
   
+  ! COM34: viscous wedge parameters  
+  integer :: NWDGE
+  real :: REYNLD, WCONST
+  
   ! COM30: general workspace arrays  
   real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
   ! integer :: INP = 15           ! Input file unit number - conflicts with namelist
@@ -169,29 +177,44 @@ module common_data
 contains
 
   subroutine initialize_common(nx, ny)
-    ! Allocates and initializes mesh arrays
+    ! Allocates and initializes mesh arrays to match original TSFOIL dimensions
+    ! Original: P(102,101), X(100), Y(100), XIN(100), YIN(100)
     integer, intent(in) :: nx, ny
     if (allocated(XIN)) deallocate(XIN)
     if (allocated(YIN)) deallocate(YIN)
     if (allocated(P)) deallocate(P)
     if (allocated(X)) deallocate(X)
-    if (allocated(Y)) deallocate(Y)
-    allocate(XIN(nx))
-    allocate(YIN(ny))
-    allocate(P(ny,nx))
-    allocate(X(nx))
-    allocate(Y(ny))
+    if (allocated(Y)) deallocate(Y)    ! Allocate arrays with original TSFOIL dimensions plus room for extra points
+    allocate(XIN(102))    ! Original XIN(100) + room for 2 extra points in CKMESH
+    allocate(YIN(102))    ! Original YIN(100) + room for 2 extra points in CKMESH
+    allocate(P(102,101))  ! Original P(102,101)
+    allocate(X(102))      ! Original X(100) + room for extra points
+    allocate(Y(102))      ! Original Y(100) + room for extra points
     ! Initialize arrays to zero
     P = 0.0
     X = 0.0
-    Y = 0.0
+    Y = 0.0    
     XIN = 0.0
-    YIN = 0.0    ! default initial values
+    YIN = 0.0
+    
+    ! default initial values
     IMIN = 1
-    IMAX = nx
+    IMAX = 100    ! Original X(100) limit, can grow to 102 in CKMESH
     JMIN = 1
-    JMAX = ny
-    AMESH = .false.
+    JMAX = 100    ! Original Y(100) limit, can grow to 102 in CKMESH
+    
+    ! Initialize mesh indices to safe defaults (will be recalculated later)
+    IUP = 2
+    IDOWN = IMAX - 1
+    ILE = IMIN + 5  ! Safe default
+    ITE = IMAX - 5  ! Safe default
+    JUP = (JMAX + JMIN) / 2 + 1  ! Safe default above center
+    JLOW = (JMAX + JMIN) / 2 - 1  ! Safe default below center
+    JTOP = JMAX - 1
+    JBOT = JMIN + 1
+    J1 = JBOT + 1
+    J2 = JTOP - 1
+      AMESH = .false.
     IREF = 0
     ICUT = 0
     KSTEP = 1
@@ -202,6 +225,7 @@ contains
     DELTA = 0.1
     EMACH = 0.8
     PRTFLO = 1
+    PSTART = 1  ! Default to fresh start
     
     ! Initialize airfoil control parameters
     RIGF = 1.0

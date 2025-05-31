@@ -22,14 +22,12 @@ program tsfoil_main
   write(*,'(A)') '         Airfoil Analysis Program              '
   write(*,'(A)') '            Modernized Fortran Version         '
   write(*,'(A)') '================================================='
-  write(*,*)
-
-  ! Initialize data structures
-  call initialize_common(81, 81)  ! Default mesh size
+  write(*,*)  ! Initialize data structures
+  call initialize_common(101, 102)  ! Use original TSFOIL array dimensions
   call initialize_spline(200)
 
-  ! Open input and output files
-  open(unit=5, file='tsfoil.inp', status='old', iostat=case_number)
+  ! Open input and output files  
+  open(unit=2, file='tsfoil.inp', status='old', iostat=case_number)
   if (case_number /= 0) then
     write(*,'(A)') 'Error: Cannot open input file tsfoil.inp'
     stop 1
@@ -39,69 +37,68 @@ program tsfoil_main
   write(15,'(A)') 'TSFOIL Output File'
   write(15,'(A)') '=================='
   write(15,*)
-
-  ! Process cases
-  end_of_cases = .false.
-  case_number = 0
-
-  do while (.not. end_of_cases)
-    ! Read title card
-    read(5, '(A)', end=900) title_card
-    
-    ! Check for end of input
-    if (trim(title_card) == 'END' .or. trim(title_card) == 'FINISHED') then
-      exit
-    end if
-
-    case_number = case_number + 1
-    write(*,'(A,I0,A,A)') 'Processing case ', case_number, ': ', trim(title_card)
-    write(15,'(A,I0,A,A)') 'Case ', case_number, ': ', trim(title_card)
-    write(15,'(A)') repeat('-', 50)
-
-    ! Read input parameters for this case
-    call READIN()
-    
-    if (ABORT1) then
-      write(*,'(A)') 'Input error - skipping case'
-      cycle
-    end if
-
-    ! Generate airfoil geometry
-    call BODY()
-    
-    ! Generate mesh if needed
-    if (AMESH) then
-      call AYMESH()
-    end if
-    
-    ! Check and adjust mesh
-    call CKMESH()
-    
-    ! Initialize solution
-    call GUESSP()
-    
-    ! Set up finite difference coefficients
-    call DIFCOE()
-    
-    ! Solve the flow problem
-    call SOLVE()
-    
-    ! Print results
-    call PRINT()
-    
-    write(*,'(A)') 'Case completed successfully'
-    write(15,*)
-    
-  end do
-
-900 continue
+  ! Call READIN which handles all input processing like the original
+  call READIN()
   
-  write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
-  write(15,'(A,I0,A)') 'Total cases processed: ', case_number
+  ! Continue with complete TSFOIL solution workflow
+  write(*,'(A)') 'Starting TSFOIL solution sequence...'
+  write(15,'(A)') 'TSFOIL Solution Sequence'
+  write(15,'(A)') '========================'
+  
+  ! SCALE: Rescale all physical variables to transonic similarity form
+  write(*,'(A)') 'Scaling variables to similarity form...'
+  call SCALE()
+  
+  ! FARFLD: Set far field boundary conditions
+  write(*,'(A)') 'Setting far-field boundary conditions...'
+  call FARFLD()
+  
+  ! BODY: Compute airfoil geometry and print geometrical information
+  write(*,'(A)') 'Computing airfoil geometry...'
+  call BODY()
+  
+  ! DIFCOE: Compute difference coefficients in field
+  write(*,'(A)') 'Computing finite difference coefficients...'
+  call DIFCOE()
+  
+  ! SETBC: Set boundary conditions
+  write(*,'(A)') 'Setting boundary conditions...'
+  call SETBC(0)
+  
+  ! SOLVE: Execute main relaxation solution
+  write(*,'(A)') 'Solving transonic flow equations...'
+  call SOLVE()
+  
+  ! Check for mesh refinement or final results
+  if (IREF > 0 .and. .not. ABORT1) then
+    write(*,'(A)') 'Printing intermediate results...'
+    call PRINT1()
+    
+    if (.not. ABORT1) then
+      write(*,'(A)') 'Refining mesh and continuing...'
+      call REFINE()
+      call DIFCOE()
+      call SETBC(0) 
+      call SOLVE()
+    end if
+  end if
+  
+  ! Print final results
+  write(*,'(A)') 'Printing final results...'
+  call PRINT()
+  
+  ! Additional mesh refinement if requested
+  if (IREF > 0) then
+    call REFINE()
+    call REFINE()
+  end if
+  
+  write(*,'(A)') 'TSFOIL analysis completed successfully'
+  write(15,'(A)') 'Analysis completed successfully'
   
   ! Cleanup
   call cleanup_spline()
-  close(5)
+  close(2)
   close(15)
   
   write(*,'(A)') 'Program completed normally'

@@ -3,10 +3,11 @@
 
 module io_module
   use common_data
+  use mesh_module, only: ISLIT, JSLIT
   implicit none
   
   ! File unit numbers for different output files
-  integer, parameter :: UNIT_INPUT = 5          ! Standard input
+  integer, parameter :: UNIT_INPUT = 2          ! Input file (like original iread=2)
   integer, parameter :: UNIT_OUTPUT = 6         ! Standard output  
   integer, parameter :: UNIT_LOG = 10           ! Main log file (tsfoil.log)
   integer, parameter :: UNIT_ECHO = 11          ! Input echo file (tsfoil.ech)
@@ -17,13 +18,16 @@ module io_module
   integer, parameter :: UNIT_WALL = 16          ! Wall data file (tsfoil.wal)
   integer, parameter :: UNIT_RESTART = 17       ! Restart file (tsfoil.rst)
   
-  ! Define a simplified namelist for the variables actually available in common_data
-  namelist /TSFOIL_INP/ AK, ALPHA, DUB, PHYS, &
-                        ICUT, AMESH, &
-                        DELTA, EMACH, PRTFLO, SIMDEF, &
-                        F, H, &
-                        XIN, YIN, &
-                        BCFOIL, NL, NU, PSTART
+  ! Complete namelist matching the original /INP/ namelist with variables available 
+  ! in common_data  
+  namelist /INP/ AK, ALPHA, AMESH, BCFOIL, BCTYPE, CLSET, &
+                 CVERGE, DELTA, DVERGE, EMACH, EPS, F, &
+                 FCR, GAM, H, ICUT, IMAXI, IMIN, &
+                 IPRTER, JMAXI, JMIN, KUTTA, MAXIT, NL, &
+                 NU, NWDGE, PHYS, POR, PRTFLO, PSAVE, &
+                 PSTART, REYNLD, RIGF, SIMDEF, WCONST, WE, &
+                 XIN, YIN, XL, YL, XU, YU, &
+                 IFLAP, DELFLP, FLPLOC, IDLA
   
   public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP
   public :: open_output_files, close_output_files
@@ -99,8 +103,10 @@ contains
       if (title_card(1:8) == FINISHED) then
         write(UNIT_LOG, '(A)') 'End of cases detected'
         exit case_loop
-      end if      ! Read namelist input for this case
-      read(UNIT_INPUT, nml=TSFOIL_INP, iostat=ios)
+      end if
+      
+      ! Read namelist input for this case
+      read(UNIT_INPUT, nml=INP, iostat=ios)
       if (ios /= 0) then
         write(UNIT_LOG, '(A,I0)') 'Error reading namelist: ', ios
         call INPERR(1)
@@ -125,6 +131,10 @@ contains
         call check_yin_defaults()
       end if
       
+      ! Compute critical mesh indices before calling CKMESH
+      call ISLIT(XIN)   ! Computes ILE and ITE from XIN array
+      call JSLIT(YIN)   ! Computes JLOW and JUP from YIN array
+      
       ! Process mesh
       call CKMESH()
       
@@ -141,14 +151,12 @@ contains
       
       ! Scale physical variables
       call SCALE()
-      
-      ! Initialize solution based on PSTART
+        ! Initialize solution based on PSTART
       call GUESSP()
       
-      ! Continue with solution process...
-      ! (This would be handled by the main program loop)
-      write(UNIT_LOG, '(A)') 'Case setup completed'
-      exit case_loop  ! For now, handle one case at a time
+      ! Case setup completed - return to main program to continue solution
+      write(UNIT_LOG, '(A)') 'Case setup completed - ready for solution sequence'
+      return  ! Return to main program for full solution workflow
       
     end do case_loop
     
