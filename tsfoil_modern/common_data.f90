@@ -4,11 +4,22 @@
 module common_data
   implicit none
   private
-  
   public :: IMIN, IMAX, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
   public :: AK, ALPHA, DUB, GAM1, RTK, PHYS
   public :: IREF, ICUT, KSTEP, ABORT1
   public :: XIN, YIN, AMESH
+  public :: P, X, Y  ! Main solution and coordinate arrays
+  public :: FL, FXL, FU, FXU, CAMBER, THICK, XFOIL, VOL, IFOIL
+  public :: BCFOIL, NL, NU, XL, XU, YL, YU, PERCENT, CHORD
+  public :: SIMDEF, DELTA, EMACH, PRTFLO
+  public :: CDFACT, CLFACT, CMFACT, CPFACT, YFACT, VFACT
+  public :: F, H, HALFPI, PI, RTKPOR, TWOPI
+  public :: ALPHAO, CLOLD, DELTAO, DUBO, EMACHO, VOLO
+  public :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
+  public :: PSAVE, TITLE, TITLEO, XOLD, YOLD
+  public :: XMID, YMID  ! Additional public declarations for io_module and other modules
+  public :: JERROR, BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
+  public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
   
   ! Mesh indices (from COMMON /COM1/)
   integer :: IMIN, IMAX       ! grid i-range
@@ -18,6 +29,10 @@ module common_data
   integer :: JUP, JLOW        ! upper/lower surface j-indices
   integer :: JTOP, JBOT       ! far-field top/bottom j-indices
   integer :: J1, J2           ! auxiliary indices
+
+  ! Main solution arrays
+  real, allocatable :: P(:,:)    ! Potential solution array
+  real, allocatable :: X(:), Y(:) ! Coordinate arrays
 
   ! Flow parameters (from COMMON /COM2/ and logical PHYS)
   real :: AK       ! freestream similarity parameter
@@ -56,7 +71,7 @@ module common_data
   
   ! COM9: airfoil definition flags
   integer :: BCFOIL, NL, NU
-  real :: XL(100), XU(100), PERCENT, CHORD
+  real :: XL(100), XU(100), YL(100), YU(100), PERCENT, CHORD
   
   ! COM10: free-stream/tunnel arrays
   real :: YFREE(100), YTUN(100), GAM
@@ -69,8 +84,7 @@ module common_data
   integer :: PSTART
   character(len=20) :: TITLE, TITLEO
   real :: XOLD(100), YOLD(100)
-  
-  ! COM12: wall/tunnel constants
+    ! COM12: wall/tunnel constants  
   real :: F, H, HALFPI, PI, RTKPOR, TWOPI
   
   ! COM13: coefficient scaling factors
@@ -125,8 +139,11 @@ module common_data
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
   
-  ! COM30: general workspace arrays
-  real :: XI(100), ARG(100), REST(204)
+  ! COM30: general workspace arrays  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
+  ! integer :: INP = 15           ! Input file unit number - conflicts with namelist
+  integer :: JLIN(3)           ! Line indices for printing
+  character(len=1) :: IPC(100) ! Flow regime indicators
+  real :: VT(100,2)            ! Velocity time history
 
 contains
 
@@ -135,9 +152,20 @@ contains
     integer, intent(in) :: nx, ny
     if (allocated(XIN)) deallocate(XIN)
     if (allocated(YIN)) deallocate(YIN)
+    if (allocated(P)) deallocate(P)
+    if (allocated(X)) deallocate(X)
+    if (allocated(Y)) deallocate(Y)
     allocate(XIN(nx))
     allocate(YIN(ny))
-    ! default initial values
+    allocate(P(ny,nx))
+    allocate(X(nx))
+    allocate(Y(ny))
+    ! Initialize arrays to zero
+    P = 0.0
+    X = 0.0
+    Y = 0.0
+    XIN = 0.0
+    YIN = 0.0    ! default initial values
     IMIN = 1
     IMAX = nx
     JMIN = 1
@@ -147,6 +175,20 @@ contains
     ICUT = 0
     KSTEP = 1
     ABORT1 = .false.
+    PHYS = .true.
+    SIMDEF = 1
+    BCFOIL = 1
+    DELTA = 0.1
+    EMACH = 0.8
+    PRTFLO = 1
+    
+    ! Initialize constants    
+    PI = 3.1415926535897932384626
+    HALFPI = PI * 0.5
+    TWOPI = PI * 2.0
+    RTKPOR = 0.0
+    F = 0.0
+    H = 0.0
   end subroutine initialize_common
 
 end module common_data

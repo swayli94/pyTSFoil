@@ -19,7 +19,7 @@ contains
     real :: A0,A1,A2,A3,A4,A5,A6,A7
     real :: CT1,CT2,CT3,CF1,CF2,CF3
     real :: EX,EX2,EX22,EX72,TEX2,TEX7
-    real :: DX,FACT,DETA,C,C1,C2,C3
+    real :: DX,FACT,DETA,C,C1_LOCAL,C2,C3
     real :: TOOPI
     real :: BT1,BHT1,XHT1,T1
     real :: BT2,BHT2,BHT3,T2,T12,BT12,TBT2
@@ -106,12 +106,12 @@ contains
     ! Build Y mesh
     JM2 = JMAXI; JMA = JM2/2
     if (BCTYPE == 1) then
-      C1 = CF1; C2 = CF2; C3 = CF3
+      C1_LOCAL = CF1; C2 = CF2; C3 = CF3
     else
-      C1 = CT1; C2 = CT2; C3 = CT3
+      C1_LOCAL = CT1; C2 = CT2; C3 = CT3
     end if
-    DETA = 1.0/(JMA*C1)
-    if (BCTYPE == 1) DETA = 1.0/((JMA+1.0)*C1)
+    DETA = 1.0/(JMA*C1_LOCAL)
+    if (BCTYPE == 1) DETA = 1.0/((JMA+1.0)*C1_LOCAL)
     C = C3/(tan(HALFPI*DETA*JMA))**C2
     do I = 1, JMA
       J = JMA + I
@@ -256,12 +256,12 @@ contains
       return
     end if
   end subroutine CUTOUT
-
+  
   ! Refine mesh and interpolate solution onto finer grid
   subroutine REFINE()
     use common_data, only: XIN, YIN, XMID, YMID, P, IMIN, IMAX, JMIN, JMAX, ILE, ITE, JLOW, JUP, IREF, ICUT
     implicit none
-    integer :: I, J, K, IMAXO, JMAXO, JE, JST, IM2, JM2
+    integer :: I, J, K, IMAX_OLD, JMAX_OLD, JE, JST, IM2, JM2
     real :: PT(100)
 
     ! Save original limits
@@ -340,37 +340,37 @@ contains
   end subroutine REFINE
 
   ! Compute ILE and ITE for mesh X array
-  subroutine ISLIT(X)
+  subroutine ISLIT(X_MESH)
     use common_data, only: IMIN, ILE, ITE
     implicit none
-    real, intent(in) :: X(:)
+    real, intent(in) :: X_MESH(:)
     integer :: i
 
     i = IMIN - 1
     do
       i = i + 1
-      if (X(i) >= 0.0) exit
+      if (X_MESH(i) >= 0.0) exit
     end do
     ILE = i
 
     do
       i = i + 1
-      if (X(i) > 1.0) exit
+      if (X_MESH(i) > 1.0) exit
     end do
     ITE = i - 1
   end subroutine ISLIT
 
   ! Compute JLOW and JUP for mesh Y array
-  subroutine JSLIT(Y)
+  subroutine JSLIT(Y_MESH)
     use common_data, only: JMIN, JLOW, JUP
     implicit none
-    real, intent(in) :: Y(:)
+    real, intent(in) :: Y_MESH(:)
     integer :: j
 
     j = JMIN - 1
     do
       j = j + 1
-      if (Y(j) >= 0.0) exit
+      if (Y_MESH(j) >= 0.0) exit
     end do
     JLOW = j - 1
     JUP  = j

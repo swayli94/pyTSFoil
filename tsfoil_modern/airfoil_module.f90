@@ -19,7 +19,7 @@ contains
     implicit none
     integer :: I, IC, IFP, IERR
     real :: Z, RTZ, Z2, Z3, Z4
-    real :: DELINV, DY1, DY2, XP, YP
+    real :: DELINV, DY1, DY2, XP, YP, DYP
     real :: VOLU, VOLL, DFLAP, SDFLAP, DELY
 
     ! Number of points on airfoil
@@ -88,14 +88,14 @@ contains
       if (PHYS) DELINV = 1.0/DELTA
       ! Upper surface
       DY1 = (YU(2) - YU(1))/(XU(2) - XU(1))
-      DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))
+      DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))      
       call SPLN1(XU, YU, NU)
       IC = 0
       do I = ILE, ITE
         IC = IC + 1
         XP = XIN(I)
         XFOIL(IC) = XP
-        call SPLN1X(XU, YU, NU)
+        call SPLN1X(XU, YU, NU, XP, YP, DYP)
         FU(IC) = YP*DELINV
         FXU(IC) = DYP*DELINV
       end do
@@ -106,7 +106,8 @@ contains
       IC = 0
       do I = ILE, ITE
         IC = IC + 1
-        call SPLN1X(XL, YL, NL)
+        XP = XIN(I)
+        call SPLN1X(XL, YL, NL, XP, YP, DYP)
         FL(IC) = YP*DELINV
         FXL(IC) = DYP*DELINV
       end do
@@ -123,18 +124,19 @@ contains
         XP = XIN(I)
         XFOIL(IC) = XP
         ! Assuming upper surface loaded via common arrays
-        call SPLN1X(XU, YU, NU)
+        call SPLN1X(XU, YU, NU, XP, YP, DYP)
         FU(IC) = YP*DELINV
         FXU(IC) = DYP*DELINV
       end do
       if (FSYM == 0) then
+        
         NL = NU
         do IC = 1, NL
           FL(IC) = -FU(IC)
           FXL(IC) = -FXU(IC)
         end do
       else
-        call SPLN1 and SPLN1X for lower surface as above
+        ! call SPLN1 and SPLN1X for lower surface as above
       end if
 
     end select
