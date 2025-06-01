@@ -29,10 +29,12 @@ module common_data
   public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
   public :: CLSET, IDLA
   public :: EPS, WE, NWDGE, REYNLD, WCONST, WSLP, WI
+  public :: XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
   public :: DVERGE, GAM, POR, FHINV, WCIRC
   public :: YFREE, YTUN, JMXF, JMXT
   public :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
   public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
+  public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
@@ -172,6 +174,12 @@ module common_data
   integer :: NWDGE
   real :: REYNLD, WCONST
   real :: WSLP(100,2)  ! Viscous wedge slopes
+  real :: XSHK(2,3)    ! Shock x-locations
+  real :: THAMAX(2,3)  ! Maximum wedge angles  
+  real :: AM1(2,3)     ! Mach numbers upstream of shocks
+  real :: ZETA(2,3)    ! Wedge length scales
+  integer :: NVWPRT(2) ! Number of viscous wedge prints
+  integer :: NISHK     ! Number of shocks
   
   ! COM30: general workspace arrays  
   real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
@@ -256,6 +264,12 @@ contains
     REYNLD = 0.0
     WCONST = 4.0
     WSLP = 0.0
+    XSHK = 0.0
+    THAMAX = 0.0
+    AM1 = 0.0
+    ZETA = 0.0
+    NVWPRT = 0
+    NISHK = 0
     
     ! Initialize constants    
     PI = 3.1415926535897932384626

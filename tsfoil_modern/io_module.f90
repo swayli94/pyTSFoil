@@ -77,13 +77,16 @@ contains
 
       if (IN_FILENAME == '') then
         IN_FILENAME = 'tsfoil.inp'  ! Default input file name
-      end if
-
+      end if      
+      
       open(unit=UNIT_INPUT, file=IN_FILENAME, status='old')
       
       call open_output_files()
-      call ECHINP()
+      
+      ! Note: ECHINP call removed - should be called from main program if desired
+      ! like in original (where it was commented out)
       first_call = .false.
+
     end if
 
 5   continue
@@ -266,49 +269,64 @@ contains
 999 stop
   end subroutine READIN
   
-  ! Convert physical variables to similarity variables
   subroutine SCALE()
+!
+!                  SUBROUTINE SCALES PHYSICAL VARIABLES TO TRANSONIC
+!                  VARIABLES.
+!                  IF PHYS = .TRUE., ALL INPUT/OUTPUT QUANTITIES ARE IN
+!                  PHYSICAL UNITS NORMALIZED BY FREESTREAM VALUES AND
+!                  AIRFOIL CHORD. THIS SUBROUTINE THEN SCALES THE
+!                  QUANTITIES TO TRANSONIC VARIABLES BY THE FOLLOWING
+!                  CONVENTION
+!                       SIMDEF = 1  COLE SCALING
+!                       SIMDEF = 2  SPREITER SCALING
+!                       SIMDEF = 3  KRUPP SCALING
+!                       SIMDEF = 4  USER CHOICE
+!                  IF PHYS = .FALSE., INPUT IS ALREADY IN SCALED
+!                  VARIABLES AND NO FURTHER SCALING IS DONE.
+!                  CALLED BY - TSFOIL.
+!
     use common_data, only: PHYS, DELTA, EMACH, SIMDEF
     use common_data, only: AK, ALPHA, GAM1, RTK, YFACT, CPFACT, CLFACT, CDFACT, CMFACT, VFACT
     use common_data, only: YIN, YOLD, JMIN, JMAX, JMINO, JMAXO, PSTART
     use common_data, only: H, POR, SONVEL, CPSTAR, DELRT2, EMROOT
     implicit none
-    real :: BETA, DELRT1
+    real :: EMACH2, BETA, DELRT1
     real :: YFACIV
     integer :: J
 
     if (.not. PHYS) then
-      ! PHYS = .FALSE.  NO SCALING
+!                  PHYS = .FALSE.  NO SCALING
       CPFACT = 1.0
       CDFACT = 1.0
       CLFACT = 1.0
       CMFACT = 1.0
       YFACT = 1.0
       VFACT = 1.0
-      write(UNIT_LOG,'(A)') 'Using non-physical (similarity) variables'
       goto 600
     end if
 
-    ! PHYS = .TRUE.  COMPUTE CONSTANTS
-    BETA = 1.0 - EMACH**2
+!                  PHYS = .TRUE.  COMPUTE CONSTANTS
+    EMACH2 = EMACH*EMACH
+    BETA = 1.0 - EMACH2
     DELRT1 = DELTA**(1.0/3.0)
     DELRT2 = DELTA**(2.0/3.0)
 
-    ! BRANCH TO APPROPRIATE SCALING
-    select case (SIMDEF)
-    case (1)
-      ! SIMDEF = 1: COLE SCALING
+!                  BRANCH TO APPROPRIATE SCALING
+    if (SIMDEF == 1) then
+!                  SIMDEF = 1
+!                  COLE SCALING
       AK = BETA / DELRT2
       YFACT = 1.0 / DELRT1
       CPFACT = DELRT2
       CLFACT = DELRT2
-      CMFACT = DELRT2
       CDFACT = DELRT2 * DELTA
+      CMFACT = DELRT2
       VFACT = DELTA * 57.295779
-      write(UNIT_LOG,'(A)') 'Using Cole scaling'
-
-    case (2)
-      ! SIMDEF = 2: SPREITER SCALING
+      goto 500
+    else if (SIMDEF == 2) then
+!                  SIMDEF = 2
+!                  SPREITER SCALING
       EMROOT = EMACH**(2.0/3.0)
       AK = BETA / (DELRT2 * EMROOT * EMROOT)
       YFACT = 1.0 / (DELRT1 * EMROOT)
@@ -317,31 +335,30 @@ contains
       CMFACT = CPFACT
       CDFACT = CPFACT * DELTA
       VFACT = DELTA * 57.295779
-      write(UNIT_LOG,'(A)') 'Using Spreiter scaling'
-
-    case (3)
-      ! SIMDEF = 3: KRUPP SCALING
+      goto 500
+    else if (SIMDEF == 3) then
+!                  SIMDEF = 3
+!                  KRUPP SCALING
       AK = BETA / (DELRT2 * EMACH)
-      YFACT = 1.0 / (DELRT1 * sqrt(EMACH))
+      YFACT = 1.0 / (DELRT1 * EMACH**0.5)
       CPFACT = DELRT2 / (EMACH**0.75)
       CLFACT = CPFACT
       CMFACT = CPFACT
       CDFACT = CPFACT * DELTA
       VFACT = DELTA * 57.295779
-      write(UNIT_LOG,'(A)') 'Using Krupp scaling'
+      goto 500
+    else if (SIMDEF == 4) then
+!                  SIMDEF = 4
+!                  THIS ADDRESS IS INACTIVE
+!                  USER MAY INSERT SCALING OF OWN CHOICE
+!                  DEFINITION FOR LOCAL MACH NUMBER MUST BE ADJUSTED
+!                  IN EMACH1.
+      write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H SIMDEF=4 IS NOT USEABLE)')
+      stop
+    end if
 
-    case (4)
-      ! SIMDEF = 4: USER SCALING - NOT USEABLE
-      write(UNIT_OUTPUT,'(A)') '1ABNORMAL STOP IN SUBROUTINE SCALE'
-      write(UNIT_OUTPUT,'(A)') ' SIMDEF=4 IS NOT USEABLE'
-      stop 'SIMDEF=4 is not useable'
-
-    case default
-      write(UNIT_LOG,'(A,I0)') 'ERROR: Unsupported SIMDEF = ', SIMDEF
-      stop 'Unsupported SIMDEF'
-    end select
-
-    ! SCALE Y MESH
+500 continue
+!                  SCALE Y MESH
     YFACIV = 1.0 / YFACT
     do J = JMIN, JMAX
       YIN(J) = YIN(J) * YFACIV
@@ -353,22 +370,20 @@ contains
       end do
     end if
 
-    ! SCALE TUNNEL PARAMETERS
+!                  SCALE TUNNEL PARAMETERS
     H = H / YFACT
     POR = POR * YFACT
     write(UNIT_OUTPUT,'(//10X,11HSCALED POR=,F10.5)') POR
 
-    ! SCALE ANGLE OF ATTACK
+!                  SCALE ANGLE OF ATTACK
     ALPHA = ALPHA / VFACT
 
 600 continue
-    ! CHECK VALUE OF AK FOR DEFAULT.
+!                  CHECK VALUE OF AK FOR DEFAULT.
     if (AK == 0.0) call INPERR(7)
-    
-    ! COMPUTE SQUARE ROOT OF AK
+!                  COMPUTE SQUARE ROOT OF AK
     RTK = sqrt(abs(AK))
-    
-    ! COMPUTE SONIC VELOCITY
+!                  COMPUTE SONIC VELOCITY
     if (abs(GAM1) <= 0.0001) then
       SONVEL = 1.0
       CPSTAR = 0.0
@@ -377,37 +392,36 @@ contains
     
     SONVEL = AK / GAM1
     CPSTAR = -2.0 * SONVEL * CPFACT
+    return
 
-    ! Log scaling parameters to main log file
-    write(UNIT_LOG,'(A)') 'Scaling parameters computed:'
-    write(UNIT_LOG,'(A,F10.6)') '  AK = ', AK
-    write(UNIT_LOG,'(A,F10.6)') '  RTK = ', RTK
-    write(UNIT_LOG,'(A,F10.6)') '  YFACT = ', YFACT
-    write(UNIT_LOG,'(A,F10.6)') '  CPFACT = ', CPFACT
-    write(UNIT_LOG,'(A,F10.6)') '  CLFACT = ', CLFACT
-    write(UNIT_LOG,'(A,F10.6)') '  CMFACT = ', CMFACT
-    write(UNIT_LOG,'(A,F10.6)') '  CDFACT = ', CDFACT
-    write(UNIT_LOG,'(A,F10.6)') '  VFACT = ', VFACT
-    write(UNIT_LOG,'(A,F10.6)') '  SONVEL = ', SONVEL
-    write(UNIT_LOG,'(A,F10.6)') '  CPSTAR = ', CPSTAR
-
-  end subroutine SCALE
-
-  ! Echo input cards for logging to input echo file
+  end subroutine SCALE  
+  
+  ! Echo input cards for logging - exactly like original ECHINP
+  ! Prints input cards used for run (called by - TSFOIL main program)
+  ! NOTE: This should be called ONCE before any case processing,
+  ! not from within READIN, to echo the entire input file
   subroutine ECHINP()
-    use common_data, only: AMESH, SIMDEF, EMACH, DELTA, BCFOIL, BCTYPE
     implicit none
+    character(len=80) :: CRD  ! Input card buffer (20A4 = 80 characters)
+    integer :: ios
     
-    write(UNIT_ECHO,'(A)') 'Input parameters:'
-    write(UNIT_ECHO,'(A,L1)') '  AMESH = ', AMESH
-    write(UNIT_ECHO,'(A,I0)') '  SIMDEF = ', SIMDEF
-    write(UNIT_ECHO,'(A,F7.3)') '  EMACH = ', EMACH
-    write(UNIT_ECHO,'(A,F7.3)') '  DELTA = ', DELTA
-    write(UNIT_ECHO,'(A,I4)') '  BCFOIL = ', BCFOIL
-    write(UNIT_ECHO,'(A,I4)') '  BCTYPE = ', BCTYPE
+    ! Write form feed to output file (1H1 format)
+    write(UNIT_OUTPUT,'(A1)') char(12)  ! Form feed character equivalent to 1H1
     
-    ! Also write to main log
-    write(UNIT_LOG,'(A)') 'Input parameters echoed to tsfoil.ech'
+10  continue
+    ! Read input card from unit 5 (input file) 
+    read(UNIT_INPUT, '(A80)', END=30, iostat=ios) CRD
+    
+20  continue
+    ! Write card to output file (unit 15 equivalent)
+    write(UNIT_OUTPUT, '(1X,A)') trim(CRD)
+    goto 10
+    
+30  continue
+    ! Rewind input file after reading all cards
+    rewind(UNIT_INPUT)
+    return
+    
   end subroutine ECHINP
 
   ! Main print driver: calls PRINT1, PRTMC, etc.
@@ -430,9 +444,8 @@ contains
     use common_data
     use math_module, only: PX, EMACH1, LIFT, PITCH
     implicit none
-    
-    ! Local variables matching original
-    integer :: I, K, NCOL, NCOLS, NCOLU, NCOLL, IEM, KT, IPLOT
+      ! Local variables matching original
+    integer :: I, KK, NCOL, NCOLS, NCOLU, NCOLL, IEM, KT, IPLOT
     real :: CL_local, CM, CPMIN, CPMAX, CPLARG, UNPCOL, COL
     real :: UL, UU, CJ01, CJ02
     real :: EM1L(100), EM1U(100), YM(100)
@@ -536,10 +549,9 @@ contains
     end if
     
     ! Main output loop
-    do I = IMIN, IMAX
-      ! Initialize line for plotting
-      do K = 1, 60
-        LINE1(K) = IB
+    do I = IMIN, IMAX      ! Initialize line for plotting
+      do KK = 1, 60
+        LINE1(KK) = IB
       end do
       
       ! Plot upper surface CP
@@ -667,8 +679,8 @@ contains
   ! Print map of flow types at each grid point
   subroutine PRTMC()
     use common_data, only: P, IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, IPC, VT, C1, CXL, CXC, CXR
-    implicit none
-    integer :: I, J, K
+    implicit none    
+    integer :: I, J, KK
     character(len=1), parameter :: ch_par='P', ch_hyp='H', ch_shock='S', ch_ell='-'
 
     ! Header
@@ -681,8 +693,8 @@ contains
     VT(JMIN:JMAX,1) = C1(2)
 
     ! Classify flow type and write each row
-    do K = JMIN, JMAX
-      J = JMAX - K + 1
+    do KK = JMIN, JMAX
+      J = JMAX - KK + 1
       do I = IUP, IDOWN
         VT(J,2) = VT(J,1)
         VT(J,1) = C1(I) - (CXL(I)*P(J,I-1) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
@@ -707,10 +719,10 @@ contains
   end subroutine PRTMC
 
   ! Print shock wave drag contributions and total pressure loss along shock wave
-  subroutine PRTSK(Z,ARG,L,NSHOCK,CDSK,LPRT1)
+  subroutine PRTSK(Z,ARG_PARAM,L,NSHOCK,CDSK,LPRT1)
     use common_data, only: CDFACT, GAM1, DELTA, YFACT
     implicit none
-    real, intent(in) :: Z(:), ARG(:)
+    real, intent(in) :: Z(:), ARG_PARAM(:)
     integer, intent(in) :: L, NSHOCK, LPRT1
     real, intent(inout) :: CDSK(:)
     real :: CDYCOF, POYCOF, YY, CDY, POY
@@ -732,9 +744,9 @@ contains
 
     ! Print shock profile data
     do K = 1, L
-      YY = Z(K) * YFACT
-      CDY = CDYCOF * ARG(K)
-      POY = 1.0 + POYCOF * ARG(K)
+      YY = Z(K) * YFACT      
+      CDY = CDYCOF * ARG_PARAM(K)
+      POY = 1.0 + POYCOF * ARG_PARAM(K)
       write(UNIT_SHOCK,'(3F14.8)') YY, CDY, POY
     end do
 
@@ -772,6 +784,7 @@ contains
     
     write(UNIT_LOG,'(A)') 'Wall data written to tsfoil.wal'
   end subroutine PRTWAL
+  
   ! Save current solution P to restart file - matches original SAVEP exactly
   subroutine SAVEP()
     use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX, TITLE
@@ -836,6 +849,15 @@ contains
       end do
     end if
   end subroutine check_yin_defaults
+
+  subroutine DLAOUT
+    use common_data, only: UNIT_LOG
+    implicit none
+    
+    write(UNIT_LOG,'(A)') 'DLAOUT subroutine called - no operation defined'
+    ! This subroutine is a placeholder for DLAOUT functionality
+    ! No operations defined in the original code
+  end subroutine DLAOUT
   
   ! Read restart file (PSTART=2 case) - matches original exactly
   subroutine LOADP()

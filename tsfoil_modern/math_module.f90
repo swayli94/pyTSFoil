@@ -3,7 +3,8 @@
 
 module math_module
   implicit none
-  public :: ARF, SIMP, PX, EMACH1, LIFT, PITCH, TRAP
+  public :: ARF, SIMP, PX, PY, EMACH1, LIFT, PITCH, TRAP
+  public :: VWEDGE, WANGLE, FINDSK
 
 contains
 
@@ -90,6 +91,67 @@ contains
     end if
   end function PX
   
+  ! Function PY computes V = DP/DY at point I,J
+  function PY(I, J) result(result_py)
+    use common_data, only: IMIN, IMAX, JMIN, JMAX, JUP, JLOW, ILE, ITE, P, Y, &
+                          YDIFF, ALPHA, FXL, FXU, PJUMP
+    implicit none
+    integer, intent(in) :: I, J
+    real :: result_py
+    real :: PJI, VMINUS, VPLUS
+    integer :: IC
+    
+    ! Test for end points or points near airfoil slit
+    if (J == JMIN) then
+      ! I,J is on lower boundary. Use one sided derivative
+      result_py = 1.5*YDIFF(J+1)*(P(J+1,I) - P(J,I)) - &
+                  0.5*YDIFF(J+2)*(P(J+2,I) - P(J+1,I))
+      return
+    else if (J == JLOW) then
+      ! I,J is on row of mesh points below airfoil
+      VMINUS = YDIFF(J)*(P(J,I) - P(J-1,I))
+      
+      ! Test to see if I,J is ahead, under, or behind slit
+      if (I < ILE) then
+        ! I,J is ahead of airfoil
+        result_py = 0.5*((P(JUP,I) - P(JLOW,I)) * YDIFF(JUP) + VMINUS)
+      else if (I > ITE) then
+        ! I,J is behind airfoil
+        result_py = 0.5*((P(JUP,I) - PJUMP(I) - P(JLOW,I)) * YDIFF(JUP) + VMINUS)
+      else
+        ! I,J is under airfoil. Use derivative boundary condition
+        IC = I - ILE + 1
+        result_py = 0.5 * (FXL(IC) - ALPHA + VMINUS)
+      end if
+      return
+    else if (J == JUP) then
+      ! I,J is on row of mesh points above airfoil
+      VPLUS = YDIFF(J+1)*(P(J+1,I) - P(J,I))
+      
+      ! Test to see if I is ahead of, over, or behind airfoil slit
+      if (I < ILE) then
+        ! I,J is ahead of airfoil
+        result_py = 0.5*((P(JUP,I) - P(JLOW,I)) * YDIFF(JUP) + VPLUS)
+      else if (I > ITE) then
+        ! I,J is behind airfoil
+        result_py = 0.5*((P(JUP,I) - PJUMP(I) - P(JLOW,I)) * YDIFF(JUP) + VPLUS)
+      else
+        IC = I - ILE + 1
+        result_py = 0.5 * (VPLUS + FXU(IC) - ALPHA)
+      end if
+      return
+    else if (J == JMAX) then
+      ! I,J is on top row of mesh points. Use one sided formula
+      result_py = 1.5*YDIFF(J)*(P(J,I) - P(J-1,I)) - &
+                  0.5*YDIFF(J-1)*(P(J-1,I) - P(J-2,I))
+      return
+    else
+      ! I,J is an interior point
+      PJI = P(J,I)
+      result_py = 0.5*(YDIFF(J+1)*(P(J+1,I)-PJI) + YDIFF(J)*(PJI-P(J-1,I)))
+    end if
+  end function PY
+  
   ! Function EMACH1 computes local similarity parameter or local Mach number
   function EMACH1(U) result(result_emach)
     use common_data, only: AK, GAM1, PHYS, DELRT2, SIMDEF, EMROOT, EMACH
@@ -118,6 +180,34 @@ contains
     end if
   end function EMACH1
   
+  ! Function LIFT computes pressure drag coefficient by integrating
+  ! U*V around airfoil using trapezoidal rule.
+  function DRAG(CDFACT_in) result(result_drag)
+    use common_data, only: P, X, ILE, ITE, JUP, JLOW, CJUP, CJUP1, CJLOW, CJLOW1
+    use common_data, only: FXU, FXL, XI, ARG
+    implicit none
+    real, intent(in) :: CDFACT_in
+    real :: result_drag
+    real :: PXUP, PXLOW, SUM
+    integer :: K, I
+    
+    K = 1
+    ARG(1) = 0.0
+    XI(1) = X(ILE-1)
+    do I = ILE, ITE
+        K = K + 1
+        PXUP = CJUP*PX(I,JUP) - CJUP1*PX(I,JUP+1)
+        PXLOW = CJLOW*PX(I,JLOW) - CJLOW1*PX(I,JLOW-1)
+        ARG(K) = FXU(K-1)*PXUP - FXL(K-1)*PXLOW
+        XI(K) = X(I)
+    end do
+    K = K + 1
+    ARG(K) = 0.0
+    XI(K) = X(ITE+1)
+    call TRAP(XI, ARG, K, SUM)
+    result_drag = -SUM*CDFACT_in*2.0
+  end function DRAG
+
   ! Function LIFT computes lift coefficient from jump in P at trailing edge
   function LIFT(CLFACT_in) result(result_lift)
     use common_data, only: P, JUP, ITE, JLOW, CJUP, CJUP1, CJLOW, CJLOW1
@@ -173,5 +263,251 @@ contains
     end do
     SUM = 0.5*SUM
   end subroutine TRAP
+
+  ! Compute constants ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2
+  ! Used in formula for doublet in slotted wind tunnel with subsonic freestream
+  subroutine DROOTS
+    use common_data, only: F, H, HALFPI, PI, RTKPOR, TWOPI
+    use common_data, only: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
+    implicit none
+    real :: ERROR, TEMP, Q, DALPHA
+    integer :: I, N
+    
+    ERROR = 0.00001
+    
+    ! Compute ALPHA0
+    ALPHA0 = 0.0
+    do I = 1, 100
+      TEMP = ALPHA0
+      Q = F*TEMP - RTKPOR
+      ALPHA0 = HALFPI - atan(Q)
+      DALPHA = abs(ALPHA0 - TEMP)
+      if (DALPHA < ERROR) exit
+    end do
+    if (I > 100) then
+      N = 0
+      goto 9999
+    end if
+    
+    ! Compute ALPHA1
+    ALPHA1 = 0.0
+    do I = 1, 100
+      TEMP = ALPHA1
+      Q = F*(TEMP - PI) - RTKPOR
+      ALPHA1 = HALFPI - atan(Q)
+      DALPHA = abs(ALPHA1 - TEMP)
+      if (DALPHA < ERROR) exit
+    end do
+    if (I > 100) then
+      N = 1
+      goto 9999
+    end if
+    
+    ! Compute ALPHA2
+    ALPHA2 = 0.0
+    do I = 1, 100
+      TEMP = ALPHA2
+      Q = F*(TEMP - TWOPI) - RTKPOR
+      ALPHA2 = HALFPI - atan(Q)
+      DALPHA = abs(ALPHA2 - TEMP)
+      if (DALPHA < ERROR) exit
+    end do
+    if (I > 100) then
+      N = 2
+      goto 9999
+    end if
+    
+    ! Compute OMEGA0, OMEGA1, OMEGA2
+    TEMP = 1.0 / tan(ALPHA0)
+    OMEGA0 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    TEMP = 1.0 / tan(ALPHA1)
+    OMEGA1 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    TEMP = 1.0 / tan(ALPHA2)
+    OMEGA2 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    return
+    
+    ! Abnormal stop if iteration for alphas not converged
+9999 continue
+    write(*,1000) N
+    write(15,1000) N
+1000 format('ABNORMAL STOP IN SUBROUTINE DROOTS', /, &
+           'NONCONVERGENCE OF ITERATION FOR ALPHA', I1)
+    stop
+  end subroutine DROOTS
+  
+  ! Computes Murman or Yoshihara viscous wedge and modifies slope conditions
+  ! to account for jump in displacement thickness due to shock/boundary layer interaction
+  subroutine VWEDGE
+    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
+    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
+    use common_data, only: AK, ALPHA, DUB, GAM1, RTK, XDIFF, YDIFF
+    use common_data, only: CL, DELTA, DELRT2, EMACH, EMROOT, PHYS, PRTFLO, SIMDEF
+    use common_data, only: SONVEL, VFACT, YFACT
+    use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, WCONST, REYNLD, NISHK
+    use solver_module, only: SETBC
+    implicit none
+    integer :: I, J, N, M, ISK, ISK3, ISK1, ISTART, JMP, NISHK_LOC
+    real :: SIGN, U, V1, AM1SQ, REYX, CF, DSTAR1, DXS, AETA, XEND
+    logical :: found_shock
+
+    ! Zero out previous wedge slopes
+    do J = 1, 2
+      do I = ILE, ITE
+        WSLP(I,J) = 0.0
+      end do
+      NVWPRT(J) = 0
+    end do
+    
+    SIGN = 1.0
+    NISHK_LOC = 0
+    N = 1
+    ISTART = ILE
+    JMP = 0
+    
+    ! Locate shock on upper surface and compute wedge if shock exists
+    M = 1
+    
+    do while (M <= 2)
+      call FINDSK(ISTART, ITE, merge(JUP, JLOW, M==1), ISK)
+      if (ISK < 0) then
+        if (M == 1) then
+          ! Move to lower surface
+          N = 1
+          ISTART = ILE
+          SIGN = -SIGN
+          M = 2
+          cycle
+        else
+          exit  ! No more shocks
+        end if
+      end if
+      
+      NISHK_LOC = NISHK_LOC + 1
+      NVWPRT(M) = NVWPRT(M) + 1
+      
+      ! Compute X position of shock by interpolation
+      V1 = PX(ISK-1, merge(JUP, JLOW, M==1))
+      XSHK(M,N) = X(ISK-1) + (SONVEL - V1) / ((PX(ISK, merge(JUP, JLOW, M==1)) - V1) * XDIFF(ISK))
+      
+      ! Compute flow properties 3 points upstream
+      ISK3 = ISK - 3
+      U = PX(ISK3, merge(JUP, JLOW, M==1))
+      AM1(M,N) = EMACH1(U)
+      AM1SQ = AM1(M,N) * AM1(M,N)
+      
+      if (AM1SQ <= 1.0) then
+        JMP = 1
+      else
+        THAMAX(M,N) = WANGLE(AM1SQ, NWDGE, GAM1) * SIGN
+        
+        ! If NWDGE = 2, compute Yoshihara wedge
+        if (NWDGE == 1) then
+          ! Murman wedge
+          REYX = REYNLD * XSHK(M,N)
+          CF = 0.02666 / (REYX**0.139)
+          DSTAR1 = 0.01738 * REYX**0.861 / REYNLD
+          
+          if (N > 1 .and. JMP == 0) then
+            DXS = XSHK(M,N) - XSHK(M,N-1)
+            if (DXS < ZETA(M,N-1)) then
+              AETA = DXS / ZETA(M,N-1)
+              DSTAR1 = DXS * THAMAX(M,N-1) * (1.0 + AETA * (AETA/3.0 - 1.0))
+            else
+              DSTAR1 = ZETA(M,N-1) * THAMAX(M,N-1) / 3.0
+            end if
+          end if
+          
+          JMP = 0
+          ZETA(M,N) = WCONST * sqrt((AM1SQ - 1.0) / CF) * DSTAR1
+          
+          ! Compute wedge slopes
+          XEND = XSHK(M,N) + ZETA(M,N)
+          do I = ISK, ITE
+            if (X(I) >= XEND) exit
+            AETA = (X(I) - XSHK(M,N)) / ZETA(M,N)
+            WSLP(I,M) = THAMAX(M,N) * (1.0 - AETA)**2 / DELTA
+          end do
+        else if (NWDGE == 2) then
+          ! Yoshihara wedge
+          ISK1 = ISK - 1
+          do I = ISK1, ISK
+            WSLP(I,M) = THAMAX(M,N) / DELTA
+          end do
+        end if
+      end if
+      
+      ! Check for additional shock on surface
+      N = N + 1
+      if (N >= 4) then
+        if (M == 1) then
+          ! Move to lower surface
+          N = 1
+          ISTART = ILE
+          SIGN = -SIGN
+          M = 2
+        else
+          exit
+        end if
+      else
+        ISTART = ISK + 2
+      end if
+    end do
+    
+    NISHK = NISHK_LOC
+    call SETBC(1)
+  end subroutine VWEDGE
+
+  ! Compute wedge angle for viscous correction
+  function WANGLE(AM2, NW, G) result(angle)
+    implicit none
+    real, intent(in) :: AM2, G
+    integer, intent(in) :: NW
+    real :: angle
+    real :: AM3, AM4, AM7, RM, RS, S2TM, S2TS, TM, TS, TTM, TTS, TDM, TDS
+    
+    if (NW == 1) then
+      ! Murman wedge
+      angle = 4.0 * ((AM2 - 1.0) / 3.0)**1.5 / G
+    else
+      ! Yoshihara wedge
+      AM3 = 3.0 * AM2
+      AM4 = 4.0 * AM2
+      AM7 = 7.0 * AM2
+      RM = sqrt(3.0 * (AM3 * AM2 + AM4 + 20.0))
+      RS = sqrt(3.0 * (AM3 * AM2 - AM4 + 13.0))
+      S2TM = (AM3 - 5.0 + RM) / AM7
+      S2TS = (AM3 - 2.0 + RS) / AM7
+      TM = asin(sqrt(S2TM))
+      TS = asin(sqrt(S2TS))
+      TTM = tan(TM)
+      TTS = tan(TS)
+      TDM = 5.0 * (AM2 * S2TM - 1.0) / (TTM * (5.0 + AM2 * (6.0 - 5.0 * S2TM)))
+      TDS = 5.0 * (AM2 * S2TS - 1.0) / (TTS * (5.0 + AM2 * (6.0 - 5.0 * S2TS)))
+      angle = 0.5 * (atan(TDM) + atan(TDS))
+    end if
+  end function WANGLE
+
+  ! Subroutine to find shock location on line J between ISTART and IEND
+  subroutine FINDSK(ISTART, IEND, J, ISK)
+    use common_data, only: SONVEL
+    implicit none
+    integer, intent(in) :: ISTART, IEND, J
+    integer, intent(out) :: ISK
+    real :: U1, U2
+    
+    ISK = ISTART - 1
+    U2 = PX(ISK, J)
+    
+    do
+      ISK = ISK + 1
+      U1 = U2
+      U2 = PX(ISK, J)
+      if (U1 > SONVEL .and. U2 <= SONVEL) exit
+      if (ISK >= IEND) then
+        ISK = -IEND
+        exit
+      end if
+    end do
+  end subroutine FINDSK
 
 end module math_module

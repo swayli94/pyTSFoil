@@ -15,12 +15,16 @@ echo Compiling common_data module...
 gfortran %FFLAGS% -c common_data.f90
 if errorlevel 1 goto error
 
-echo Compiling math_module...
-gfortran %FFLAGS% -c math_module.f90
-if errorlevel 1 goto error
-
 echo Compiling spline_module...
 gfortran %FFLAGS% -c spline_module.f90
+if errorlevel 1 goto error
+
+echo Compiling solver_module...
+gfortran %FFLAGS% -c solver_module.f90
+if errorlevel 1 goto error
+
+echo Compiling math_module...
+gfortran %FFLAGS% -c math_module.f90
 if errorlevel 1 goto error
 
 echo Compiling mesh_module...
@@ -35,17 +39,13 @@ echo Compiling io_module...
 gfortran %FFLAGS% -c io_module.f90
 if errorlevel 1 goto error
 
-echo Compiling solver_module...
-gfortran %FFLAGS% -c solver_module.f90
-if errorlevel 1 goto error
-
 echo Compiling numerical_solvers...
 gfortran %FFLAGS% -c numerical_solvers.f90
 if errorlevel 1 goto error
 
 REM Compile main program and link
 echo Compiling main program and linking...
-gfortran %FFLAGS% -o tsfoil_modern.exe main.f90 common_data.o math_module.o spline_module.o io_module.o airfoil_module.o mesh_module.o solver_module.o numerical_solvers.o
+gfortran %FFLAGS% -o tsfoil_modern.exe main.f90 common_data.o spline_module.o solver_module.o math_module.o mesh_module.o airfoil_module.o io_module.o numerical_solvers.o
 if errorlevel 1 goto error
 
 echo Compilation successful!

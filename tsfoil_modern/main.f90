@@ -37,9 +37,12 @@ program tsfoil_main
   write(UNIT_OUTPUT,'(A)') 'TSFOIL Output File'
   write(UNIT_OUTPUT,'(A)') '=================='
   write(UNIT_OUTPUT,*)
-  
-  ! Initialize case counter
+    ! Initialize case counter
   case_number = 0
+  
+  ! ECHINP provides a listing of all data cards for entire job. 
+  ! Can be deleted, if desired (like in original TSFOIL).
+  ! call ECHINP()
   
   ! Main case processing loop - similar to original TSFOIL structure
 1 continue
