@@ -18,7 +18,7 @@ module io_module
                   FLPLOC, IDLA
     ! Declare public procedures
   public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP
-  public :: open_output_files, close_output_files, PRINT_INP_NAMELIST
+  public :: open_output_files, close_output_files, PRINT_INP_NAMELIST, CDCOLE
 
 contains
 
@@ -440,7 +440,7 @@ contains
     call PRINT1()
     call PRTFLD()
     call PRTMC()
-    ! call PRTSK()  ! TODO: implement with proper arguments
+    call CDCOLE()  ! Momentum integral drag calculation
     call PRTWAL()
     write(UNIT_LOG,'(A)') 'Output generation completed'
   end subroutine PRINT
@@ -732,7 +732,7 @@ contains
     implicit none
     real, intent(in) :: Z(:), ARG_PARAM(:)
     integer, intent(in) :: L, NSHOCK, LPRT1
-    real, intent(inout) :: CDSK(:)
+    real, intent(in) :: CDSK
     real :: CDYCOF, POYCOF, YY, CDY, POY
     integer :: K
 
@@ -747,7 +747,7 @@ contains
     
     ! Print shock drag summary
     write(UNIT_SHOCK,'(A,I0)') '# Shock wave number: ', NSHOCK
-    write(UNIT_SHOCK,'(A,F12.6)') '# Wave drag for this shock = ', CDSK(NSHOCK)
+    write(UNIT_SHOCK,'(A,F12.6)') '# Wave drag for this shock = ', CDSK
     write(UNIT_SHOCK,'(A)') '#     Y           CD(Y)         PO/PO'
 
     ! Print shock profile data
@@ -1202,6 +1202,372 @@ contains
       call INPERR(3)
     end select
   end subroutine GUESSP
+
+  ! Compute drag coefficient by momentum integral method
+  ! Integrates around a contour enclosing the body and along all shocks inside the contour
+  ! CALLED BY - PRINT.
+  subroutine CDCOLE()
+    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
+    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT
+    use common_data, only: AK, ALPHA, DUB, GAM1, RTK, CJUP, CJUP1, CJLOW, CJLOW1
+    use common_data, only: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR, YFACT
+    use common_data, only: SONVEL, FXL, FXU
+    use common_data, only: XI, ARG  ! Working arrays
+    use common_data, only: UNIT_OUTPUT, UNIT_SHOCK, UNIT_FIELD
+    use math_module, only: PX, PY, TRAP, FINDSK, NEWISK, DRAG
+    implicit none
+    
+    ! Local variables
+    integer :: IU, ID, JT, JB, ISTOP, IBOW, ISK, JSTART, J, JJ, JSK, ISKOLD
+    integer :: ILIM, IB, I, L, NSHOCK, LPRT1, LPRT2, ISTART
+    real :: GAM123, U, V, UU, UL, SUM, CDSK, CDWAVE, CDC, CD
+    real :: CDUP, CDTOP, CDBOT, CDDOWN, CDBODY
+    real :: XU_LOC, XD_LOC, YT_LOC, YB_LOC, ULE
+    
+    GAM123 = GAM1 * 2.0 / 3.0
+    
+    ! Set locations of contour boundaries
+    
+    ! Upstream boundary
+    ! If AK = 0.0 CDCOLE will not be called. AMACH may not be = 1.0
+    if (AK > 0.0) then
+      IU = (ILE + IMIN) / 2
+    else
+      IU = IUP
+    end if
+    
+    ! Top and bottom boundaries
+    ! Subsonic freestream
+    ! Set JB,JT to include as much of shocks as possible
+    JT = JMAX - 1
+    JB = JMIN + 1
+    
+    if (AK > 0.0) goto 30
+    
+    ! Supersonic freestream
+    ! Set JB,JT to include only subsonic part of detached bow wave
+    
+    ! Find bow shock wave
+    ISTOP = ILE - 3
+    call FINDSK(IUP, ISTOP, JUP, IBOW)
+    if (IBOW < 0) goto 325
+    
+    ! Search up shock to find tip of subsonic region
+    ISK = IBOW
+    JSTART = JUP + 1
+    JT = JUP - 1
+    do J = JSTART, JMAX
+      JT = JT + 1
+      ISKOLD = ISK
+      call NEWISK(ISKOLD, J, ISK)
+      if (ISK < 0) exit
+    end do
+    
+    ! Search down shock to find tip of subsonic region
+    ISK = IBOW
+    JB = JLOW + 2
+    do J = JMIN, JLOW
+      JJ = JLOW - J + JMIN
+      JB = JB - 1
+      ISKOLD = ISK
+      call NEWISK(ISKOLD, JJ, ISK)
+      if (ISK < 0) exit
+    end do
+    
+    ! Save I location of bow shock wave on lower boundary
+    IBOW = ISKOLD
+    
+30  continue
+    
+    ! Downstream boundary
+    ID = (ITE + IMAX) / 2
+    if (PX(ITE+1, JUP) < SONVEL) goto 40
+    
+    ! Trailing edge is supersonic. Place downstream
+    ! boundary ahead of trailing edge to avoid tail shock
+    I = ITE
+    do while (X(I) > 0.75)
+      I = I - 1
+    end do
+    ID = I
+    
+40  continue
+    
+    ! All boundaries are fixed
+    
+    ! Compute integrals along boundaries
+    
+    ! Integral on upstream boundary
+    CDUP = 0.0
+    if (AK < 0.0) goto 120
+    
+    L = 0
+    do J = JB, JT
+      L = L + 1
+      XI(L) = Y(J)
+      U = PX(IU, J)
+      V = PY(IU, J)
+      ARG(L) = ((AK - GAM123*U)*U*U - V*V) * 0.5
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDUP = 2.0 * CDFACT * SUM
+    
+120 continue
+    
+    ! Integral on top boundary
+    L = 0
+    do I = IU, ID
+      L = L + 1
+      XI(L) = X(I)
+      ARG(L) = -PX(I, JT) * PY(I, JT)
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDTOP = 2.0 * CDFACT * SUM
+    
+    ! Integral on bottom boundary
+    L = 0
+    do I = IU, ID
+      L = L + 1
+      ARG(L) = PX(I, JB) * PY(I, JB)
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDBOT = 2.0 * CDFACT * SUM
+    
+    ! Integral on downstream boundary
+    L = 0
+    do J = JB, JT
+      L = L + 1
+      XI(L) = Y(J)
+      U = PX(ID, J)
+      ! If flow supersonic, use backward difference formula
+      if (U > SONVEL) U = PX(ID-1, J)
+      V = PY(ID, J)
+      ARG(L) = ((GAM123*U - AK)*U*U + V*V) * 0.5
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDDOWN = 2.0 * CDFACT * SUM
+    
+    ! Integral on body boundary
+    CDBODY = 0.0
+    if (ID > ITE) goto 200
+    
+    ILIM = ITE + 1
+    L = 0
+    do I = ID, ILIM
+      IB = I - ILE + 1
+      L = L + 1
+      XI(L) = X(I)
+      UU = CJUP*PX(I, JUP) - CJUP1*PX(I, JUP+1)
+      UL = CJLOW*PX(I, JLOW) - CJLOW1*PX(I, JLOW-1)
+      ARG(L) = -UU*FXU(IB) + UL*FXL(IB)
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDBODY = 2.0 * CDFACT * SUM
+    
+200 continue
+    
+    ! Integration along shock waves
+    CDWAVE = 0.0
+    LPRT1 = 0
+    LPRT2 = 0
+    NSHOCK = 0
+    
+    if (AK > 0.0) goto 220
+    
+    ! Integrate along detached bow wave
+    NSHOCK = NSHOCK + 1
+    LPRT1 = 1
+    LPRT2 = 1
+    L = 0
+    ISK = IBOW
+    do J = JB, JT
+      L = L + 1
+      ISKOLD = ISK
+      call NEWISK(ISKOLD, J, ISK)
+      XI(L) = Y(J)
+      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+    end do
+    call TRAP(XI, ARG, L, SUM)
+    CDSK = -GAM1/6.0 * CDFACT * SUM
+    CDWAVE = CDWAVE + CDSK
+    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+    
+220 continue
+    
+    ! Integrate along shocks above airfoil
+    ISTART = ILE
+    
+225 continue
+    call FINDSK(ISTART, ITE, JUP, ISK)
+    if (ISK < 0) goto 250
+    
+    ! Shock wave found
+    ISTART = ISK + 1
+    NSHOCK = NSHOCK + 1
+    LPRT1 = 0
+    L = 1
+    XI(L) = 0.0
+    ARG(L) = (CJUP*(PX(ISK+1, JUP) - PX(ISK-2, JUP)) - &
+              CJUP1*(PX(ISK+1, JUP+1) - PX(ISK-2, JUP+1)))**3
+    
+    do J = JUP, JT
+      L = L + 1
+      XI(L) = Y(J)
+      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+      ISKOLD = ISK
+      JSK = J + 1
+      call NEWISK(ISKOLD, JSK, ISK)
+      if (ISK < 0) exit
+      if (ISK > ID) then
+        LPRT1 = 1
+        exit
+      end if
+    end do
+    
+    if (ISK < 0) LPRT1 = 1
+    
+    call TRAP(XI, ARG, L, SUM)
+    CDSK = -GAM1/6.0 * CDFACT * SUM
+    CDWAVE = CDWAVE + CDSK
+    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+    if (LPRT1 == 1) LPRT2 = 1
+    
+    ! Return to find next shock
+    goto 225
+    
+250 continue
+    
+    ! Integrate along shocks below airfoil
+    ISTART = ILE
+    
+260 continue
+    call FINDSK(ISTART, ITE, JLOW, ISK)
+    if (ISK < 0) goto 300
+    
+    ! Shock wave found
+    ISTART = ISK + 1
+    NSHOCK = NSHOCK + 1
+    LPRT1 = 0
+    L = 1
+    XI(L) = 0.0
+    ARG(L) = (CJLOW*(PX(ISK+1, JLOW) - PX(ISK-2, JLOW)) - &
+              CJLOW1*(PX(ISK+1, JLOW-1) - PX(ISK-2, JLOW-1)))**3
+    
+    do JJ = JB, JLOW
+      J = JLOW + JB - JJ
+      L = L + 1
+      XI(L) = Y(J)
+      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+      ISKOLD = ISK
+      JSK = J - 1
+      call NEWISK(ISKOLD, JSK, ISK)
+      if (ISK < 0) exit
+      if (ISK > ID) then
+        LPRT1 = 1
+        exit
+      end if
+    end do
+    
+    if (ISK < 0) LPRT1 = 1
+    
+    call TRAP(XI, ARG, L, SUM)
+    CDSK = -GAM1/6.0 * CDFACT * (-SUM)
+    CDWAVE = CDWAVE + CDSK
+    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+    if (LPRT1 == 1) LPRT2 = 1
+    
+    ! Return to find next shock
+    goto 260
+    
+300 continue
+    
+    ! Integration along shocks is complete
+      ! Printout CD information
+    XU_LOC = X(IU)
+    XD_LOC = X(ID)
+    YT_LOC = Y(JT) * YFACT
+    YB_LOC = Y(JB) * YFACT
+    CDC = CDUP + CDTOP + CDBOT + CDDOWN + CDBODY
+    CD = CDC + CDWAVE
+    
+    ! Write drag coefficient breakdown
+    write(UNIT_OUTPUT, 1001)
+    write(UNIT_SHOCK, 1001)
+    
+    write(UNIT_OUTPUT, 1002) XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
+    write(UNIT_SHOCK, 1002) XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
+    
+    if (XD_LOC < 1.0) then
+      write(UNIT_OUTPUT, 1003) XD_LOC, CDBODY
+      write(UNIT_SHOCK, 1003) XD_LOC, CDBODY
+    end if
+    
+    write(UNIT_OUTPUT, 1004) CDC
+    write(UNIT_SHOCK, 1004) CDC
+    
+    write(UNIT_OUTPUT, 1005) NSHOCK, CDWAVE
+    write(UNIT_SHOCK, 1005) NSHOCK, CDWAVE
+    write(UNIT_FIELD, '("TOTAL CDWAVE =", F16.12)') CDWAVE
+    
+    if (NSHOCK > 0 .and. LPRT2 == 0) then
+      write(UNIT_OUTPUT, 1007)
+      write(UNIT_SHOCK, 1007)
+    end if
+    
+    if (NSHOCK > 0 .and. LPRT2 == 1) then
+      write(UNIT_OUTPUT, 1008)
+      write(UNIT_SHOCK, 1008)
+    end if
+    
+    write(UNIT_OUTPUT, 1006) CD
+    write(UNIT_SHOCK, 1006) CD
+    write(UNIT_FIELD, '("TOTAL CD     =", F16.12)') CD
+    
+    return
+    
+325 continue
+    ! Shock is too close to body to do contour integral.
+    ! Write message and return
+    ULE = PX(ILE, JUP)
+    
+    if (ULE > SONVEL) then
+      write(UNIT_OUTPUT, 1011)
+      write(UNIT_SHOCK, 1011)
+    else
+      write(UNIT_OUTPUT, 1012)
+      write(UNIT_SHOCK, 1012)
+    end if
+    
+    CD = DRAG(CDFACT)
+    write(UNIT_OUTPUT, 1013) CD
+    write(UNIT_SHOCK, 1013) CD
+    
+    return
+    
+    ! Format statements
+1001 format('1CALCULATION OF DRAG COEFFICIENT BY MOMENTUM INTEGRAL METHOD')
+1002 format('0BOUNDARIES OF CONTOUR USED', 15X, '18HCONTRIBUTION TO CD/', &
+           '16H UPSTREAM    X =', F12.6, 15X, '8HCDUP   =', F12.6/, &
+           '16H DOWNSTREAM  X =', F12.6, 15X, '8HCDDOWN =', F12.6/, &
+           '16H TOP         Y =', F12.6, 15X, '8HCDTOP  =', F12.6/, &
+           '16H BOTTOM      Y =', F12.6, 15X, '8HCDBOT  =', F12.6)
+1003 format('16H BODY AFT OF X =', F12.6, 15X, '8HCDBODY =', F12.6)
+1004 format(15X, '36HTOTAL CONTRIBUTIONS AROUND CONTOUR =', F12.6)
+1005 format('10H0THERE ARE', I3, '38H SHOCKS INSIDE CONTOUR. TOTAL CDWAVE =', F12.6)
+1006 format('51H0DRAG CALCULATED FROM MOMENTUM INTEGRAL    CD     =', F12.6)
+1007 format('43H0NOTE - ALL SHOCKS CONTAINED WITHIN CONTOUR/', &
+           '30H CDWAVE EQUALS TOTAL WAVE DRAG')
+1008 format('52H0NOTE - ONE OR MORE SHOCKS EXTEND OUTSIDE OF CONTOUR/', &
+           '38H CDWAVE DOES NOT EQUAL TOTAL WAVE DRAG')
+1011 format('31H1SHOCK WAVE IS ATTACHED TO BODY/', &
+           '33H MOMENTUM INTEGRAL CANNOT BE DONE/', &
+           '45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/')
+1012 format('41H1DETACHED SHOCK WAVE IS TOO CLOSE TO BODY/', &
+           '33H MOMENTUM INTEGRAL CANNOT BE DONE/', &
+           '45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/')
+1013 format('4H0CD=', F12.6)
+    
+  end subroutine CDCOLE
 
   ! Fatal error in input - write message and stop
   subroutine INPERR(error_code)

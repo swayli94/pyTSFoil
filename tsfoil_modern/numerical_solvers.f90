@@ -10,134 +10,175 @@ module numerical_solvers
 contains
 
   ! Perform one SOR sweep computing residuals and updating P
+  ! SYOR COMPUTES NEW P AT ALL MESH POINTS.
+  ! CALLED BY - SOLVE.
   subroutine SYOR()
     use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
     use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
     use common_data, only: AK, GAM1, CVERGE, ERROR, IERROR, JERROR
     use common_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1
-    use common_data, only: CYYC, CYYD, CYYU, DIAG, RHS, SUB, SUP
+    use common_data, only: CYYC, CYYD, CYYU, DIAG, RHS, SUB, SUP, IVAL
     use common_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD, FXUBC, FXLBC
     use common_data, only: PJUMP, FCR, KUTTA, EPS, WI
+    use common_data, only: EMU, POLD, I1, I2, OUTERR, BIGRL, IRL, JRL
+    use solver_module, only: BCEND
     implicit none
-    integer :: I, J, K, IM2, JA, JB, J1_LOC, J2_LOC
-    real :: EPSX, VC_VAL, EMU_VAL, ARHS, DNOM
-    real, dimension(100) :: VC, EMU_CUR, EMU_PREV, SAVE_ARR, POLD_CUR
-
+    
+    integer :: I, J, K, IM2, JA, JB, ISAVE
+    real :: EPSX, ARHS, DNOM
+    real, dimension(100) :: VC, SAVE
+    
     IM2 = IUP - 1
     if (AK < 0.0) IM2 = IUP - 2
-
-    J1_LOC = JBOT + 1
-    J2_LOC = JTOP - JBOT
-
+    
+    ! Set J1 and J2 exactly as original
+    J1 = JBOT + 1
+    J2 = JTOP - JBOT
+    
     do I = IUP, IDOWN
-      EPSX = EPS / ((X(I) - X(I-1))**2)
-
-      ! Compute VC = 1 - M**2 and EMU
-      do J = JBOT, JTOP
-        VC(J) = C1(I) - (CXL(I)*POLD_CUR(J) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
-        EMU_CUR(J) = 0.0
-        POLD_CUR(J) = P(J,I)
-        if (VC(J) < 0.0) EMU_CUR(J) = VC(J)
-      end do
-
-      if (.not. FCR) then
-        EMU_PREV = EMU_CUR
-      end if
-
-      ! Compute matrix elements
-      do J = JBOT, JTOP
-        DIAG(J) = (EMU_CUR(J) - VC(J)) * CXXC(I) * WI + EMU_PREV(J) * CXXR(I-1) - CYYC(J)
-        SUP(J) = CYYD(J)
-        SUB(J) = CYYU(J)
-      end do
-
-      ! Compute residual
-      do J = JBOT, JTOP
-        RHS(J) = -(VC(J) - EMU_CUR(J)) * &
-                 (CXXL(I)*P(J,I-1) - CXXC(I)*P(J,I) + CXXR(I)*P(J,I+1))
-        RHS(J) = RHS(J) - (EMU_PREV(J) * &
-                 (CXXL(I-1)*P(J,IM2) - CXXC(I-1)*P(J,I-1) + CXXR(I-1)*P(J,I)))
-      end do
-
-      ! Interior points
-      JA = JBOT + 1
-      JB = JTOP - 1
-      do J = JA, JB
-        RHS(J) = RHS(J) - (CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I))
-      end do
-
-      ! Bottom boundary
-      RHS(JBOT) = RHS(JBOT) - (-CYYC(JBOT)*P(JBOT,I) + CYYU(JBOT)*P(JBOT+1,I))
-      if (JBOT /= JMIN) then
-        RHS(JBOT) = RHS(JBOT) - CYYD(JBOT)*P(JBOT-1,I)
-      end if
-
-      ! Top boundary
-      RHS(JTOP) = RHS(JTOP) - (CYYD(JTOP)*P(JTOP-1,I) - CYYC(JTOP)*P(JTOP,I))
-      if (JTOP /= JMAX) then
-        RHS(JTOP) = RHS(JTOP) - CYYU(JTOP)*P(JTOP+1,I)
-      end if
-
-      ! Check for airfoil boundary condition
-      if (I >= ILE .and. I <= ITE) then
-        ! Upper surface
-        J = JUP
-        DIAG(J) = DIAG(J) + CYYC(J) - CYYBUC
-        SUP(J) = 0.0
-        SUB(J) = CYYBUU
-        RHS(J) = RHS(J) + CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I) &
-                - (-CYYBUC*P(J,I) + CYYBUU*P(J+1,I) + FXUBC(I))
-
-        ! Lower surface
-        J = JLOW
-        DIAG(J) = DIAG(J) + CYYC(J) - CYYBLC
-        SUP(J) = CYYBLD
-        SUB(J) = 0.0
-        RHS(J) = RHS(J) + CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I) &
-                - (-CYYBLC*P(J,I) + CYYBLD*P(J-1,I) + FXLBC(I))
-      else if (I > ITE) then
-        ! Kutta slice
-        RHS(JLOW) = RHS(JLOW) + CYYU(JLOW)*PJUMP(I)
-        RHS(JUP) = RHS(JUP) - CYYD(JUP)*PJUMP(I)
-      end if
-
-      ! Apply wall boundary conditions
-      call BCEND()
-
-      ! Add artificial dissipation
-      do J = JBOT, JTOP
-        DIAG(J) = DIAG(J) - EPSX
-        RHS(J) = RHS(J) - EPSX*(P(J,I-1) - POLD_CUR(J))
-      end do
-
-      ! Solve tridiagonal system
-      DNOM = 1.0 / DIAG(JBOT)
-      SAVE_ARR(JBOT) = SUB(JBOT) * DNOM
-      RHS(JBOT) = RHS(JBOT) * DNOM
-
-      do J = J1_LOC, JTOP
-        DNOM = 1.0 / (DIAG(J) - SUP(J)*SAVE_ARR(J-1))
-        SAVE_ARR(J) = SUB(J) * DNOM
-        RHS(J) = (RHS(J) - SUP(J)*RHS(J-1)) * DNOM
-      end do
-
-      do K = 1, J2_LOC
-        J = JTOP - K
-        RHS(J) = RHS(J) - SAVE_ARR(J) * RHS(J+1)
-      end do
-
-      ! Update solution and track maximum error
-      do J = JBOT, JTOP
-        P(J,I) = P(J,I) + RHS(J)
-        ARHS = abs(RHS(J))
-        if (ARHS > ERROR) then
-          ERROR = ARHS
-          IERROR = I
-          JERROR = J
+        EPSX = EPS / ((X(I) - X(I-1))**2)
+        
+        ! Compute VC = 1 - M**2
+        do J = JBOT, JTOP
+            VC(J) = C1(I) - (CXL(I)*POLD(J,I2) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
+            EMU(J,I1) = 0.0
+            POLD(J,I1) = P(J,I)
+        end do
+        
+        do J = JBOT, JTOP
+            if (VC(J) < 0.0) EMU(J,I1) = VC(J)
+        end do
+        
+        if (.not. FCR) then
+            do J = JBOT, JTOP
+                EMU(J,I2) = EMU(J,I1)
+            end do
         end if
-      end do
-
-      EMU_PREV = EMU_CUR
+        
+        ! Compute elements of matrix
+        do J = JBOT, JTOP
+            DIAG(J) = (EMU(J,I1) - VC(J)) * CXXC(I) * WI + EMU(J,I2) * CXXR(I-1) - CYYC(J)
+            SUP(J) = CYYD(J)
+            SUB(J) = CYYU(J)
+        end do
+        
+        ! Compute residual
+        do J = JBOT, JTOP
+            RHS(J) = -(VC(J) - EMU(J,I1)) * (CXXL(I)*P(J,I-1) - CXXC(I)*P(J,I) + CXXR(I)*P(J,I+1))
+        end do
+        
+        do J = JBOT, JTOP
+            RHS(J) = RHS(J) - (EMU(J,I2) * (CXXL(I-1)*P(J,IM2) - CXXC(I-1)*P(J,I-1) + CXXR(I-1)*P(J,I)))
+        end do
+        
+        JA = JBOT + 1
+        JB = JTOP - 1
+        do J = JA, JB
+            RHS(J) = RHS(J) - (CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I))
+        end do
+        
+        RHS(JBOT) = RHS(JBOT) - (-CYYC(JBOT)*P(JBOT,I) + CYYU(JBOT)*P(JBOT+1,I))
+        if (JBOT /= JMIN) then
+            RHS(JBOT) = RHS(JBOT) - CYYD(JBOT)*P(JBOT-1,I)
+        end if
+        
+        RHS(JTOP) = RHS(JTOP) - (CYYD(JTOP)*P(JTOP-1,I) - CYYC(JTOP)*P(JTOP,I))
+        if (JTOP /= JMAX) then
+            RHS(JTOP) = RHS(JTOP) - CYYU(JTOP)*P(JTOP+1,I)
+        end if
+        
+        ! Check for airfoil B.C. and Kutta slice
+        if (I < ILE) then
+            ! Before airfoil - do nothing
+        else if (I <= ITE) then
+            ! Airfoil B.C.
+            J = JUP
+            DIAG(J) = DIAG(J) + CYYC(J) - CYYBUC
+            SUP(J) = 0.0
+            SUB(J) = CYYBUU
+            RHS(J) = RHS(J) + CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I) &
+                    - (-CYYBUC*P(J,I) + CYYBUU*P(J+1,I) + FXUBC(I))
+            
+            J = JLOW
+            DIAG(J) = DIAG(J) + CYYC(J) - CYYBLC
+            SUP(J) = CYYBLD
+            SUB(J) = 0.0
+            RHS(J) = RHS(J) + CYYD(J)*P(J-1,I) - CYYC(J)*P(J,I) + CYYU(J)*P(J+1,I) &
+                    - (-CYYBLC*P(J,I) + CYYBLD*P(J-1,I) + FXLBC(I))
+        else
+            ! Kutta slice change
+            RHS(JLOW) = RHS(JLOW) + CYYU(JLOW)*PJUMP(I)
+            RHS(JUP) = RHS(JUP) - CYYD(JUP)*PJUMP(I)
+        end if
+        
+        ! Insert wall B.C.
+        IVAL = I
+        call BCEND()
+        
+        ! Compute max residual
+        if (OUTERR) then
+            do J = JBOT, JTOP
+                ARHS = abs(RHS(J))
+                if (ARHS > BIGRL) then
+                    BIGRL = ARHS
+                    IRL = I
+                    JRL = J
+                end if
+            end do
+        end if
+        
+        ! Add PXT (artificial dissipation)
+        do J = JBOT, JTOP
+            DIAG(J) = DIAG(J) - EPSX
+            RHS(J) = RHS(J) - EPSX*(P(J,I-1) - POLD(J,I2))
+        end do
+        
+        ! Solve tridiagonal matrix equation
+        DNOM = 1.0 / DIAG(JBOT)
+        SAVE(JBOT) = SUB(JBOT) * DNOM
+        RHS(JBOT) = RHS(JBOT) * DNOM
+        
+        do J = J1, JTOP
+            DNOM = 1.0 / (DIAG(J) - SUP(J)*SAVE(J-1))
+            SAVE(J) = SUB(J) * DNOM
+            RHS(J) = (RHS(J) - SUP(J)*RHS(J-1)) * DNOM
+        end do
+        
+        do K = 1, J2
+            J = JTOP - K
+            RHS(J) = RHS(J) - SAVE(J) * RHS(J+1)
+        end do
+        
+        ! Compute new P
+        do J = JBOT, JTOP
+            P(J,I) = P(J,I) + RHS(J)
+        end do
+        
+        ! Compute max error
+        if (OUTERR) then
+            do J = JBOT, JTOP
+                ARHS = abs(RHS(J))
+                if (ARHS > ERROR) then
+                    ERROR = ARHS
+                    IERROR = I
+                    JERROR = J
+                end if
+            end do
+        end if
+        
+        ! Supersonic freestream flow condition
+        if (AK <= 0.0 .and. I == IDOWN-1) then
+            ! Set P(IDOWN+1) = P(IDOWN-1) to obtain centered velocity at IDOWN for supersonic freestream flow
+            do J = JMIN, JMAX
+                P(J,IDOWN+1) = P(J,IDOWN-1)
+            end do
+        end if
+        
+        ! Swap I1 and I2 indices
+        ISAVE = I2
+        I2 = I1
+        I1 = ISAVE
+        IM2 = I - 1
     end do
 
   end subroutine SYOR
@@ -149,6 +190,7 @@ contains
     use common_data, only: ILE, ITE, JUP, JLOW, JTOP, JBOT, J1, J2, KSTEP
     use common_data, only: P, X, Y, AK, ALPHA, DUB, GAM1, RTK
     use common_data, only: EMU, POLD, DCIRC, OUTERR, I1, I2, IERROR, JERROR
+    use common_data, only: BIGRL, IRL, JRL
     use common_data, only: THETA, BCTYPE, CIRCFF, FHINV, POR, CIRCTE
     use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
     use common_data, only: WCONST, REYNLD, WI, C1
@@ -208,6 +250,7 @@ contains
         
         ! Reset error tracking
         ERROR = 0.0
+        if (OUTERR) BIGRL = 0.0
         
         ! Update circulation-jump boundary
         call RECIRC()
@@ -246,7 +289,7 @@ contains
             CM_LOCAL = PITCH(CMFACT)
             ERCIRC = abs(DCIRC)
             
-            write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, 0, 0, 0.0, ERCIRC  ! IRL, JRL, BIGRL simplified
+            write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
             
             ! Output viscous wedge quantities if enabled
             if (NWDGE > 0) then
@@ -410,6 +453,8 @@ contains
   end subroutine REDUB
 
   ! Reset far-field boundary values after mesh change or Kutta
+  ! Updates far field boundary conditions for subsonic freestream flows.
+  ! CALLED BY - SOLVE.
   subroutine RESET()
     use common_data, only: P, IMIN, IMAX, JMIN, JMAX, JUP, JLOW, KSTEP
     use common_data, only: DUP, DDOWN, DTOP, DBOT, VUP, VDOWN, VTOP, VBOT
@@ -426,7 +471,7 @@ contains
       P(J,IMAX) = CIRCFF*VDOWN(K) + DUB*DDOWN(K)
     end do
 
-    if (BCTYPE == 1) then
+    if (BCTYPE /= 1) then
       ! Update boundary conditions on top and bottom
       K = IMIN - KSTEP
       do I = IMIN, IMAX

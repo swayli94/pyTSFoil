@@ -102,13 +102,11 @@ tsfoil_modern/
    | Original Subroutine | Modern Location | Description | Status |
    |---------------------|-----------------|-------------|---------|
    | `SOLVE` | `numerical_solvers.f90` | Main iteration loop | ✅ |
-   | `SYOR` | `numerical_solvers.f90` | SOR sweep |  |
+   | `SYOR` | `numerical_solvers.f90` | SOR sweep | ✅ |
    | `GUESSP` | `numerical_solvers.f90` | Solution initialization |  |
    | `RECIRC` | `numerical_solvers.f90` | Circulation updates | ✅ |
    | `REDUB` | `numerical_solvers.f90` | Doublet strength updates | ✅ |
-   | `RESET` | `numerical_solvers.f90` | Far-field boundary updates |  |
-   | `SAVEP` | `numerical_solvers.f90` | Solution storage |  |
-   | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly |  |
+   | `RESET` | `numerical_solvers.f90` | Far-field boundary updates | ✅ |
 
 8. **`io_module.f90`** - Input/output operations
 
@@ -128,6 +126,8 @@ tsfoil_modern/
    | `LOADP` | `io_module.f90` |  |  |
    | `CPPLOT` | `io_module.f90` | Cp plot preparation |  |
    | `FIXPLT` | `io_module.f90` | Plot array construction |  |
+   | `SAVEP` | `io_module.f90` | Solution storage |  |
+   | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly | ✅ |
 
 ### Compilation Dependencies
 

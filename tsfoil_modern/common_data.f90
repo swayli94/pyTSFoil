@@ -39,6 +39,7 @@ module common_data
   public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: THETA  ! COM33: angle array for each mesh point
   public :: EMU, POLD, DCIRC, OUTERR  ! Missing variables from COM18
+  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables
   public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
@@ -145,6 +146,10 @@ module common_data
   real :: POLD(100,2)  ! Missing from COM18 - old pressure values  
   real :: DCIRC        ! Missing from COM18 - circulation change
   logical :: OUTERR    ! Missing from COM18 - outer iteration error (logical)
+  
+  ! COM32: maximum residual tracking (from original COM32)
+  real :: BIGRL        ! Maximum residual value
+  integer :: IRL, JRL  ! Location indices of maximum residual
   
   ! COM19: jump arrays and pressure jump
   real :: PJUMP(100)
@@ -442,6 +447,12 @@ contains
     IERROR = 0
     JERROR = 0
     ERROR = 0.0
+    
+    ! Initialize COM32 variables
+    BIGRL = 0.0
+    IRL = 0
+    JRL = 0
+    
     THETA = 0.0
 
   end subroutine initialize_common

@@ -79,6 +79,14 @@ program tsfoil_main
   write(*,'(A)') 'Computing airfoil geometry...'
   call BODY()
   
+  ! CUTOUT: Remove mesh points for initial coarse mesh solution
+  write(*,'(A)') 'Setting up coarse mesh...'
+  call CUTOUT()
+  
+  ! GUESSP: Initialize potential array P
+  write(*,'(A)') 'Initializing potential array...'
+  call GUESSP()
+  
   ! DIFCOE: Compute difference coefficients in field
   write(*,'(A)') 'Computing finite difference coefficients...'
   call DIFCOE()
