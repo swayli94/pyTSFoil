@@ -474,10 +474,4 @@ contains
     JUP  = j
   end subroutine JSLIT
 
-  subroutine VROOTS()
-    ! Placeholder for VROOTS subroutine
-    ! This subroutine is not defined in the original code snippet
-    ! Add implementation as needed
-  end subroutine VROOTS
-
 end module mesh_module

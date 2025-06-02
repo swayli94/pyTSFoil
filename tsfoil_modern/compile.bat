@@ -19,12 +19,12 @@ echo Compiling spline_module...
 gfortran %FFLAGS% -c spline_module.f90
 if errorlevel 1 goto error
 
-echo Compiling solver_module...
-gfortran %FFLAGS% -c solver_module.f90
-if errorlevel 1 goto error
-
 echo Compiling math_module...
 gfortran %FFLAGS% -c math_module.f90
+if errorlevel 1 goto error
+
+echo Compiling solver_module...
+gfortran %FFLAGS% -c solver_module.f90
 if errorlevel 1 goto error
 
 echo Compiling mesh_module...

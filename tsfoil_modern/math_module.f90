@@ -4,7 +4,7 @@
 module math_module
   implicit none
   public :: ARF, SIMP, PX, PY, EMACH1, LIFT, PITCH, TRAP
-  public :: VWEDGE, WANGLE, FINDSK
+  public :: VWEDGE, WANGLE, FINDSK, DROOTS, VROOTS, NEWISK, M1LINE
 
 contains
 
@@ -263,6 +263,19 @@ contains
     end do
     SUM = 0.5*SUM
   end subroutine TRAP
+  
+  ! Helper subroutine for convergence error reporting
+  subroutine report_convergence_error(subroutine_name, variable_name, iteration_number)
+    implicit none
+    character(len=*), intent(in) :: subroutine_name, variable_name
+    integer, intent(in) :: iteration_number
+    
+    write(*,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name
+    write(*,'(A,A,I0)') 'NONCONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
+    write(15,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name  
+    write(15,'(A,A,I0)') 'NONCONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
+    stop
+  end subroutine report_convergence_error
 
   ! Compute constants ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2
   ! Used in formula for doublet in slotted wind tunnel with subsonic freestream
@@ -271,50 +284,60 @@ contains
     use common_data, only: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
     implicit none
     real :: ERROR, TEMP, Q, DALPHA
-    integer :: I, N
+    integer :: I
+    logical :: converged
     
     ERROR = 0.00001
     
     ! Compute ALPHA0
     ALPHA0 = 0.0
+    converged = .false.
     do I = 1, 100
       TEMP = ALPHA0
       Q = F*TEMP - RTKPOR
       ALPHA0 = HALFPI - atan(Q)
       DALPHA = abs(ALPHA0 - TEMP)
-      if (DALPHA < ERROR) exit
+      if (DALPHA < ERROR) then
+        converged = .true.
+        exit
+      end if
     end do
-    if (I > 100) then
-      N = 0
-      goto 9999
+    if (.not. converged) then
+      call report_convergence_error('DROOTS', 'ALPHA', 0)
     end if
     
     ! Compute ALPHA1
     ALPHA1 = 0.0
+    converged = .false.
     do I = 1, 100
       TEMP = ALPHA1
       Q = F*(TEMP - PI) - RTKPOR
       ALPHA1 = HALFPI - atan(Q)
       DALPHA = abs(ALPHA1 - TEMP)
-      if (DALPHA < ERROR) exit
+      if (DALPHA < ERROR) then
+        converged = .true.
+        exit
+      end if
     end do
-    if (I > 100) then
-      N = 1
-      goto 9999
+    if (.not. converged) then
+      call report_convergence_error('DROOTS', 'ALPHA', 1)
     end if
     
     ! Compute ALPHA2
     ALPHA2 = 0.0
+    converged = .false.
     do I = 1, 100
       TEMP = ALPHA2
       Q = F*(TEMP - TWOPI) - RTKPOR
       ALPHA2 = HALFPI - atan(Q)
       DALPHA = abs(ALPHA2 - TEMP)
-      if (DALPHA < ERROR) exit
+      if (DALPHA < ERROR) then
+        converged = .true.
+        exit
+      end if
     end do
-    if (I > 100) then
-      N = 2
-      goto 9999
+    if (.not. converged) then
+      call report_convergence_error('DROOTS', 'ALPHA', 2)
     end if
     
     ! Compute OMEGA0, OMEGA1, OMEGA2
@@ -324,16 +347,81 @@ contains
     OMEGA1 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
     TEMP = 1.0 / tan(ALPHA2)
     OMEGA2 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-    return
     
-    ! Abnormal stop if iteration for alphas not converged
-9999 continue
-    write(*,1000) N
-    write(15,1000) N
-1000 format('ABNORMAL STOP IN SUBROUTINE DROOTS', /, &
-           'NONCONVERGENCE OF ITERATION FOR ALPHA', I1)
-    stop
   end subroutine DROOTS
+
+  ! Compute constants BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
+  ! Used in formula for vortex in slotted wind tunnel with subsonic freestream
+  subroutine VROOTS
+    use common_data, only: F, H, HALFPI, PI, RTKPOR, TWOPI
+    use common_data, only: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
+    implicit none
+    real :: ERROR, TEMP, Q, DBETA
+    integer :: I
+    logical :: converged
+    
+    ERROR = 0.00001
+    
+    ! Calculate BETA0
+    BETA0 = 0.0
+    converged = .false.
+    do I = 1, 100
+      TEMP = BETA0
+      Q = -F*TEMP + RTKPOR
+      BETA0 = atan(Q)
+      DBETA = abs(TEMP - BETA0)
+      if (DBETA < ERROR) then
+        converged = .true.
+        exit
+      end if
+    end do
+    if (.not. converged) then
+      call report_convergence_error('VROOTS', 'BETA', 0)
+    end if
+    
+    ! Calculate BETA1  
+    BETA1 = 0.0
+    converged = .false.
+    do I = 1, 100
+      TEMP = BETA1
+      Q = -F*(TEMP + PI) + RTKPOR
+      BETA1 = atan(Q)
+      DBETA = abs(BETA1 - TEMP)
+      if (DBETA < ERROR) then
+        converged = .true.
+        exit
+      end if
+    end do
+    if (.not. converged) then
+      call report_convergence_error('VROOTS', 'BETA', 1)
+    end if
+    
+    ! Calculate BETA2
+    BETA2 = 0.0
+    converged = .false.
+    do I = 1, 100
+      TEMP = BETA2
+      Q = -F*(TEMP - PI) + RTKPOR
+      BETA2 = atan(Q)
+      DBETA = abs(BETA2 - TEMP)
+      if (DBETA < ERROR) then
+        converged = .true.
+        exit
+      end if
+    end do
+    if (.not. converged) then
+      call report_convergence_error('VROOTS', 'BETA', 2)
+    end if
+    
+    ! Compute PSI0, PSI1, PSI2
+    TEMP = tan(BETA0)
+    PSI0 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    TEMP = tan(BETA1)
+    PSI1 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    TEMP = tan(BETA2)
+    PSI2 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
+    
+  end subroutine VROOTS
   
   ! Computes Murman or Yoshihara viscous wedge and modifies slope conditions
   ! to account for jump in displacement thickness due to shock/boundary layer interaction
@@ -344,7 +432,7 @@ contains
     use common_data, only: CL, DELTA, DELRT2, EMACH, EMROOT, PHYS, PRTFLO, SIMDEF
     use common_data, only: SONVEL, VFACT, YFACT
     use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, WCONST, REYNLD, NISHK
-    use solver_module, only: SETBC
+    !use solver_module, only: SETBC
     implicit none
     integer :: I, J, N, M, ISK, ISK3, ISK1, ISTART, JMP, NISHK_LOC
     real :: SIGN, U, V1, AM1SQ, REYX, CF, DSTAR1, DXS, AETA, XEND
@@ -454,7 +542,8 @@ contains
     end do
     
     NISHK = NISHK_LOC
-    call SETBC(1)
+  !  call SETBC(1)
+  !! NOTE: The SETBC subroutine is commented out as it is not defined in this module.
   end subroutine VWEDGE
 
   ! Compute wedge angle for viscous correction
@@ -509,5 +598,129 @@ contains
       end if
     end do
   end subroutine FINDSK
+
+  ! Find new location of shockwave (ISKNEW) on line J
+  ! given an initial guess for location (ISKOLD).
+  ! Shock location is defined as location of shock point.
+  ! If no shock is found, ISKNEW is set negative.
+  ! Called by - CDCOLE.
+  subroutine NEWISK(ISKOLD, J, ISKNEW)
+    use common_data, only: SONVEL
+    implicit none
+    integer, intent(in) :: ISKOLD, J
+    integer, intent(out) :: ISKNEW
+    integer :: I2
+    real :: U1, U2
+    
+    I2 = ISKOLD + 2
+    ISKNEW = ISKOLD - 3
+    U2 = PX(ISKNEW, J)
+    
+    do
+      ISKNEW = ISKNEW + 1
+      U1 = U2
+      U2 = PX(ISKNEW, J)
+      if (U1 > SONVEL .and. U2 <= SONVEL) exit
+      if (ISKNEW >= I2) then
+        ! No shock point found, tip of shock reached
+        ISKNEW = -ISKNEW
+        exit
+      end if
+    end do
+  end subroutine NEWISK
+
+  ! Prints coordinates where sonic velocity is computed
+  ! Linear interpolation between mesh points is used
+  ! Called by - PRINT.
+  subroutine M1LINE()
+    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX, JLOW
+    use common_data, only: AK, SONVEL, YFACT, BCTYPE
+    use common_data, only: UNIT_OUTPUT
+    implicit none
+    
+    real :: XSLPRT(200), YSLPRT(200)
+    real :: XSONIC(10)
+    real :: YPR, PX1, PX2, RATIO
+    real :: XMIN, XMAX, XINCR, YMIN, YMAX, YINCR
+    real :: YM, YX
+    integer :: NPTS, KMIN, KMAX, JP, K, J, M, IMM, I, L, N
+    
+    NPTS = 0
+    KMIN = JMIN
+    KMAX = JMAX
+    JP = JMAX + JMIN
+    
+    do K = KMIN, KMAX
+      J = JP - K
+      YPR = YFACT * Y(J)
+      PX2 = PX(IMIN, J)
+      M = 0
+      
+      if (J == JLOW) then
+        if (NPTS /= 0) write(UNIT_OUTPUT, 2070)
+      end if
+      
+      IMM = IMIN + 1
+      do I = IMM, IMAX
+        PX1 = PX2
+        PX2 = PX(I, J)
+        
+        if (PX1 > SONVEL .and. PX2 > SONVEL) cycle
+        if (PX1 < SONVEL .and. PX2 < SONVEL) cycle
+        
+        if (NPTS == 0) write(UNIT_OUTPUT, 2000)
+        
+        M = M + 1
+        RATIO = (SONVEL - PX1) / (PX2 - PX1)
+        XSONIC(M) = X(I-1) + (X(I) - X(I-1)) * RATIO
+        NPTS = NPTS + 1
+        XSLPRT(NPTS) = XSONIC(M)
+        YSLPRT(NPTS) = YPR
+          if (NPTS >= 200) then
+          write(UNIT_OUTPUT, 2060)
+          return
+        end if
+      end do
+      
+      if (M == 0) cycle
+      write(UNIT_OUTPUT, 2040) YPR, (XSONIC(L), L=1, M)
+    end do
+    
+    ! Process results if any sonic points were found
+    if (NPTS == 0) return
+    
+    YM = Y(JMIN)
+    YX = Y(JMAX)
+    
+    do N = 1, NPTS
+      if (YSLPRT(N) /= YM .and. YSLPRT(N) /= YX) cycle
+      
+      if (AK > 0.0) write(UNIT_OUTPUT, 2050)
+      if (AK < 0.0 .and. BCTYPE == 1) write(UNIT_OUTPUT, 2050)
+    end do
+    
+    XMIN = -0.75
+    XMAX = 1.75
+    XINCR = 0.25
+    YMIN = -1.0
+    YMAX = 1.5
+    YINCR = 0.5
+!! NOTE: PLTSON call commented out as plotting routine is not implemented
+!! call PLTSON(XSLPRT, YSLPRT, XMIN, XMAX, XINCR, YMIN, YMAX, YINCR, NPTS)
+    
+    ! Format statements
+2000 format('1SONIC LINE COORDINATES', /, 6X, '1HY', 10X, '6HXSONIC', //)
+2040 format(11F10.5)
+2050 format('0***** CAUTION *****', /, &
+           ' SONIC LINE HAS REACHED A BOUNDARY', /, &
+           ' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS', /, &
+           ' SOLUTION IS PROBABLY INVALID')
+2060 format('0***** CAUTION *****', /, &
+           ' NUMBER OF SONIC POINTS EXCEEDED 200', /, &
+           ' ARRAY DIMENSION EXCEEDED', /, &
+           ' EXECUTION OF SUBROUTINE M1LINE TERMINATED')
+2070 format(2X, '13HBODY LOCATION')
+    
+  end subroutine M1LINE
 
 end module math_module

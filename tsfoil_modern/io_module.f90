@@ -1029,10 +1029,15 @@ contains
   ! Initialize potential array P based on PSTART value
   subroutine GUESSP()
     use common_data
+    use solver_module, only: EXTRAP
     implicit none
-    integer :: I, J
+    integer :: I, J, K, INEW, JNEW, ISTEP, JSTEP
+    real :: TEST, XP, YP, X1, X2, Y1, Y2, P1, P2
+    real :: PT(100)  ! Temporary array for interpolation
     
+    ! Branch to appropriate initialization based on PSTART
     select case (PSTART)
+    
     case (1)
       ! PSTART = 1: Set P to zero
       write(UNIT_LOG, '(A)') 'Initializing P array to zero (PSTART=1)'
@@ -1044,95 +1049,159 @@ contains
       DUB = 0.0
       CIRCFF = 0.0
       CIRCTE = 0.0
-    
-    case (2)
-      ! PSTART = 2: P already read from restart file in READIN
-      ! Just need to set circulation parameters if meshes are compatible
-      write(UNIT_LOG, '(A)') 'Using restart data (PSTART=2) - data already loaded in READIN'
-      ! Set circulation from restart data
+      return
+      
+    case (2, 3)
+      ! PSTART = 2: P read from restart file in READIN
+      ! PSTART = 3: P values already in core from previous case
+      if (PSTART == 2) then
+        write(UNIT_LOG, '(A)') 'Using restart data (PSTART=2)'
+      else
+        write(UNIT_LOG, '(A)') 'Using previous solution in core (PSTART=3)'
+      end if
+      
+      ! Set circulation parameters from old solution
       DUB = DUBO
       CIRCFF = CLOLD / CLFACT
       CIRCTE = CIRCFF
       
-    case (3)
-      ! PSTART = 3: Use P values already in core from previous case
-      write(UNIT_LOG, '(A)') 'Using previous solution in core (PSTART=3)'
-      ! P array should already contain values from previous case
+      ! For PSTART = 2 or 3, old P array on XOLD, YOLD mesh
+      ! must be interpolated onto new X, Y mesh.
+      
+      ! Step 1: Interpolate P from XOLD,YOLD to X,YOLD
+      ! Check if XOLD and XIN are the same mesh
+      if (IMAXI == IMAXO) then
+        ! Check if x-coordinates match
+        do I = IMIN, IMAXI
+          TEST = abs(XIN(I) - XOLD(I))
+          if (TEST > 0.0001) goto 450
+        end do
+        
+        ! XIN and XOLD are same mesh - simple deletion if IREF > 0
+        if (IREF > 0) then
+          ISTEP = 2 * IREF
+          do J = JMINO, JMAXO
+            INEW = 0
+            do I = IMINO, IMAXO, ISTEP
+              INEW = INEW + 1
+              P(J, INEW) = P(J, I)
+            end do
+          end do
+        end if
+        goto 500
+      end if
+      
+450   continue
+      ! Interpolate from XOLD to X for arbitrary case
+      do J = JMINO, JMAXO
+        YP = YOLD(J)
+        do I = IMIN, IMAX
+          XP = X(I)
+          
+          if (XP < XOLD(IMINO) .or. XP > XOLD(IMAXO)) then
+            ! New X mesh point is outside range of old X mesh
+            ! For supersonic freestream set P=0, for subsonic
+            ! freestream, extrapolate using far field solution
+            PT(I) = 0.0
+            if (AK > 0.0) call EXTRAP(XP, YP, PT(I))
+          else
+            ! New X mesh point within range of old X mesh
+            ! Find value of XOLD > XP
+            X2 = XOLD(1)
+            K = 0
+455         K = K + 1
+            X1 = X2
+            X2 = XOLD(K)
+            if (X2 < XP) goto 455
+            
+            if (X2 == XP) then
+              PT(I) = P(J, K)
+            else
+              P1 = P(J, K-1)
+              P2 = P(J, K)
+              PT(I) = P1 + (P2 - P1) / (X2 - X1) * (XP - X1)
+            end if
+          end if
+        end do
+        
+        ! Write new values for P into P array
+        do I = IMIN, IMAX
+          P(J, I) = PT(I)
+        end do
+      end do
+      
+500   continue
+      ! Step 2: Interpolate from X,YOLD to X,Y
+      ! Check if YIN and YOLD are the same mesh
+      if (JMAXI == JMAXO) then
+        ! Check if y-coordinates match
+        do J = JMIN, JMAXI
+          TEST = abs(YIN(J) - YOLD(J))
+          if (TEST > 0.0001) goto 550
+        end do
+        
+        ! YIN and YOLD are same mesh - simple deletion if IREF > 0
+        if (IREF > 0) then
+          JSTEP = 2 * IREF
+          do I = IMIN, IMAX
+            JNEW = 0
+            do J = JMINO, JMAXO, JSTEP
+              JNEW = JNEW + 1
+              P(JNEW, I) = P(J, I)
+            end do
+          end do
+        end if
+        goto 600
+      end if
+      
+550   continue
+      ! Interpolate YOLD to Y for arbitrary case
+      do I = IMIN, IMAX
+        XP = X(I)
+        K = 2
+        Y1 = YOLD(1)
+        
+        do J = JMIN, JMAX
+          YP = Y(J)
+          
+          if (YP < YOLD(JMINO)) then
+            ! New Y mesh point below range of old Y mesh
+            PT(J) = P(JMINO, I)
+            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP, YP, PT(J))
+          else if (YP > YOLD(JMAXO)) then
+            ! New Y mesh point above range of old Y mesh  
+            PT(J) = P(JMAXO, I)
+            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP, YP, PT(J))
+          else
+            ! New Y mesh point within range of old Y mesh
+            ! Find value of YOLD > YP
+            Y2 = Y1
+            K = K - 1
+555         K = K + 1
+            Y1 = Y2
+            Y2 = YOLD(K)
+            if (Y2 <= YP) goto 555
+            
+            P1 = P(K-1, I)
+            P2 = P(K, I)
+            PT(J) = P1 + (P2 - P1) / (Y2 - Y1) * (YP - Y1)
+          end if
+        end do
+        
+        ! Put new P values into P array
+        do J = JMIN, JMAX
+          P(J, I) = PT(J)
+        end do
+      end do
+      
+600   continue
+      write(UNIT_LOG, '(A)') 'Interpolation complete'
       
     case default
       write(UNIT_LOG, '(A,I0)') 'Invalid PSTART value: ', PSTART
       call INPERR(3)
     end select
   end subroutine GUESSP
-
-  ! Interpolate P from old grid (XOLD, YOLD) to new grid (X, Y)
-  subroutine interpolate_restart_data()
-    use common_data
-    implicit none
-    integer :: I, J, IO, JO
-    real :: TEST, PT_TEMP(100)
-    logical :: same_x_mesh, same_y_mesh
-    
-    ! Check if X meshes are the same
-    same_x_mesh = .true.
-    if (IMAXI /= IMAXO) then
-      same_x_mesh = .false.
-    else
-      do I = IMIN, IMAXI
-        TEST = abs(XIN(I) - XOLD(I))
-        if (TEST > 0.0001) then
-          same_x_mesh = .false.
-          exit
-        end if
-      end do
-    end if
-    
-    ! Check if Y meshes are the same
-    same_y_mesh = .true.
-    if (JMAXI /= JMAXO) then
-      same_y_mesh = .false.
-    else
-      do J = JMIN, JMAXI
-        TEST = abs(YIN(J) - YOLD(J))
-        if (TEST > 0.0001) then
-          same_y_mesh = .false.
-          exit
-        end if
-      end do
-    end if
-    
-    if (same_x_mesh .and. same_y_mesh) then
-      ! Meshes are identical - direct copy
-      write(UNIT_LOG, '(A)') 'Old and new meshes are identical'
-      ! P array already contains the restart data
-      DUB = DUBO
-      CIRCFF = CLOLD / CLFACT
-      CIRCTE = CIRCFF
-    else
-      ! Need interpolation - simplified version
-      write(UNIT_LOG, '(A)') 'Interpolating from old mesh to new mesh'
-      ! For now, use simple initialization - full interpolation would be complex
-      call GUESSP_simple_init()
-    end if
-  end subroutine interpolate_restart_data
-
-  ! Simple initialization when interpolation is needed
-  subroutine GUESSP_simple_init()
-    use common_data
-    implicit none
-    integer :: I, J
-    
-    write(UNIT_LOG, '(A)') 'Using simple initialization due to mesh differences'
-    
-    do I = 1, size(P, 2)
-      do J = 1, size(P, 1)
-        P(J, I) = 0.0
-      end do
-    end do
-    DUB = 0.0
-    CIRCFF = 0.0
-    CIRCTE = 0.0
-  end subroutine GUESSP_simple_init
 
   ! Fatal error in input - write message and stop
   subroutine INPERR(error_code)

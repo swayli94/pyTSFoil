@@ -105,6 +105,27 @@ io_module.f90 → main.f90
 
 ## Original Functions → Modern Implementation Mapping
 
+### Math and Utility Functions
+
+| Original Subroutine | Modern Location | Description | Status |
+|---------------------|-----------------|-------------|---------|
+| `ARF(X)` | `math_module.f90` | Error function approximation | ✅ |
+| `SIMP(R,X,Y,N,IER)` | `math_module.f90` | Simpson's rule integration | ✅ |
+| `EMACH1(U)` | `math_module.f90` | Local Mach number computation | ✅ |
+| `PX(I,J)` | `math_module.f90` | ∂P/∂x finite difference | ✅ |
+| `PY(I,J)` | `math_module.f90` | ∂P/∂y finite difference | ✅ |
+| `TRAP` | `math_module.f90` | Integrate Y DX by trapezoidal rule | ✅ |
+| `DRAG(CDFACT)` | `math_module.f90` | Pressure drag integration | ✅ |
+| `LIFT(CLFACT)` | `math_module.f90` | Lift coefficient computation | ✅ |
+| `PITCH(CMFACT)` | `math_module.f90` | Pitching moment calculation | ✅ |
+| `VWEDGE` | `math_module.f90` | Viscous wedge corrections | ✅ |
+| `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
+| `FINDSK` | `math_module.f90` | Find shock location | ✅ |
+| `NEWISK` | `math_module.f90` | Shock index adjustment | ✅ |
+| `M1LINE` | `math_module.f90` | Sonic line detection | ✅ |
+| `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
+| `VROOTS` | `math_module.f90` | Slotted-wall angle roots | ✅ |
+
 ### Input/Output Operations
 
 | Original Subroutine | Modern Location | Description | Status |
@@ -139,13 +160,12 @@ io_module.f90 → main.f90
 
 | Original Subroutine | Modern Location | Description | Status |
 |---------------------|-----------------|-------------|---------|
-| `ANGLE` | `solver_module.f90` | Angle potential calculation |  |
-| `BCEND` | `solver_module.f90` | Boundary condition application |  |
-| `DIFCOE` | `solver_module.f90` | Finite difference coefficients |  |
-| `EXTRAP` | `solver_module.f90` | Far-field extrapolation |  |
-| `FARFLD` | `solver_module.f90` | Far-field boundary setup |  |
-| `SETBC(IJUMP)` | `solver_module.f90` | Solution limits and BC setup |  |
-| `DROOTS` | `solver_module.f90` | Slotted-wall angle roots |  |
+| `ANGLE` | `solver_module.f90` | Angle potential calculation | ✅ |
+| `BCEND` | `solver_module.f90` | Boundary condition application | ✅ |
+| `DIFCOE` | `solver_module.f90` | Finite difference coefficients | ✅ |
+| `EXTRAP` | `solver_module.f90` | Far-field extrapolation | ✅ |
+| `FARFLD` | `solver_module.f90` | Far-field boundary setup | ✅ |
+| `SETBC(IJUMP)` | `solver_module.f90` | Solution limits and BC setup | ✅ |
 
 ### Numerical Solution
 
@@ -167,32 +187,6 @@ io_module.f90 → main.f90
 | `CPPLOT` | `io_module.f90` | Cp plot preparation |  |
 | `FIXPLT` | `io_module.f90` | Plot array construction |  |
 | `SPLN1` | `spline_module.f90` | Cubic spline coefficients |  |
-
-### Shock and Flow Analysis
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `FINDSK` | `solver_module.f90` | Shock detection |  |
-| `NEWISK` | `solver_module.f90` | Shock index adjustment |  |
-| `M1LINE` | `solver_module.f90` | Sonic line detection |  |
-
-### Math and Utility Functions
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `ARF(X)` | `math_module.f90` | Error function approximation | ✅ |
-| `SIMP(R,X,Y,N,IER)` | `math_module.f90` | Simpson's rule integration | ✅ |
-| `EMACH1(U)` | `math_module.f90` | Local Mach number computation | ✅ |
-| `PX(I,J)` | `math_module.f90` | ∂P/∂x finite difference | ✅ |
-| `PY(I,J)` | `math_module.f90` | ∂P/∂y finite difference | ✅ |
-| `TRAP` | `math_module.f90` | Integrate Y DX by trapezoidal rule | ✅ |
-| `DRAG(CDFACT)` | `math_module.f90` | Pressure drag integration | ✅ |
-| `LIFT(CLFACT)` | `math_module.f90` | Lift coefficient computation | ✅ |
-| `PITCH(CMFACT)` | `math_module.f90` | Pitching moment calculation | ✅ |
-| `VWEDGE` | `math_module.f90` | Viscous wedge corrections | ✅ |
-| `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
-| `FINDSK` | `math_module.f90` | Find shock location | ✅ |
-| `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
 
 ---
 

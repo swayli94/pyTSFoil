@@ -20,7 +20,7 @@ module common_data
   public :: PSAVE, TITLE, TITLEO, XOLD, YOLD
   public :: XMID, YMID  ! Additional public declarations for io_module and other modules
   public :: JERROR, BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
-  public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, XDIFF, YDIFF
+  public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, IVAL, XDIFF, YDIFF
   public :: CJUP, CJUP1, CJLOW, CJLOW1, CYYBUD, CYYBUC, CYYBUU
   public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC    
   public :: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
@@ -36,6 +36,7 @@ module common_data
   public :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
   public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
   public :: XI, ARG, REST  ! Working arrays for DRAG function
+  public :: THETA  ! COM33: angle array for each mesh point
   public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
@@ -171,6 +172,9 @@ module common_data
   ! COM28: boundary condition identifiers
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
+  
+  ! COM33: angle array for each mesh point
+  real :: THETA(100,100)
   
   ! COM34: viscous wedge parameters  
   integer :: NWDGE
