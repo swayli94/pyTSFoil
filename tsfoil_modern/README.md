@@ -126,8 +126,8 @@ io_module.f90 → main.f90
 
 | Original Subroutine | Modern Location | Description | Status |
 |---------------------|-----------------|-------------|---------|
-| `BODY` | `airfoil_module.f90` | Airfoil geometry processing |  |
-| `PRBODY` | `airfoil_module.f90` | Geometry summary |  |
+| `BODY` | `airfoil_module.f90` | Airfoil geometry processing | ✅ |
+| `PRBODY` | `airfoil_module.f90` | Geometry summary | ✅ |
 | `AYMESH` | `mesh_module.f90` | Analytical mesh generation | ✅ |
 | `CKMESH` | `mesh_module.f90` | Mesh validation/adjustment | ✅ |
 | `CUTOUT` | `mesh_module.f90` | Mesh coarsening | ✅ |

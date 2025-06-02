@@ -428,22 +428,36 @@ contains
     integer :: i
 
     ! Find first point where X >= 0.0 (leading edge)
-    ! Exactly matching original FORTRAN logic
+    ! Exactly matching original FORTRAN logic with bounds checking
     i = IMIN - 1
     do
       i = i + 1
-      if (X_MESH(i) >= 0.0) exit
+      if (i > IMAX) then
+        ! If no point found with X >= 0.0, set ILE to IMIN
+        ILE = IMIN
+        exit
+      end if
+      if (X_MESH(i) >= 0.0) then
+        ILE = i
+        exit
+      end if
     end do
-    ILE = i
     
     ! Find first point where X > 1.0 (trailing edge) 
     do
       i = i + 1
-      if (X_MESH(i) > 1.0) exit
+      if (i > IMAX) then
+        ! If no point found with X > 1.0, set ITE to IMAX
+        ITE = IMAX
+        exit
+      end if
+      if (X_MESH(i) > 1.0) then
+        ITE = i - 1
+        exit
+      end if
     end do
-    ITE = i - 1
   end subroutine ISLIT
-  
+    
   ! Compute JLOW and JUP for mesh Y array
   subroutine JSLIT(Y_MESH)
     use common_data, only: JMIN, JMAX, JLOW, JUP

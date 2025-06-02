@@ -167,7 +167,7 @@ contains
     use common_data, only: BCTYPE, F, H, POR, PI, TWOPI, HALFPI
     use common_data, only: B, ALPHA0, ALPHA1, ALPHA2, BETA0, BETA1, BETA2
     use common_data, only: PSI0, PSI1, PSI2, OMEGA0, OMEGA1, OMEGA2, JET
-    use common_data, only: XSING, FHINV, RTKPOR    
+    use common_data, only: XSING, FHINV, RTKPOR, UNIT_OUTPUT
     implicit none
     integer :: I, J
     real :: YT, YB, XUP, XDN, YT2, YB2, XUP2, XDN2, COEF1, COEF2

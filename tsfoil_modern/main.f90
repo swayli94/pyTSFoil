@@ -23,7 +23,7 @@ program tsfoil_main
   write(*,'(A)') '            Modernized Fortran Version         '
   write(*,'(A)') '================================================='
   write(*,*)  ! Initialize data structures
-  call initialize_common(101, 102)  ! Use original TSFOIL array dimensions
+  call initialize_common()
   call initialize_spline(200)
 
   ! Open input and output files  

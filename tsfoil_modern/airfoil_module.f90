@@ -8,19 +8,24 @@ module airfoil_module
 
 contains
 
-  ! Compute airfoil geometry: thickness, camber, volume
+  ! Print airfoil geometry summary: thickness, camber, volume
+  ! Prints out body geometry
+  ! If PHYS = .TRUE.  all dimensions are normalized by airfoil chord
+  ! If PHYS = .FALSE. all dimensions except X are normalized by chord length and thickness ratio
+  ! Called by - BODYil geometry: thickness, camber, volume
   subroutine BODY()
     use common_data, only: IMIN, IMAX, ILE, ITE, XIN, AMESH
     use common_data, only: FL, FXL, FU, FXU, CAMBER, THICK, VOL, XFOIL, IFOIL
     use common_data, only: BCFOIL, NL, NU, XL, XU, YL, YU, RIGF, IFLAP, DELFLP, FLPLOC
-    use common_data, only: PHYS, DELTA
+    use common_data, only: PHYS, DELTA, FSYM, UNIT_INPUT
     use math_module, only: SIMP
     use spline_module, only: SPLN1, SPLN1X
     implicit none
-    integer :: I, IC, IFP, IERR
+    integer :: I, IC, IFP, IERR, ISYM, N
     real :: Z, RTZ, Z2, Z3, Z4
     real :: DELINV, DY1, DY2, XP, YP, DYP
     real :: VOLU, VOLL, DFLAP, SDFLAP, DELY
+    real :: FNU, FNL
 
     ! Number of points on airfoil
     IFOIL = ITE - ILE + 1
@@ -116,28 +121,55 @@ contains
       ! Jameson's airfoil input format
       DELINV = 1.0
       if (PHYS) DELINV = 1.0/DELTA
-      ! Read FSYM, FNU, FNL then XU,YU arrays etc.
-      ! For brevity, use existing READIN before BODY for data
+      read(UNIT_INPUT,470)
+      read(UNIT_INPUT,480) FSYM, FNU, FNL
+      ISYM = FSYM
+      NU = FNU
+      NL = FNL
+      read(UNIT_INPUT,470)
+      read(UNIT_INPUT,490) (XU(N), YU(N), N=1, NU)
+      DY1 = (YU(2) - YU(1))/(XU(2) - XU(1))
+      DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))
+      call SPLN1(XU, YU, NU)
       IC = 0
       do I = ILE, ITE
         IC = IC + 1
         XP = XIN(I)
         XFOIL(IC) = XP
-        ! Assuming upper surface loaded via common arrays
         call SPLN1X(XU, YU, NU, XP, YP, DYP)
         FU(IC) = YP*DELINV
         FXU(IC) = DYP*DELINV
       end do
-      if (FSYM == 0) then
-        
+      if (ISYM == 0) then
         NL = NU
-        do IC = 1, NL
+        IC = 0
+        do I = ILE, ITE
+          IC = IC + 1
           FL(IC) = -FU(IC)
           FXL(IC) = -FXU(IC)
         end do
+        do N = 1, NL
+          XL(N) = XU(N)
+          YL(N) = -YU(N)
+        end do
       else
-        ! call SPLN1 and SPLN1X for lower surface as above
+        read(UNIT_INPUT,470)
+        read(UNIT_INPUT,490) (XL(N), YL(N), N=1, NL)
+        DY1 = (YL(2) - YL(1))/(XL(2) - XL(1))
+        DY2 = (YL(NL) - YL(NL-1))/(XL(NL) - XL(NL-1))
+        call SPLN1(XL, YL, NL)
+        IC = 0
+        do I = ILE, ITE
+          IC = IC + 1
+          XP = XIN(I)
+          call SPLN1X(XL, YL, NL, XP, YP, DYP)
+          FL(IC) = YP*DELINV
+          FXL(IC) = DYP*DELINV
+        end do
       end if
+470   format(1X)
+480   format(3F10.0)
+490   format(2F10.0)
 
     end select
 
@@ -151,13 +183,15 @@ contains
       DFLAP = DELFLP/57.29578
       SDFLAP = sin(DFLAP)
       do I = 1, IFOIL
-        if (XFOIL(I) >= FLPLOC) then
-          DELY = (XFOIL(I)-FLPLOC)*SDFLAP*DELINV
-          FU(I) = FU(I) - DELY
-          FL(I) = FL(I) - DELY
-          FXU(I) = FXU(I) - DFLAP*DELINV
-          FXL(I) = FXL(I) - DFLAP*DELINV
-        end if
+        if (XFOIL(I) >= FLPLOC) exit
+      end do
+      IFP = I
+      do I = IFP, IFOIL
+        DELY = (XFOIL(I)-FLPLOC)*SDFLAP*DELINV
+        FU(I) = FU(I) - DELY
+        FL(I) = FL(I) - DELY
+        FXU(I) = FXU(I) - DFLAP*DELINV
+        FXL(I) = FXL(I) - DFLAP*DELINV
       end do
     end if
 
@@ -175,41 +209,66 @@ contains
   end subroutine BODY
 
   ! Print airfoil geometry summary: thickness, camber, volume
+  ! Prints out body geometry
+  ! If PHYS = .TRUE.  all dimensions are normalized by airfoil chord
+  ! If PHYS = .FALSE. all dimensions except X are normalized by chord length and thickness ratio
+  ! Called by - BODY
   subroutine PRBODY()
-    use common_data, only: FL, FXL, FU, FXU, CAMBER, THICK, VOL, XFOIL, IFOIL, PHYS, DELTA
+    use common_data, only: FL, FXL, FU, FXU, CAMBER, THICK, VOL, XFOIL, IFOIL, PHYS, DELTA, UNIT_OUTPUT
     implicit none
     real :: THMAX, CAMAX, VOLUME, YUP, YXUP, YLO, YXLO, TH, CA
-    integer :: I
+    integer :: II    ! Header message
+    write(UNIT_OUTPUT, 1000)
 
-    ! Find max thickness and camber
-    THMAX = 0.0; CAMAX = 0.0
-    do I = 1, IFOIL
-      THMAX = max(THMAX, THICK(I))
-      CAMAX = max(CAMAX, CAMBER(I))
+    ! Find maximum thickness and camber
+    THMAX = 0.0
+    CAMAX = 0.0
+    do II = 1, IFOIL
+      THMAX = amax1(THMAX, THICK(II))
+      CAMAX = amax1(CAMAX, CAMBER(II))
     end do
     THMAX = 2.0*THMAX
 
     if (.not. PHYS) then
-      print *, 'Max thickness (similarity) =', THMAX
-      print *, 'Volume, max camber =', VOL, CAMAX
-      print *, ' XFOIL    FU       FXU    FL      FXL    THICK   CAMBER'
-      do I = 1, IFOIL
-        print '(7F12.6)', XFOIL(I), FU(I), FXU(I), FL(I), FXL(I), THICK(I), CAMBER(I)
+      ! Printout in similarity variables
+      write(UNIT_OUTPUT, 1001) THMAX
+      write(UNIT_OUTPUT, 1002) VOL, CAMAX
+      write(UNIT_OUTPUT, 1003)
+      do II = 1, IFOIL
+        write(UNIT_OUTPUT, 1005) XFOIL(II), FU(II), FXU(II), FL(II), FXL(II), THICK(II), CAMBER(II)
       end do
     else
+      ! Printout in physical variables
       THMAX = DELTA*THMAX
       CAMAX = DELTA*CAMAX
+      write(UNIT_OUTPUT, 1006) THMAX
       VOLUME = VOL*DELTA
-      print *, 'Max thickness (physical) =', THMAX
-      print *, 'Volume, max camber =', VOLUME, CAMAX
-      print *, ' XFOIL    YU       YXU    YL      YXL    THICK   CAMBER'
-      do I = 1, IFOIL
-        YUP = DELTA*FU(I); YXUP = DELTA*FXU(I)
-        YLO = DELTA*FL(I); YXLO = DELTA*FXL(I)
-        TH = DELTA*THICK(I); CA = DELTA*CAMBER(I)
-        print '(7F12.6)', XFOIL(I), YUP, YXUP, YLO, YXLO, TH, CA
+      write(UNIT_OUTPUT, 1002) VOLUME, CAMAX
+      write(UNIT_OUTPUT, 1004)
+      do II = 1, IFOIL
+        YUP = DELTA*FU(II)
+        YXUP = DELTA*FXU(II)
+        YLO = DELTA*FL(II)
+        YXLO = DELTA*FXL(II)
+        TH = DELTA*THICK(II)
+        CA = DELTA*CAMBER(II)
+        write(UNIT_OUTPUT, 1005) XFOIL(II), YUP, YXUP, YLO, YXLO, TH, CA
       end do
     end if
+
+    ! Format statements
+1000 format(1x,'AIRFOIL GEOMETRY INFORMATION')
+1001 format(1x,'PRINTOUT IN SIMILARITY VARIABLES',&
+    &28X, 15HMAX THICKNESS =,F12.8)
+1002 format(1x,'AIRFOIL VOLUME =',F12.8,32X,15HMAX CAMBER    =,F10.6//&
+    &20X,14HUPPER  SURFACE,14X,14HLOWER  SURFACE)
+1003 format(8X,1HX,1X,2(12X,1HF,9X,5HDF/DX),8X,9HTHICKNESS,4X,&
+    &6HCAMBER)
+1004 format(8X,1HX,1X,2(12X,1HY,9X,5HDY/DX),8X,9HTHICKNESS,4X,&
+    &6HCAMBER)
+1005 format(1X,F12.8,2X,2F12.8,2(3X,2F12.8))
+1006 format(1x,'PRINTOUT IN PHYSICAL VARIABLES NORMALIZED BY CHORD ',&
+    &'LENGTH', 3X, 15HMAX THICKNESS =,F10.6)
 
   end subroutine PRBODY
 

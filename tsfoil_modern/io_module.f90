@@ -16,10 +16,9 @@ module io_module
                   XIN, YIN, XL, YL, XU, YU, &
                   NWDGE, REYNLD, WCONST, IFLAP, DELFLP, &
                   FLPLOC, IDLA
-  
-  ! Declare public procedures
+    ! Declare public procedures
   public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP
-  public :: open_output_files, close_output_files
+  public :: open_output_files, close_output_files, PRINT_INP_NAMELIST
 
 contains
 
@@ -68,6 +67,7 @@ contains
     real :: TERM, HTM, HTP, YS, YE, TIME1, TIME2, ELPTM
     logical, save :: first_call = .true.
     character(len=20) :: IN_FILENAME
+    integer :: ios
     
     ! Open output files and handle input file on first call only  
     if (first_call) then
@@ -109,9 +109,18 @@ contains
     end if
     
 10  continue
+
     ! Read namelist input for this case
-    read(UNIT_INPUT, INP)
-    
+    read(UNIT_INPUT, INP, iostat=ios)
+
+    ! Check if namelist read was successful
+    if (ios /= 0) then
+        write(UNIT_OUTPUT, '(A)') 'Error reading namelist input. Please check the input file.'
+        goto 999
+    end if
+
+    call PRINT_INP_NAMELIST()  ! Print input namelist for debugging
+        
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then
       if (ABORT1) then
@@ -131,6 +140,7 @@ contains
     end if
     
 14  continue
+
     ! Check if YIN needs default initialization for tunnel or free air case
     if (YIN(JMIN) /= 0.0) goto 18
     
@@ -218,8 +228,6 @@ contains
     
     ! Compute ILE and ITE (leading and trailing edge)
     call ISLIT(XIN)
-    
-    ! Compute JLOW and JUP (location of body slit)
     call JSLIT(YIN)
     
     ! Check number of mesh points, if not odd add points to appropriate areas to make odd no.
@@ -850,13 +858,86 @@ contains
     end if
   end subroutine check_yin_defaults
 
-  subroutine DLAOUT
-    use common_data, only: UNIT_LOG
+  ! OUTPUTS CP DATA IN FORM USABLE BY ANTANI'S INTEGRATION PROGRAM
+  subroutine DLAOUT(ILE_IN, ITE_IN, ALPHA_IN, DFLP, EM, VF, RE)
+    use common_data, only: P, X, Y, CPL, CPU, XCP, CPP, UNIT_LOG, UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT
+    use spline_module, only: SPLN1, SPLN1X, initialize_spline
     implicit none
     
-    write(UNIT_LOG,'(A)') 'DLAOUT subroutine called - no operation defined'
-    ! This subroutine is a placeholder for DLAOUT functionality
-    ! No operations defined in the original code
+    ! Arguments
+    integer, intent(in) :: ILE_IN, ITE_IN
+    real, intent(in) :: ALPHA_IN, DFLP, EM, VF, RE
+    
+    ! Local variables
+    integer :: NUP, NDOWN, NCON, NTEST, NRUN, NPT
+    integer :: NS, NE, NX, I
+    real :: R, ALFA
+    real :: DY1, DY2, XP, YP, DYP
+    integer :: K1, K2
+    
+    write(UNIT_LOG,'(A)') 'DLAOUT: Starting CP data output for integration program'
+    
+    ! Initialize spline module
+    call initialize_spline(200)
+    
+    ! Read input parameters from unit 5
+    read(UNIT_DLAOUT_INPUT, 100) NUP, NDOWN, NCON, NTEST, NRUN, NPT
+    
+    ! Convert units and parameters
+    R = RE / 1.0E+06
+    ALFA = ALPHA_IN * VF
+    
+    ! Write header information to unit 10
+    write(UNIT_DLAOUT_OUTPUT, 101) EM, ALFA, R, NCON, DFLP, NTEST, NRUN, NPT
+    
+    ! Read upper surface X-coordinates
+    read(UNIT_DLAOUT_INPUT, 102) (XCP(I), I=1, NUP)
+    
+    ! Read lower surface X-coordinates
+    NS = NUP + 1
+    NE = NUP + NDOWN
+    read(UNIT_DLAOUT_INPUT, 102) (XCP(I), I=NS, NE)
+    
+    ! Set spline boundary conditions
+    K1 = 1
+    K2 = 1
+    
+    ! Interpolate upper surface CP values
+    DY1 = (CPU(ILE_IN+1) - CPU(ILE_IN)) / (X(ILE_IN+1) - X(ILE_IN))
+    DY2 = (CPU(ITE_IN) - CPU(ITE_IN-1)) / (X(ITE_IN) - X(ITE_IN-1))
+    NX = ITE_IN - ILE_IN + 1
+    
+    call SPLN1(X(ILE_IN:), CPU(ILE_IN:), NX)
+    
+    do I = 1, NUP
+      XP = XCP(I)
+      call SPLN1X(X(ILE_IN:), CPU(ILE_IN:), NX, XP, YP, DYP)
+      CPP(I) = YP
+    end do
+    
+    ! Interpolate lower surface CP values
+    DY1 = (CPL(ILE_IN+1) - CPL(ILE_IN)) / (X(ILE_IN+1) - X(ILE_IN))
+    DY2 = (CPL(ITE_IN) - CPL(ITE_IN-1)) / (X(ITE_IN) - X(ITE_IN-1))
+    
+    call SPLN1(X(ILE_IN:), CPL(ILE_IN:), NX)
+    
+    do I = NS, NE
+      XP = XCP(I)
+      call SPLN1X(X(ILE_IN:), CPL(ILE_IN:), NX, XP, YP, DYP)
+      CPP(I) = YP
+    end do
+    
+    ! Write interpolated CP values to output
+    write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=1, NUP)
+    write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=NS, NE)
+    
+    write(UNIT_LOG,'(A,I0,A,I0,A)') 'DLAOUT: Completed CP interpolation for ', NUP, ' upper and ', NDOWN, ' lower surface points'
+    
+    ! Format statements matching original
+100 format(6I5)
+101 format(F6.3,F6.2,24X,F6.3,I6,F6.1,16X,2I3,I2)
+102 format(11F6.3)
+    
   end subroutine DLAOUT
   
   ! Read restart file (PSTART=2 case) - matches original exactly
@@ -892,6 +973,14 @@ contains
       return
     end if
     
+    ! Read solution parameters using original format 903: FORMAT(8F10.6)
+    read(UNIT_RESTART, 903, iostat=ios_restart) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
+    if (ios_restart /= 0) then
+      write(UNIT_LOG, '(A)') 'Error reading solution parameters from restart file'
+      call INPERR(2)
+      return
+    end if
+    
     ! Read grid coordinates using original format 903: FORMAT(8F10.6)
     read(UNIT_RESTART, 903, iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
     if (ios_restart /= 0) then
@@ -906,25 +995,35 @@ contains
       call INPERR(2)
       return
     end if
-    
+
     ! Read solution array P using original format 903: FORMAT(8F10.6)
-    do J = JMINO, JMAXO
-      read(UNIT_RESTART, 903, iostat=ios_restart) (P(J,I), I=IMINO, IMAXO)
+    do I = IMINO, IMAXO
+      read(UNIT_RESTART, 903, iostat=ios_restart) (P(J,I), J=JMINO, JMAXO)
       if (ios_restart /= 0) then
-        write(UNIT_LOG, '(A,I0)') 'Error reading P array at J=', J
+        write(UNIT_LOG, '(A,I0)') 'Error reading P array at I=', I
         call INPERR(2)
         close(UNIT_RESTART)
         return
       end if
     end do
-    
+
     close(UNIT_RESTART)
     write(UNIT_LOG, '(A)') 'Restart data successfully loaded'
     
+    ! Write restart information to output file (like original)
+    write(UNIT_OUTPUT, 1000) TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, &
+                            ALPHAO, DELTAO, VOLO, DUBO
+    
     ! Original format statements
-    900 format(20A4)
-    902 format(4I5)
-    903 format(8F10.6)
+900 format(20A4)
+902 format(4I5)
+903 format(8F10.6)
+1000  format(39H1P INITIALIZED FROM PREVIOUS RUN TITLED/ &
+        1X,20A4/31H WHICH HAD THE FOLLOWING VALUES/ &
+        8H IMIN  =,I4/8H IMAX  =,I4/8H JMIN  =,I4/8H JMAX  =,I4/ &
+        8H CL    =,F12.8/8H EMACH =,F12.8/8H ALPHA =,F12.8/ &
+        8H DELTA =,F12.8/8H VOL   =,F12.8/8H DUB   =,F12.8/ )
+
   end subroutine LOADP
 
   ! Initialize potential array P based on PSTART value
@@ -945,12 +1044,15 @@ contains
       DUB = 0.0
       CIRCFF = 0.0
       CIRCTE = 0.0
-      
+    
     case (2)
-      ! PSTART = 2: P read from restart file in LOADP
-      ! Need to interpolate from old grid to new grid if different
-      write(UNIT_LOG, '(A)') 'Using restart data (PSTART=2)'
-      call interpolate_restart_data()
+      ! PSTART = 2: P already read from restart file in READIN
+      ! Just need to set circulation parameters if meshes are compatible
+      write(UNIT_LOG, '(A)') 'Using restart data (PSTART=2) - data already loaded in READIN'
+      ! Set circulation from restart data
+      DUB = DUBO
+      CIRCFF = CLOLD / CLFACT
+      CIRCTE = CIRCFF
       
     case (3)
       ! PSTART = 3: Use P values already in core from previous case
@@ -1059,5 +1161,149 @@ contains
     close(UNIT_LOG)
     stop 'TSFoil input error - check tsfoil.log for details'
   end subroutine INPERR
+
+  ! Print INP namelist parameters to UNIT_OUTPUT for debugging
+  subroutine PRINT_INP_NAMELIST()
+    use common_data
+    implicit none
+    integer :: I, J
+    
+    write(UNIT_OUTPUT, '(A)') '1'  ! Form feed character
+    write(UNIT_OUTPUT, '(A)') '0************************************'
+    write(UNIT_OUTPUT, '(A)') ' DEBUG: INP NAMELIST PARAMETERS'
+    write(UNIT_OUTPUT, '(A)') ' ************************************'
+    write(UNIT_OUTPUT, *)
+    
+    ! Print flow parameters
+    write(UNIT_OUTPUT, '(A)') ' FLOW PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,F12.6)') '   AK       = ', AK
+    write(UNIT_OUTPUT, '(A,F12.6)') '   ALPHA    = ', ALPHA  
+    write(UNIT_OUTPUT, '(A,F12.6)') '   EMACH    = ', EMACH
+    write(UNIT_OUTPUT, '(A,F12.6)') '   DELTA    = ', DELTA
+    write(UNIT_OUTPUT, '(A,F12.6)') '   GAM      = ', GAM
+    write(UNIT_OUTPUT, '(A,L12)')   '   PHYS     = ', PHYS
+    write(UNIT_OUTPUT, *)
+    
+    ! Print mesh parameters
+    write(UNIT_OUTPUT, '(A)') ' MESH PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,I12)')   '   IMIN     = ', IMIN
+    write(UNIT_OUTPUT, '(A,I12)')   '   IMAXI    = ', IMAXI
+    write(UNIT_OUTPUT, '(A,I12)')   '   JMIN     = ', JMIN
+    write(UNIT_OUTPUT, '(A,I12)')   '   JMAXI    = ', JMAXI
+    write(UNIT_OUTPUT, '(A,L12)')   '   AMESH    = ', AMESH
+    write(UNIT_OUTPUT, *)
+    
+    ! Print boundary condition parameters
+    write(UNIT_OUTPUT, '(A)') ' BOUNDARY CONDITIONS:'
+    write(UNIT_OUTPUT, '(A,I12)')   '   BCTYPE   = ', BCTYPE
+    write(UNIT_OUTPUT, '(A,I12)')   '   BCFOIL   = ', BCFOIL
+    write(UNIT_OUTPUT, '(A,F12.6)') '   F        = ', F
+    write(UNIT_OUTPUT, '(A,F12.6)') '   H        = ', H
+    write(UNIT_OUTPUT, '(A,F12.6)') '   POR      = ', POR
+    write(UNIT_OUTPUT, *)
+    
+    ! Print solver parameters
+    write(UNIT_OUTPUT, '(A)') ' SOLVER PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,F12.6)') '   CVERGE   = ', CVERGE
+    write(UNIT_OUTPUT, '(A,F12.6)') '   DVERGE   = ', DVERGE
+    write(UNIT_OUTPUT, '(A,F12.6)') '   EPS      = ', EPS
+    write(UNIT_OUTPUT, '(A,I12)')   '   MAXIT    = ', MAXIT
+    write(UNIT_OUTPUT, '(A,I12)')   '   IPRTER   = ', IPRTER
+    write(UNIT_OUTPUT, '(A,I12)')   '   ICUT     = ', ICUT
+    write(UNIT_OUTPUT, *)
+    
+    ! Print circulation and Kutta condition parameters
+    write(UNIT_OUTPUT, '(A)') ' CIRCULATION AND KUTTA CONDITION:'
+    write(UNIT_OUTPUT, '(A,F12.6)') '   CLSET    = ', CLSET
+    write(UNIT_OUTPUT, '(A,F12.6)') '   WCIRC    = ', WCIRC
+    write(UNIT_OUTPUT, '(A,L12)')   '   FCR      = ', FCR
+    write(UNIT_OUTPUT, '(A,L12)')   '   KUTTA    = ', KUTTA
+    write(UNIT_OUTPUT, *)
+    
+    ! Print control parameters
+    write(UNIT_OUTPUT, '(A)') ' CONTROL PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,I12)')   '   PSTART   = ', PSTART
+    write(UNIT_OUTPUT, '(A,L12)')   '   PSAVE    = ', PSAVE
+    write(UNIT_OUTPUT, '(A,I12)')   '   PRTFLO   = ', PRTFLO
+    write(UNIT_OUTPUT, '(A,I12)')   '   SIMDEF   = ', SIMDEF
+    write(UNIT_OUTPUT, *)
+    
+    ! Print airfoil parameters
+    write(UNIT_OUTPUT, '(A)') ' AIRFOIL PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,I12)')   '   NU       = ', NU
+    write(UNIT_OUTPUT, '(A,I12)')   '   NL       = ', NL
+    write(UNIT_OUTPUT, '(A,F12.6)') '   RIGF     = ', RIGF
+    write(UNIT_OUTPUT, '(A,I12)')   '   IFLAP    = ', IFLAP
+    write(UNIT_OUTPUT, '(A,F12.6)') '   DELFLP   = ', DELFLP
+    write(UNIT_OUTPUT, '(A,F12.6)') '   FLPLOC   = ', FLPLOC
+    write(UNIT_OUTPUT, '(A,I12)')   '   IDLA     = ', IDLA
+    write(UNIT_OUTPUT, *)
+    
+    ! Print relaxation parameters
+    write(UNIT_OUTPUT, '(A)') ' RELAXATION PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,3F8.3)') '   WE       = ', WE
+    write(UNIT_OUTPUT, *)
+    
+    ! Print viscous wedge parameters
+    write(UNIT_OUTPUT, '(A)') ' VISCOUS WEDGE PARAMETERS:'
+    write(UNIT_OUTPUT, '(A,I12)')   '   NWDGE    = ', NWDGE
+    write(UNIT_OUTPUT, '(A,E12.3)') '   REYNLD   = ', REYNLD
+    write(UNIT_OUTPUT, '(A,F12.6)') '   WCONST   = ', WCONST
+    write(UNIT_OUTPUT, *)
+    
+    ! Print XIN array if allocated
+    if (allocated(XIN) .and. IMAXI > 0) then
+      write(UNIT_OUTPUT, '(A)') ' XIN ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0,A,I0)') '   (I=', IMIN, ' TO ', IMAXI, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (XIN(I), I=IMIN, IMAXI)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    ! Print YIN array if allocated
+    if (allocated(YIN) .and. JMAXI > 0) then
+      write(UNIT_OUTPUT, '(A)') ' YIN ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0,A,I0)') '   (J=', JMIN, ' TO ', JMAXI, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (YIN(J), J=JMIN, JMAXI)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    ! Print XU array if NU > 0
+    if (NU > 0) then
+      write(UNIT_OUTPUT, '(A)') ' XU ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0)') '   (I=1 TO ', NU, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (XU(I), I=1, NU)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    ! Print YU array if NU > 0
+    if (NU > 0) then
+      write(UNIT_OUTPUT, '(A)') ' YU ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0)') '   (I=1 TO ', NU, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (YU(I), I=1, NU)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    ! Print XL array if NL > 0
+    if (NL > 0) then
+      write(UNIT_OUTPUT, '(A)') ' XL ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0)') '   (I=1 TO ', NL, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (XL(I), I=1, NL)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    ! Print YL array if NL > 0
+    if (NL > 0) then
+      write(UNIT_OUTPUT, '(A)') ' YL ARRAY:'
+      write(UNIT_OUTPUT, '(A,I0)') '   (I=1 TO ', NL, ')'
+      write(UNIT_OUTPUT, '(6F12.6)') (YL(I), I=1, NL)
+      write(UNIT_OUTPUT, *)
+    end if
+    
+    write(UNIT_OUTPUT, '(A)') ' ************************************'
+    write(UNIT_OUTPUT, '(A)') ' END OF INP NAMELIST DEBUG OUTPUT'
+    write(UNIT_OUTPUT, '(A)') ' ************************************'
+    write(UNIT_OUTPUT, *)
+    
+  end subroutine PRINT_INP_NAMELIST
 
 end module io_module
