@@ -42,52 +42,92 @@ tsfoil_modern/
 
 2. **`math_module.f90`** - Mathematical utilities
 
-   - Error function approximation (`ARF`)
-   - Numerical integration (`SIMP`)
-   - Enhanced precision and error handling
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `ARF(X)` | `math_module.f90` | Error function approximation | ✅ |
+   | `SIMP(R,X,Y,N,IER)` | `math_module.f90` | Simpson's rule integration | ✅ |
+   | `EMACH1(U)` | `math_module.f90` | Local Mach number computation | ✅ |
+   | `PX(I,J)` | `math_module.f90` | ∂P/∂x finite difference | ✅ |
+   | `PY(I,J)` | `math_module.f90` | ∂P/∂y finite difference | ✅ |
+   | `TRAP` | `math_module.f90` | Integrate Y DX by trapezoidal rule | ✅ |
+   | `DRAG(CDFACT)` | `math_module.f90` | Pressure drag integration | ✅ |
+   | `LIFT(CLFACT)` | `math_module.f90` | Lift coefficient computation | ✅ |
+   | `PITCH(CMFACT)` | `math_module.f90` | Pitching moment calculation | ✅ |
+   | `VWEDGE` | `math_module.f90` | Viscous wedge corrections | ✅ |
+   | `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
+   | `FINDSK` | `math_module.f90` | Find shock location | ✅ |
+   | `NEWISK` | `math_module.f90` | Shock index adjustment | ✅ |
+   | `M1LINE` | `math_module.f90` | Sonic line detection | ✅ |
+   | `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
+   | `VROOTS` | `math_module.f90` | Slotted-wall angle roots | ✅ |
 
 3. **`spline_module.f90`** - Cubic spline interpolation
 
-   - Spline coefficient computation (`SPLN1`)
-   - Interpolation and extrapolation routines
-   - Airfoil ordinate handling
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `SPLN1(X, Y, N)` | `spline_module.f90` | Set up cubic spline coefficients |  |
+   | `SPLN1X(X, Y, N, XP, YP, DYP)` | `spline_module.f90` | Evaluate spline at point XP |  |
 
 4. **`airfoil_module.f90`** - Geometry handling
 
-   - NACA airfoil generation (`BODY`)
-   - Coordinate reading and processing
-   - Geometry summary output (`PRBODY`)
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `BODY` | `airfoil_module.f90` | Airfoil geometry processing | ✅ |
+   | `PRBODY` | `airfoil_module.f90` | Geometry summary | ✅ |
 
 5. **`mesh_module.f90`** - Mesh operations
 
-   - Analytical mesh generation (`AYMESH`)
-   - Mesh validation and adjustment (`CKMESH`)
-   - Mesh refinement and coarsening (`REFINE`, `CUTOUT`)
-   - Slit location utilities (`ISLIT`, `JSLIT`)
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `AYMESH` | `mesh_module.f90` | Analytical mesh generation | ✅ |
+   | `CKMESH` | `mesh_module.f90` | Mesh validation/adjustment | ✅ |
+   | `CUTOUT` | `mesh_module.f90` | Mesh coarsening | ✅ |
+   | `REFINE` | `mesh_module.f90` | Mesh refinement | ✅ |
+   | `ISLIT(X)` | `mesh_module.f90` | Leading/trailing edge location | ✅ |
+   | `JSLIT(Y)` | `mesh_module.f90` | Upper/lower surface location | ✅ |
 
 6. **`solver_module.f90`** - Numerical setup
 
-   - Finite difference coefficients (`DIFCOE`)
-   - Boundary condition setup (`SETBC`, `BCEND`)
-   - Far-field treatment (`FARFLD`, `EXTRAP`)
-   - Shock detection (`FINDSK`, `M1LINE`)
-   - Pressure derivatives (`PX`, `PY`)
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `ANGLE` | `solver_module.f90` | Angle potential calculation | ✅ |
+   | `BCEND` | `solver_module.f90` | Boundary condition application | ✅ |
+   | `DIFCOE` | `solver_module.f90` | Finite difference coefficients | ✅ |
+   | `EXTRAP` | `solver_module.f90` | Far-field extrapolation | ✅ |
+   | `FARFLD` | `solver_module.f90` | Far-field boundary setup | ✅ |
+   | `SETBC(IJUMP)` | `solver_module.f90` | Solution limits and BC setup | ✅ |
 
 7. **`numerical_solvers.f90`** - Core algorithms
 
-   - SOR iteration (`SYOR`, `SOLVE`)
-   - Solution initialization (`GUESSP`)
-   - Circulation and doublet updates (`RECIRC`, `REDUB`)
-   - Force calculations (`DRAG`, `LIFT`, `PITCH`)
-   - Solution management (`SAVEP`, `RESET`)
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `SOLVE` | `numerical_solvers.f90` | Main iteration loop | ✅ |
+   | `SYOR` | `numerical_solvers.f90` | SOR sweep |  |
+   | `GUESSP` | `numerical_solvers.f90` | Solution initialization |  |
+   | `RECIRC` | `numerical_solvers.f90` | Circulation updates | ✅ |
+   | `REDUB` | `numerical_solvers.f90` | Doublet strength updates | ✅ |
+   | `RESET` | `numerical_solvers.f90` | Far-field boundary updates |  |
+   | `SAVEP` | `numerical_solvers.f90` | Solution storage |  |
+   | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly |  |
 
 8. **`io_module.f90`** - Input/output operations
 
-   - Input processing (`READIN`, `ECHINP`)
-   - Coordinate scaling (`SCALE`)
-   - Output generation (`PRINT`, `PRINT1`, `PRTFLD`)
-   - Plotting utilities (`CPPLOT`, `FIXPLT`)
-   - Error reporting (`INPERR`)
+   | Original Subroutine | Modern Location | Description | Status |
+   |---------------------|-----------------|-------------|---------|
+   | `READIN` | `io_module.f90` | Input parameter reading | ✅ |
+   | `SCALE` | `io_module.f90` | Variable scaling | ✅ |
+   | `ECHINP` | `io_module.f90` | Input echoing | ✅ |
+   | `PRINT` | `io_module.f90` | Main output driver |  |
+   | `PRINT1` | `io_module.f90` | Body Cp and Mach output |  |
+   | `PRTFLD` | `io_module.f90` | Field output |  |
+   | `PRTMC` | `io_module.f90` | Flow type mapping |  |
+   | `PRTSK` | `io_module.f90` | Shock wave output |  |
+   | `PRTWAL` | `io_module.f90` | Wall condition output |  |
+   | `INPERR(I)` | `io_module.f90` | Error message output |  |
+   | `DLAOUT` | `io_module.f90` |  |  |
+   | `LOADP` | `io_module.f90` |  |  |
+   | `CPPLOT` | `io_module.f90` | Cp plot preparation |  |
+   | `FIXPLT` | `io_module.f90` | Plot array construction |  |
 
 ### Compilation Dependencies
 
@@ -100,95 +140,6 @@ airfoil_module.f90 → mesh_module.f90 → solver_module.f90 → numerical_solve
     ↓
 io_module.f90 → main.f90
 ```
-
----
-
-## Original Functions → Modern Implementation Mapping
-
-### Math and Utility Functions
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `ARF(X)` | `math_module.f90` | Error function approximation | ✅ |
-| `SIMP(R,X,Y,N,IER)` | `math_module.f90` | Simpson's rule integration | ✅ |
-| `EMACH1(U)` | `math_module.f90` | Local Mach number computation | ✅ |
-| `PX(I,J)` | `math_module.f90` | ∂P/∂x finite difference | ✅ |
-| `PY(I,J)` | `math_module.f90` | ∂P/∂y finite difference | ✅ |
-| `TRAP` | `math_module.f90` | Integrate Y DX by trapezoidal rule | ✅ |
-| `DRAG(CDFACT)` | `math_module.f90` | Pressure drag integration | ✅ |
-| `LIFT(CLFACT)` | `math_module.f90` | Lift coefficient computation | ✅ |
-| `PITCH(CMFACT)` | `math_module.f90` | Pitching moment calculation | ✅ |
-| `VWEDGE` | `math_module.f90` | Viscous wedge corrections | ✅ |
-| `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
-| `FINDSK` | `math_module.f90` | Find shock location | ✅ |
-| `NEWISK` | `math_module.f90` | Shock index adjustment | ✅ |
-| `M1LINE` | `math_module.f90` | Sonic line detection | ✅ |
-| `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
-| `VROOTS` | `math_module.f90` | Slotted-wall angle roots | ✅ |
-
-### Input/Output Operations
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `READIN` | `io_module.f90` | Input parameter reading | ✅ |
-| `SCALE` | `io_module.f90` | Variable scaling | ✅ |
-| `ECHINP` | `io_module.f90` | Input echoing | ✅ |
-| `PRINT` | `io_module.f90` | Main output driver |  |
-| `PRINT1` | `io_module.f90` | Body Cp and Mach output |  |
-| `PRTFLD` | `io_module.f90` | Field output |  |
-| `PRTMC` | `io_module.f90` | Flow type mapping |  |
-| `PRTSK` | `io_module.f90` | Shock wave output |  |
-| `PRTWAL` | `io_module.f90` | Wall condition output |  |
-| `INPERR(I)` | `io_module.f90` | Error message output |  |
-| `DLAOUT` | `io_module.f90` |  |  |
-| `LOADP` | `io_module.f90` |  |  |
-
-### Mesh and Geometry Operations
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `BODY` | `airfoil_module.f90` | Airfoil geometry processing | ✅ |
-| `PRBODY` | `airfoil_module.f90` | Geometry summary | ✅ |
-| `AYMESH` | `mesh_module.f90` | Analytical mesh generation | ✅ |
-| `CKMESH` | `mesh_module.f90` | Mesh validation/adjustment | ✅ |
-| `CUTOUT` | `mesh_module.f90` | Mesh coarsening | ✅ |
-| `REFINE` | `mesh_module.f90` | Mesh refinement | ✅ |
-| `ISLIT(X)` | `mesh_module.f90` | Leading/trailing edge location | ✅ |
-| `JSLIT(Y)` | `mesh_module.f90` | Upper/lower surface location | ✅ |
-
-### Solver and Boundary Conditions
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `ANGLE` | `solver_module.f90` | Angle potential calculation | ✅ |
-| `BCEND` | `solver_module.f90` | Boundary condition application | ✅ |
-| `DIFCOE` | `solver_module.f90` | Finite difference coefficients | ✅ |
-| `EXTRAP` | `solver_module.f90` | Far-field extrapolation | ✅ |
-| `FARFLD` | `solver_module.f90` | Far-field boundary setup | ✅ |
-| `SETBC(IJUMP)` | `solver_module.f90` | Solution limits and BC setup | ✅ |
-
-### Numerical Solution
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `SOLVE` | `numerical_solvers.f90` | Main iteration loop |  |
-| `SYOR` | `numerical_solvers.f90` | SOR sweep |  |
-| `GUESSP` | `numerical_solvers.f90` | Solution initialization |  |
-| `RECIRC` | `numerical_solvers.f90` | Circulation updates |  |
-| `REDUB` | `numerical_solvers.f90` | Doublet strength updates |  |
-| `RESET` | `numerical_solvers.f90` | Far-field boundary updates |  |
-| `SAVEP` | `numerical_solvers.f90` | Solution storage |  |
-
-### Analysis and Post-Processing
-
-| Original Subroutine | Modern Location | Description | Status |
-|---------------------|-----------------|-------------|---------|
-| `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly |  |
-| `CPPLOT` | `io_module.f90` | Cp plot preparation |  |
-| `FIXPLT` | `io_module.f90` | Plot array construction |  |
-| `SPLN1` | `spline_module.f90` | Cubic spline coefficients |  |
-
----
 
 ## Key Modernization Improvements
 
@@ -250,7 +201,7 @@ cd tsfoil_modern
 compile.bat
 ```
 
-**Status**: ✅ Successfully creates `tsfoil_modern.exe` (268 KB)
+**Status**: Successfully creates `tsfoil_modern.exe` (268 KB)
 
 ### Running
 
@@ -258,7 +209,7 @@ compile.bat
 2. Run: `tsfoil_modern.exe`
 3. Results will be written to `tsfoil.out`
 
-**Test Status**: ✅ Executable launches correctly and displays program header
+**Test Status**: Executable launches correctly and displays program header
 
 ---
 
@@ -305,11 +256,6 @@ compile.bat
    - OpenMP parallelization for large meshes
    - Vectorization optimizations
    - Multi-threading capabilities
-
-## References
-
-- Original code summary: `tsfoil_f90_summary.md`
-- Original Fortran 77 source: `../pyTSFoil/tsfoil.f90`
 
 ---
 

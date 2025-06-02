@@ -31,8 +31,8 @@ contains
     if (allocated(B)) deallocate(B)
   end subroutine cleanup_spline
 
+  ! Set up cubic spline coefficients
   subroutine SPLN1(X, Y, N)
-    ! Set up cubic spline coefficients
     implicit none
     integer, intent(in) :: N
     real, intent(in) :: X(N), Y(N)
@@ -103,8 +103,8 @@ contains
 
   end subroutine SPLN1
 
+  ! Evaluate spline at point XP
   subroutine SPLN1X(X, Y, N, XP, YP, DYP)
-    ! Evaluate spline at point XP
     implicit none
     integer, intent(in) :: N
     real, intent(in) :: X(N), Y(N), XP

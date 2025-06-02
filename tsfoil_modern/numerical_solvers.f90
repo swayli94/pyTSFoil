@@ -144,67 +144,268 @@ contains
 
   ! Main iteration loop: solver, convergence, and flow updates
   subroutine SOLVE()
-    use common_data, only: MAXIT, ERROR, CVERGE, IPRTER, PRTFLO
+    use common_data, only: MAXIT, ERROR, CVERGE, DVERGE, IPRTER, PRTFLO, ABORT1
+    use common_data, only: IREF, WE, EPS, IMIN, IMAX, JMIN, JMAX, IUP, IDOWN
+    use common_data, only: ILE, ITE, JUP, JLOW, JTOP, JBOT, J1, J2, KSTEP
+    use common_data, only: P, X, Y, AK, ALPHA, DUB, GAM1, RTK
+    use common_data, only: EMU, POLD, DCIRC, OUTERR, I1, I2, IERROR, JERROR
+    use common_data, only: THETA, BCTYPE, CIRCFF, FHINV, POR, CIRCTE
+    use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
+    use common_data, only: WCONST, REYNLD, WI, C1
+    use common_data, only: CLFACT, CMFACT, UNIT_OUTPUT
+    use math_module, only: LIFT, PITCH
+    use math_module, only: VWEDGE
     implicit none
-    integer :: ITER
+    
+    integer :: ITER, MAXITM, KK, J, I, IK, JK, JINC, N, NN
+    real :: WEP, CL_LOCAL, CM_LOCAL, ERCIRC, THA
     logical :: CONVERGED
-
+    integer, parameter :: NDUB = 25
+    
+    ! Initialize
+    ABORT1 = .false.
     CONVERGED = .false.
     
-    do ITER = 1, MAXIT
-      ERROR = 0.0
-      
-      ! Perform SOR sweep
-      call SYOR()
-      
-      ! Check convergence
-      if (ERROR < CVERGE) then
-        CONVERGED = .true.
-        write(*,'(A,I0,A,E12.4)') 'Converged in ', ITER, ' iterations, error = ', ERROR
-        exit
-      end if
-      
-      ! Print progress
-      if (mod(ITER, IPRTER) == 0 .or. ITER == 1) then
-        write(*,'(A,I0,A,E12.4)') 'Iteration ', ITER, ', max error = ', ERROR
-      end if
-      
-      ! Update circulation and doublet strength
-      call RECIRC()
-      call REDUB()
-      
-      ! Reset boundary conditions
-      call RESET()
+    ! Write header to output files
+    write(UNIT_OUTPUT, '(1H1)')
+    
+    ! Calculate maximum iterations based on refinement level
+    if (IREF == 2) MAXITM = MAXIT / 4
+    if (IREF == 1) MAXITM = MAXIT / 2
+    if (IREF == 0) MAXITM = MAXIT
+    
+    ! Set relaxation parameter based on refinement level
+    KK = 3 - IREF
+    WEP = WE(KK)
+    WI = 1.0 / WEP
+    
+    ! Write solver parameters
+    write(UNIT_OUTPUT, '(3X,"WE = ",F7.4,5X,"EPS = ",F8.4,5X,"MAXIT FOR THIS MESH = ",I4)') WEP, EPS, MAXITM
+    
+    ! Write iteration header
+    write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
+    
+    ! Main iteration loop
+    do ITER = 1, MAXITM
+        ! Initialize EMU array
+        I1 = 1
+        I2 = 2
+        do J = JMIN, JMAX
+            POLD(J,I2) = P(J,IUP-1)
+            EMU(J,I2) = 0.0
+        end do
+        
+        ! Set EMU for subsonic flow
+        if (AK <= 0.0) then
+            do J = JMIN, JMAX
+                EMU(J,I2) = C1(2)
+            end do
+        end if
+        
+        ! Set output flag for this iteration
+        OUTERR = .false.
+        if (mod(ITER, IPRTER) == 0) OUTERR = .true.
+        
+        ! Reset error tracking
+        ERROR = 0.0
+        
+        ! Update circulation-jump boundary
+        call RECIRC()
+        
+        ! Perform SOR sweep
+        call SYOR()
+        
+        ! Update circulation for subsonic freestream flow
+        if (AK >= 0.0 .and. BCTYPE == 1) then
+            IK = IUP - IMIN
+            do I = IUP, IDOWN
+                IK = IK + KSTEP
+                JK = JBOT - JMIN
+                do J = JBOT, JTOP
+                    JINC = KSTEP
+                    if (Y(J) < 0.0 .and. Y(J+1) > 0.0) JINC = 2 * KSTEP - 1
+                    JK = JK + JINC
+                    P(J,I) = P(J,I) + DCIRC * THETA(JK,IK)
+                end do
+            end do
+        end if
+        
+        ! Update doublet strength every NDUB iterations
+        if (mod(ITER, NDUB) == 0) call REDUB()
+        
+        ! Reset boundary conditions
+        call RESET()
+        
+        ! Compute viscous wedge if enabled
+        if (NWDGE > 0) call VWEDGE()
+        
+        ! Print iteration results if needed
+        if (OUTERR) then
+
+            CL_LOCAL = LIFT(CLFACT)
+            CM_LOCAL = PITCH(CMFACT)
+            ERCIRC = abs(DCIRC)
+            
+            write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, 0, 0, 0.0, ERCIRC  ! IRL, JRL, BIGRL simplified
+            
+            ! Output viscous wedge quantities if enabled
+            if (NWDGE > 0) then
+                
+              write(UNIT_OUTPUT, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
+                
+                ! Upper surface shocks
+                NN = NVWPRT(1)
+                if (NN > 0) then
+                  write(UNIT_OUTPUT, '(" UPPER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
+                  do N = 1, NN                        
+                    if (AM1(1,N) > 1.0) then
+                      THA = THAMAX(1,N) * 57.29578  ! Convert to degrees
+                      write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(1,N), AM1(1,N), THA, ZETA(1,N)
+                    else
+                      write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
+                    end if
+                  end do
+                end if
+                
+                ! Lower surface shocks
+                NN = NVWPRT(2)
+                if (NN > 0) then
+                  write(UNIT_OUTPUT, '(" LOWER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
+                  do N = 1, NN                        
+                    if (AM1(2,N) > 1.0) then
+                        THA = THAMAX(2,N) * 57.29578  ! Convert to degrees
+                        write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(2,N), AM1(2,N), THA, ZETA(2,N)
+                      else
+                        write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
+                      end if
+                  end do
+                end if
+
+                if (NISHK == 0) write(UNIT_OUTPUT, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
+
+                write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
+
+            end if
+        end if
+        
+        ! Check convergence
+        if (ERROR <= CVERGE) then
+            CONVERGED = .true.
+            write(UNIT_OUTPUT, '(//20X,"........SOLUTION CONVERGED........")')
+            exit
+        end if
+        
+        ! Check divergence
+        if (ERROR >= DVERGE) then
+            ABORT1 = .true.
+            write(UNIT_OUTPUT, '(//20X,"******  SOLUTION DIVERGED  ******")')
+            exit
+        end if
+
     end do
     
-    if (.not. CONVERGED) then
-      write(*,'(A,I0,A,E12.4)') 'Warning: Did not converge after ', MAXIT, &
-                               ' iterations, final error = ', ERROR
+    ! Handle case where iteration limit is reached
+    if (.not. CONVERGED .and. .not. ABORT1) then
+      write(UNIT_OUTPUT, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
     end if
+
+    return
 
   end subroutine SOLVE
 
   ! Update circulation-jump boundary after Kutta or M divergence
+  ! RECIRC computes:
+  ! 1.) Jump in P at trailing edge = CIRCTE
+  ! 2.) Circulation for farfield boundary = CIRCFF
+  ! 3.) Jump in P along slit Y=0, X > 1 by linear interpolation between CIRCTE and CIRCFF
   subroutine RECIRC()
-    use common_data, only: PJUMP, ITE, JLOW, JUP, P
+    use common_data, only: P, X, IMIN, IMAX, ITE, JUP, JLOW, CJUP, CJUP1, CJLOW, CJLOW1
+    use common_data, only: PJUMP, CIRCFF, CIRCTE, DCIRC, WCIRC, CLSET, CLFACT, KUTTA
     implicit none
     integer :: I
+    real :: CTEOLD, PUP, PLOW, CIRCO, FACTOR
 
-    do I = ITE+1, IMAX
-      PJUMP(I) = P(JUP,I) - P(JLOW,I)
+    ! Compute jump in potential at trailing edge
+    CTEOLD = CIRCTE
+    PUP = CJUP*P(JUP,ITE) - CJUP1*P(JUP+1,ITE)
+    PLOW = CJLOW*P(JLOW,ITE) - CJLOW1*P(JLOW-1,ITE)
+    CIRCTE = PUP - PLOW
+    
+    ! Compute far field circulation
+    CIRCO = CIRCFF
+    if (KUTTA) then
+      CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC
+    else
+      CIRCFF = 0.5*CLSET/CLFACT
+    end if
+    
+    ! Fix jump in P at airfoil trailing edge if KUTTA=.FALSE.
+    ! and lift of airfoil exceeds CLSET
+    if (.not. KUTTA) CIRCTE = CIRCFF
+    DCIRC = CIRCTE - CTEOLD
+    
+    ! Set jump in P along Y = 0, X > 1 by linear interpolation
+    FACTOR = (CIRCFF - CIRCTE)/(X(IMAX) - 1.0)
+    do I = ITE, IMAX
+      PJUMP(I) = CIRCTE + (X(I) - 1.0) * FACTOR
     end do
 
   end subroutine RECIRC
 
   ! Update doublet strength DUB for nonlinear correction
+  ! For lifting free air flows, doublet strength is set equal to model volume.
+  ! For other flows, the nonlinear contribution is added.
   subroutine REDUB()
-    use common_data, only: DUB, ALPHA, KUTTA
+    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
+    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
+    use common_data, only: AK, ALPHA, DUB, GAM1, RTK, XDIFF, YDIFF
+    use common_data, only: BCTYPE, CIRCFF, VOL, XI, ARG
+    use math_module, only: PX, TRAP
     implicit none
     
-    if (.not. KUTTA) return
+    integer :: I, J, K, L, JSTART, JEND
+    real :: UPXSQ, SUM, UPSQ, UU
     
-    ! Simple update - in practice this would use circulation calculation
-    DUB = DUB + 0.1 * ALPHA
+    ! For free air with circulation, set DUB = VOL
+    if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
+      DUB = VOL
+      return
+    end if
+    
+    ! Compute double integral of U*U over mesh domain for doublet strength
+    ! U = PX is centered midway between X mesh points.
+    ! First the integral (PX**2)DY is calculated for X = constant lines
+    
+    L = 0
+    do I = IUP, IDOWN
+      L = L + 1
+      XI(L) = 0.5 * (X(I) + X(I-1))
+      
+      ! Integrate (PX**2) in Y direction
+      K = 0
+      JSTART = JBOT
+      JEND = JTOP
+      
+      do J = JSTART, JEND
+        K = K + 1
+        UU = PX(I,J)
+        ARG(K) = UU * UU
+        if (K == 1) then
+          Y(K) = 0.5 * (Y(J) + Y(J-1))
+        else
+          Y(K) = 0.5 * (Y(J) + Y(J-1))
+        end if
+      end do
+      
+      call TRAP(Y, ARG, K, UPSQ)
+      ARG(L) = UPSQ
+    end do
+    
+    ! Now integrate UPSQ in X direction
+    call TRAP(XI, ARG, L, UPXSQ)
+    
+    ! Update doublet strength
+    DUB = DUB + UPXSQ
 
   end subroutine REDUB
 

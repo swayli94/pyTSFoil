@@ -19,15 +19,16 @@ module common_data
   public :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
   public :: PSAVE, TITLE, TITLEO, XOLD, YOLD
   public :: XMID, YMID  ! Additional public declarations for io_module and other modules
-  public :: JERROR, BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
+  public :: BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
   public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, IVAL, XDIFF, YDIFF
   public :: CJUP, CJUP1, CJLOW, CJLOW1, CYYBUD, CYYBUC, CYYBUU
   public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC    
   public :: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
   public :: DIAG, RHS, SUB, SUP
   public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
-  public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, MAXIT, IPRTER
+  public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, JERROR, MAXIT, IPRTER
   public :: CLSET, IDLA
+  public :: I1, I2  ! Iteration control variables from COM18
   public :: EPS, WE, NWDGE, REYNLD, WCONST, WSLP, WI
   public :: XCP, CPP  ! For DLAOUT functionality
   public :: XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
@@ -37,6 +38,7 @@ module common_data
   public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
   public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: THETA  ! COM33: angle array for each mesh point
+  public :: EMU, POLD, DCIRC, OUTERR  ! Missing variables from COM18
   public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
@@ -88,7 +90,7 @@ module common_data
   ! COM8: solver control parameters
   real :: CVERGE, DVERGE, TOL, RSAVE
   real :: EPS = 1.0e-6              ! Convergence tolerance
-  real, parameter :: WI = 1.05      ! SOR relaxation factor
+  real :: WI = 1.05                 ! SOR relaxation factor (from COM18)
   real :: WE(3)
   integer :: IPRTER, MAXIT, NEX, N_O, NPRINT, NPT
   
@@ -139,6 +141,10 @@ module common_data
   ! COM18: error tracking and diagnostics
   real :: ERROR
   integer :: I1, I2, IERROR, JERROR, IPRINT, LERR, NVAR, STATUS, NEXT
+  real :: EMU(100,2)   ! Missing from COM18 - circulation factors
+  real :: POLD(100,2)  ! Missing from COM18 - old pressure values  
+  real :: DCIRC        ! Missing from COM18 - circulation change
+  logical :: OUTERR    ! Missing from COM18 - outer iteration error (logical)
   
   ! COM19: jump arrays and pressure jump
   real :: PJUMP(100)
@@ -425,6 +431,18 @@ contains
     ! Initialize other arrays to zero (from BLOCK DATA)
     WSLP = 0.0
     ZETA = 0.0
+    
+    ! Initialize missing COM18 variables
+    EMU = 0.0
+    POLD = 0.0
+    DCIRC = 0.0
+    OUTERR = .false.
+    I1 = 1
+    I2 = 2
+    IERROR = 0
+    JERROR = 0
+    ERROR = 0.0
+    THETA = 0.0
 
   end subroutine initialize_common
 
