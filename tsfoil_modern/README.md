@@ -57,7 +57,6 @@ tsfoil_modern/
    | `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
    | `FINDSK` | `math_module.f90` | Find shock location | ✅ |
    | `NEWISK` | `math_module.f90` | Shock index adjustment | ✅ |
-   | `M1LINE` | `math_module.f90` | Sonic line detection | ✅ |
    | `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
    | `VROOTS` | `math_module.f90` | Slotted-wall angle roots | ✅ |
 
@@ -128,6 +127,8 @@ tsfoil_modern/
    | `FIXPLT` | `io_module.f90` | Plot array construction | ✅ |
    | `SAVEP` | `io_module.f90` | Solution storage | ✅ |
    | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly | ✅ |
+   | `M1LINE` | `io_module.f90` | Sonic line detection | ✅ |
+   | `PLTSON` | `io_module.f90` | Sonic line printer | ✅ |
 
 ### Compilation Dependencies
 

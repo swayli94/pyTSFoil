@@ -15,13 +15,15 @@ module io_module
                   PSTART, RIGF, SIMDEF, WCIRC, WE, &
                   XIN, YIN, XL, YL, XU, YU, &
                   NWDGE, REYNLD, WCONST, IFLAP, DELFLP, &
-                  FLPLOC, IDLA    ! Declare public procedures
-  public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP
-  public :: open_output_files, close_output_files, PRINT_INP_NAMELIST, CDCOLE, FIXPLT, CPPLOT
+                  FLPLOC, IDLA
+  
+  ! Declare public procedures
+  public :: READIN, SCALE, ECHINP, PRINT, PRINT1, PRTFLD, PRTMC, PRTSK, PRTWAL, SAVEP, GUESSP
+  public :: open_output_files, close_output_files, PRINT_INP_NAMELIST, CDCOLE, FIXPLT, CPPLOT, PLTSON
 
 contains
   
-! Open all output files with unique file units
+  ! Open all output files with unique file units
   subroutine open_output_files()
     implicit none
     
@@ -53,10 +55,9 @@ contains
   ! Reads title card, namelist input, and manages restart data for current case
   ! This matches the original TSFoil READIN functionality exactly
   subroutine READIN()
-    use common_data
     implicit none    
     character(len=4), parameter :: DONE = 'FINI'  ! Declare DONE to match original exactly
-    integer :: I, J, IM1, JM1
+    integer :: J_VAR, IM1, JM1, IDX, JDX
     real :: TERM, HTM, HTP, YS, YE, TIME1, TIME2, ELPTM
     logical, save :: first_call = .true.
     character(len=20) :: IN_FILENAME
@@ -140,8 +141,8 @@ contains
     if (BCTYPE == 1) then
       ! Free air case
       JMAXI = JMXF
-      do J = JMIN, JMAXI
-        YIN(J) = YFREE(J)
+      do J_VAR = JMIN, JMAXI
+        YIN(J_VAR) = YFREE(J_VAR)
       end do
       goto 18
     end if
@@ -149,8 +150,8 @@ contains
 16  continue
     ! Tunnel case
     JMAXI = JMXT
-    do J = JMIN, JMAXI
-      YIN(J) = YTUN(J)
+    do J_VAR = JMIN, JMAXI
+      YIN(J_VAR) = YTUN(J_VAR)
     end do
     
 18  continue
@@ -173,24 +174,23 @@ contains
     
     if (NWDGE == 1) write(UNIT_OUTPUT, '(1H0,15X,12HMURMAN WEDGE,5X,8HREYNLD =,E10.3,5X,8HWCONST =,F9.5)') REYNLD, WCONST
     if (NWDGE == 2) write(UNIT_OUTPUT, '(1H0,15X,15HYOSHIHARA WEDGE)')
-    if (IFLAP /= 0) write(UNIT_OUTPUT, '(1H0,15X,17HFLAP IS DEFLECTED,F5.2,20H DEGREES FROM H.L. =,F6.3,8H TO T.E.)') &
-      DELFLP, FLPLOC
+    if (IFLAP /= 0) write(UNIT_OUTPUT, '(1H0,15X,17HFLAP IS DEFLECTED,F5.2,20H DEGREES FROM H.L. =,F6.3,8H TO T.E.)') DELFLP, FLPLOC
     
     write(UNIT_OUTPUT, '(1H0,4X,3HXIN)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (XIN(I), I=IMIN, IMAXI)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XIN(IDX), IDX=IMIN, IMAXI)
     write(UNIT_OUTPUT, '(1H0,4X,3HYIN)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (YIN(J), J=JMIN, JMAXI)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YIN(JDX), JDX=JMIN, JMAXI)
     
     if (BCFOIL <= 2) goto 19
     if (BCFOIL == 5) goto 19
     write(UNIT_OUTPUT, '(1H0,15X,2HXU)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (XU(I), I=1, NU)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XU(IDX), IDX=1, NU)
     write(UNIT_OUTPUT, '(1H0,15X,2HYU)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (YU(I), I=1, NU)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YU(IDX), IDX=1, NU)
     write(UNIT_OUTPUT, '(1H0,15X,2HXL)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (XL(I), I=1, NL)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (XL(IDX), IDX=1, NL)
     write(UNIT_OUTPUT, '(1H0,15X,2HYL)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (YL(I), I=1, NL)
+    write(UNIT_OUTPUT, '(4X,6F11.6)') (YL(IDX), IDX=1, NL)
     
 19  continue
     ! Set derived constants
@@ -203,14 +203,13 @@ contains
     
     ! Check array bounds (any call to INPERR causes message to be printed and execution stopped)
     if (IMAXI > 100 .or. JMAXI > 100) call INPERR(1)
-    
-    ! Check input mesh for monotonically increasing values
-    do I = IMIN, IM1
-      if (XIN(I) >= XIN(I+1)) call INPERR(2)
+      ! Check input mesh for monotonically increasing values
+    do IDX = IMIN, IM1
+      if (XIN(IDX) >= XIN(IDX+1)) call INPERR(2)
     end do
     
-    do J = JMIN, JM1
-      if (YIN(J) >= YIN(J+1)) call INPERR(3)
+    do JDX = JMIN, JM1
+      if (YIN(JDX) >= YIN(JDX+1)) call INPERR(3)
     end do
     
     ! Check parameter ranges
@@ -239,12 +238,12 @@ contains
 40  continue
     ! Rescale Y mesh to -H,+H bounds
     TERM = -H / YIN(JMIN)
-    do J = JMIN, JLOW
-      YIN(J) = TERM * YIN(J)
+    do JDX = JMIN, JLOW
+      YIN(JDX) = TERM * YIN(JDX)
     end do
     TERM = H / YIN(JMAX)
-    do J = JUP, JMAX
-      YIN(J) = TERM * YIN(J)
+    do JDX = JUP, JMAX
+      YIN(JDX) = TERM * YIN(JDX)
     end do
     
 90  continue    
@@ -261,22 +260,18 @@ contains
   end subroutine READIN
   
   subroutine SCALE()
-!
-!                  SUBROUTINE SCALES PHYSICAL VARIABLES TO TRANSONIC
-!                  VARIABLES.
-!                  IF PHYS = .TRUE., ALL INPUT/OUTPUT QUANTITIES ARE IN
-!                  PHYSICAL UNITS NORMALIZED BY FREESTREAM VALUES AND
-!                  AIRFOIL CHORD. THIS SUBROUTINE THEN SCALES THE
-!                  QUANTITIES TO TRANSONIC VARIABLES BY THE FOLLOWING
-!                  CONVENTION
-!                       SIMDEF = 1  COLE SCALING
-!                       SIMDEF = 2  SPREITER SCALING
-!                       SIMDEF = 3  KRUPP SCALING
-!                       SIMDEF = 4  USER CHOICE
-!                  IF PHYS = .FALSE., INPUT IS ALREADY IN SCALED
-!                  VARIABLES AND NO FURTHER SCALING IS DONE.
-!                  CALLED BY - TSFOIL.
-!
+  !
+  ! SUBROUTINE SCALES PHYSICAL VARIABLES TO TRANSONIC VARIABLES.
+  ! IF PHYS = .TRUE., ALL INPUT/OUTPUT QUANTITIES ARE IN PHYSICAL UNITS NORMALIZED 
+  ! BY FREESTREAM VALUES AND AIRFOIL CHORD. 
+  ! THIS SUBROUTINE THEN SCALES THE QUANTITIES TO TRANSONIC VARIABLES BY THE FOLLOWING CONVENTION
+  !   SIMDEF = 1  COLE SCALING
+  !   SIMDEF = 2  SPREITER SCALING
+  !   SIMDEF = 3  KRUPP SCALING
+  !   SIMDEF = 4  USER CHOICE
+  ! IF PHYS = .FALSE., INPUT IS ALREADY IN SCALED VARIABLES AND NO FURTHER SCALING IS DONE.
+  ! CALLED BY - TSFOIL.
+  !
     use common_data, only: PHYS, DELTA, EMACH, SIMDEF
     use common_data, only: AK, ALPHA, GAM1, RTK, YFACT, CPFACT, CLFACT, CDFACT, CMFACT, VFACT
     use common_data, only: YIN, YOLD, JMIN, JMAX, JMINO, JMAXO, PSTART
@@ -414,23 +409,103 @@ contains
     return
     
   end subroutine ECHINP
-    
-  ! Main print driver: calls PRINT1, PRTMC, etc.
-  ! Matches original PRINT subroutine exactly
+  
+  ! Main print driver: prints configuration parameters and calls specialized subroutines
+  ! Subroutine for main output print control. Prints relative parameters and calls
+  ! specialized print/plot subroutines as required.
+  ! Matches original PRINT subroutine functionality exactly
   subroutine PRINT()
-    use common_data, only: PRTFLO, ABORT1, BCTYPE
-    use math_module, only: M1LINE
+    use common_data
+    use math_module, only: PITCH, LIFT, MACHMP
     implicit none
     
+    ! Local variables matching original exactly
+    character(len=4) :: TPH(6), SIM(8), BCT(15), FCP(14)
+    real :: ALPHVF
+    integer :: IS, IE, I
+    
+    ! Data initialization matching original exactly
+    TPH = ['SIMI', 'LARI', 'TY  ', ' PHY', 'SICA', 'L   ']
+    SIM = ['COLE', '    ', 'SPRE', 'ITER', 'KRUP', 'P   ', 'USER', '    ']
+    BCT = ['FREE', ' AIR', '    ', 'SOLI', 'D WA', 'LL  ', 'FREE', &
+           ' JET', '    ', 'SLOT', 'TED ', 'WALL', 'PORO', 'US W', 'ALL ']
+    FCP = ['FULL', 'Y CO', 'NSER', 'VATI', 'VE. ', '    ', '    ', &
+           'NOT ', 'CONS', 'ERVA', 'TIVE', ' AT ', 'SHOC', 'K.  ']
+    
+    ! Write page break
+    write(UNIT_OUTPUT, '(1H1)')
+    
+    ! Print similarity/physical variables information
+    IS = 1
+    if (PHYS) IS = 4
+    IE = IS + 2
+    write(UNIT_OUTPUT, '(14H0 PRINTOUT IN ,2A4,A2,11H VARIABLES.)') (TPH(I), I=IS, IE)
+    write(UNIT_SUMMARY, '(14H0 PRINTOUT IN ,2A4,A2,11H VARIABLES.)') (TPH(I), I=IS, IE)
+    
+    ! Print similarity parameter definition
+    IE = 2 * SIMDEF
+    IS = IE - 1
+    write(UNIT_OUTPUT, '(41H0 DEFINITION OF SIMILARITY PARAMETERS BY ,2A4)') (SIM(I), I=IS, IE)
+    write(UNIT_SUMMARY, '(41H0 DEFINITION OF SIMILARITY PARAMETERS BY ,2A4)') (SIM(I), I=IS, IE)
+    
+    ! Print boundary condition information
+    IE = 3 * BCTYPE
+    IS = IE - 2
+    write(UNIT_OUTPUT, '(25H0 BOUNDARY CONDITION FOR ,3A4)') (BCT(I), I=IS, IE)
+    write(UNIT_SUMMARY, '(25H0 BOUNDARY CONDITION FOR ,3A4)') (BCT(I), I=IS, IE)
+    
+    ! Print difference equation information
+    IS = 8
+    if (FCR) IS = 1
+    IE = IS + 6
+    write(UNIT_OUTPUT, '(27H0 DIFFERENCE EQUATIONS ARE ,7A4)') (FCP(I), I=IS, IE)
+    write(UNIT_SUMMARY, '(27H0 DIFFERENCE EQUATIONS ARE ,7A4)') (FCP(I), I=IS, IE)
+    
+    ! Print Kutta condition information
+    if (KUTTA) then
+      write(UNIT_OUTPUT, '(30H0 KUTTA CONDITION IS ENFORCED.)')
+      write(UNIT_SUMMARY, '(30H0 KUTTA CONDITION IS ENFORCED.)')
+    else
+      write(UNIT_OUTPUT, '(37H0 LIFT COEFFICIENT SPECIFIED BY USER.)')
+      write(UNIT_SUMMARY, '(37H0 LIFT COEFFICIENT SPECIFIED BY USER.)')
+    end if
+    
+    ! Print flow parameters
+    ALPHVF = ALPHA * VFACT
+    write(UNIT_OUTPUT, '(1H0)')
+    write(UNIT_SUMMARY, '(1H0)')
+    
+    if (PHYS) then
+      write(UNIT_OUTPUT, '(14X,6HMACH =,F12.7/13X,7HDELTA =,F12.7)') EMACH, DELTA
+      write(UNIT_SUMMARY, '(14X,6HMACH =,F12.7/13X,7HDELTA =,F12.7)') EMACH, DELTA
+    end if
+    
+    write(UNIT_OUTPUT, '(13X,7HALPHA =,F12.7/17X,3HK =,F12.7)') ALPHVF, AK
+    write(UNIT_SUMMARY, '(13X,7HALPHA =,F12.7/17X,3HK =,F12.7)') ALPHVF, AK
+    
+    if (AK > 0.0) then
+      write(UNIT_OUTPUT, '(2X,18HDOUBLET STRENGTH =,F12.7)') DUB
+      write(UNIT_SUMMARY, '(2X,18HDOUBLET STRENGTH =,F12.7)') DUB
+    end if
+    
+    if (PHYS) then
+      write(UNIT_OUTPUT, '(8HCPFACT =,F12.7/12X,8HCDFACT =,F12.7/12X,8HCMFACT =,F12.7/12X,8HCLFACT =,F12.7/13X,7HYFACT =,F12.7/13X,7HVFACT =,F12.7)') &
+        CPFACT, CDFACT, CMFACT, CLFACT, YFACT, VFACT
+      write(UNIT_SUMMARY, '(8HCPFACT =,F12.7/12X,8HCDFACT =,F12.7/12X,8HCMFACT =,F12.7/12X,8HCLFACT =,F12.7/13X,7HYFACT =,F12.7/13X,7HVFACT =,F12.7)') &
+        CPFACT, CDFACT, CMFACT, CLFACT, YFACT, VFACT
+    end if
+    
+    ! Call specialized print routines
     call PRINT1()
     call PRTMC()
+    call MACHMP()
     
     if (ABORT1) return
     
     ! Call FIXPLT to generate the dedicated printer plot
     call FIXPLT()
     
-    ! Call PRTWAL for boundary conditions 1 and 3 only (matches original logic)
+    ! Call PRTWAL for boundary conditions other than 1 and 3 (matches original logic)
     if (BCTYPE /= 1 .and. BCTYPE /= 3) then
       call PRTWAL()
     end if
@@ -465,7 +540,8 @@ contains
     
     ! Initialize data arrays exactly like original
     TMAC_P1(1) = 'M1'
-    TMAC_P1(2) = 'K1'    
+    TMAC_P1(2) = 'K1'
+    
     ! Compute coefficients exactly like original
     CL_val = LIFT(CLFACT)
     CM = PITCH(CMFACT)
@@ -518,8 +594,9 @@ contains
     
     write(UNIT_OUTPUT, '(1H0,9X,4HCL =,F10.6/10X,4HCM =,F10.6/9X,5HCP* =,F10.6)') CL_val, CM, CPSTAR
     write(UNIT_CPXS, '(1H0,9X,4HCL =,F10.6/10X,4HCM =,F10.6/9X,5HCP* =,F10.6)') CL_val, CM, CPSTAR  
+    write(UNIT_SUMMARY, '(1H0,9X,4HCL =,F16.12/10X,4HCM =,F16.12/9X,5HCP* =,F16.12)') CL_val, CM, CPSTAR
     
-    ! Check for detached shock - modernized GO TO 70 logic
+    ! Check for detached shock - exactly like original with GO TO 70 logic
     if (CPL(IMIN) < CPSTAR .and. CPL(IMIN+1) > CPSTAR) then
       write(UNIT_OUTPUT, '(1H0,//&
            &'' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.'')')
@@ -545,6 +622,7 @@ contains
       
     ! Main output loop with exact original logic
     do I_P1 = IMIN, IMAX
+
       ! Initialize line array 
       do K_P1 = 1, 60
         LINE1_P1(K_P1) = IB_P1
@@ -576,7 +654,7 @@ contains
       ! Save data for plotting exactly like original
       write(UNIT_CPXS, '(2x,i3,2x,f7.4,2x,f10.5,2x,f7.4,2x,f10.5,2x,f7.4)') IPLOT_P1, X(I_P1), CPU(I_P1), EM1U(I_P1), CPL(I_P1), EM1L(I_P1)
     end do
-    
+
     ! Mach number warning exactly like original
     if (IEM == 1) then
       if (PHYS) then
@@ -591,10 +669,13 @@ contains
     do I_P1 = JMIN, JMAX
       YM(I_P1) = Y(I_P1) * YFACT
     end do
-    
     write(UNIT_OUTPUT, '(1H0//9X,7HY(J) J=,I3,3H TO,I3/(6X,6F12.6))') JMIN, JMAX, (YM(I_P1), I_P1=JMIN, JMAX)
     write(UNIT_OUTPUT, '(1H0//9X,7HX(I) I=,I3,3H TO,I3/(6X,6F12.6))') IMIN, IMAX, (X(I_P1), I_P1=IMIN, IMAX)
     write(UNIT_OUTPUT, '(1H0//9X,7HY(J) J=,I3,3H TO,I3/(6X,6F12.6))') JMIN, JMAX, (YM(I_P1), I_P1=JMIN, JMAX)
+    
+    ! Write mesh data exactly like original 
+    write(UNIT_MESH, '(1H0//9X,7HX(I) I=,I3,3H TO,I3/(6X,6F12.6))') IMIN, IMAX, (X(I_P1), I_P1=IMIN, IMAX)
+    write(UNIT_MESH, '(1H0//9X,7HY(J) J=,I3,3H TO,I3/(6X,6F12.6))') JMIN, JMAX, (YM(I_P1), I_P1=JMIN, JMAX)
     
   end subroutine PRINT1
 
@@ -606,7 +687,7 @@ contains
   ! PRTFLO = 3, THREE J LINES AROUND JERROR.
   subroutine PRTFLD()
     use common_data, only: P, X, Y, JMIN, JMAX, JUP, JLOW, JERROR, CPFACT, VFACT, CPSTAR
-    use common_data, only: JLIN, IMIN, IMAX, PHYS, PRTFLO
+    use common_data, only: JLIN, IMIN, IMAX, PHYS, PRTFLO, UNIT_OUTPUT
     use math_module, only: PX, PY, EMACH1
     implicit none
     integer :: JL, MPR, MPREND, M, MQ, I, J, K, IS, IE, KT
@@ -662,22 +743,21 @@ contains
       if (PHYS) IS = 6
       IE = IS + 4
       
-      (UNIT_FIELD,'(A,5A4,A)') &
+      write(UNIT_OUTPUT,'(A,5A4,A)') &
         'PRESSURE COEFFICIENTS, FLOW ANGLES, AND LOCAL ', &
         (PRT(I), I=IS,IE), ' ON Y=CONSTANT LINES'
-      write(UNIT_FIELD,'(A,F12.7)') ' CPSTAR =', CPSTAR
-      write(UNIT_FIELD,*)
-      
-      write(UNIT_FIELD,'(13X,3(15X,A,I4,15X))') &
+      write(UNIT_OUTPUT,'(A,F12.7)') ' CPSTAR =', CPSTAR
+      write(UNIT_OUTPUT,*)
+      write(UNIT_OUTPUT,'(13X,3(15X,A,I4,15X))') &
         ('J=', JLIN(M), M=MPR,MPREND)
-      write(UNIT_FIELD,'(13X,3(12X,A,F10.6,12X))') &
+      write(UNIT_OUTPUT,'(13X,3(12X,A,F10.6,12X))') &
         ('Y=', YPRINT(M), M=1,MPREND-MPR+1)
       
       KT = 2
       if (PHYS) KT = 1
-      write(UNIT_FIELD,'(A,8X,A,5X,3(6X,A,8X,A,7X,A,6X))') &
+      write(UNIT_OUTPUT,'(A,8X,A,5X,3(6X,A,8X,A,7X,A,6X))') &
         '  I', 'X', ('CP', 'THETA', TMAC(KT), M=1,MPREND-MPR+1)
-      write(UNIT_FIELD,*)
+      write(UNIT_OUTPUT,*)
       
       do I = IMIN, IMAX
         do M = MPR, MPREND
@@ -688,12 +768,12 @@ contains
           PYPR(MQ) = VFACT * PY(I, J)
           EM1(MQ) = EMACH1(U)
         end do
-        write(UNIT_FIELD,'(1X,I3,2X,F10.6,1X,3(2X,3F11.6,1X))') &
+        write(UNIT_OUTPUT,'(1X,I3,2X,F10.6,1X,3(2X,3F11.6,1X))') &
           I, X(I), (CPPR(M), PYPR(M), EM1(M), M=1,MPREND-MPR+1)
       end do
     end do
     
-    write(UNIT_LOG,'(A,I0,A)') 'Field data written for ', JL, ' J-lines'
+    write(UNIT_OUTPUT,'(A,I0,A)') 'Field data written for ', JL, ' J-lines'
   end subroutine PRTFLD
 
   ! Print map of flow types at each grid point
@@ -816,33 +896,39 @@ contains
     
     ! Local variables
     integer :: I, K, NCOL, NCOLS, NCOLU, NCOLL, I2_LOCAL, I1_LOCAL
-    real :: THH, PORF, CPMIN, CPMAX, CPT, CPLARG, UNPCOL, COL
-    real :: CPLW(100), CPUW(100), VLW(100), VUW(100)
+    ! Character variables for plotting symbols (matching original DATA statements)
+    character(len=1), parameter :: IB = ' '    ! Blank space
+    character(len=1), parameter :: IL = 'L'    ! Lower surface
+    character(len=1), parameter :: IU = 'U'    ! Upper surface  
+    character(len=1), parameter :: IS = '*'    ! CP* reference line
+    character(len=1), parameter :: IBB = 'B'   ! Both surfaces same CP
+    real :: THH, PORF, CPMIN, CPMAX, CPT, CPLW(100), CPUW(100), VLW(100), VUW(100)
+    real :: COL, CPLARG, UNPCOL
     character(len=1) :: LINE1(60)
     character(len=4) :: BCT(15)
     
     ! Data statements
-    character(len=1), parameter :: IB = ' ', IL = 'L', IU = 'U', IS = '*', IBB = 'B'
-    data BCT /'    ','FREE',' AIR','  SO','LID ','WALL','    ', &
-             'FREE',' JET','SLOT','TED ','WALL',' POR','OUS ','WALL'/
-      ! Print single variables
+    character(len=1), parameter :: BLANK = ' ', DOT = '.', STAR = '*', DASH = '-'
+    character(len=1), parameter :: IBS(9) = 'BODYSLOT'
+    
+    ! Print single variables
     I2_LOCAL = 3 * BCTYPE
     I1_LOCAL = I2_LOCAL - 2
-    write(UNIT_OUTPUT,903) (BCT(I),I=I1_LOCAL,I2_LOCAL)
+    write(UNIT_OUTPUT, '(2H1 ,3A4,20H BOUNDARY CONDITION.)') (BCT(I),I=I1_LOCAL,I2_LOCAL)
     
     THH = H * YFACT
-    write(UNIT_OUTPUT,904) THH
+    write(UNIT_OUTPUT, '(1H0,10X,24HH (TUNNEL HALF HEIGHT) =,F9.6)') THH
     
     if (BCTYPE >= 5) then
       PORF = POR / YFACT
-      write(UNIT_OUTPUT,905) PORF
+      write(UNIT_OUTPUT, '(1H0,11X,23HPOR (POROSITY FACTOR) =,F9.6)') PORF
     end if
     
     if (BCTYPE == 4 .or. BCTYPE == 6) then
-      write(UNIT_OUTPUT,906) F
+      write(UNIT_OUTPUT, '(1H0,14X,20HF (SLOT PARAMETER) =,F9.6)') F
     end if
     
-    write(UNIT_OUTPUT,907) CPSTAR
+    write(UNIT_OUTPUT, '(1H0,29X,5HCP* =,F9.6)') CPSTAR
     
     CPMIN = 1.0E37
     CPMAX = -CPMIN
@@ -905,8 +991,8 @@ contains
     NCOLS = NCOL + 30
     
     ! Print column headers
-    write(UNIT_OUTPUT,210)
-    write(UNIT_OUTPUT,220)
+    write(UNIT_OUTPUT,'(1H0,27X,5HLOWER,23X,5HUPPER/28X,4HY=-H,24X,4HY=+H)')
+    write(UNIT_OUTPUT,'(3X,1HI,8X,1HX,10X,2HCP,9X,5HTHETA,12X,2HCP,9X,5HTHETA/)')
     
     ! Print data with character-based plot
     do I = IUP, IDOWN
@@ -932,20 +1018,8 @@ contains
       if (abs(NCOLS) <= 60 .and. NCOLS >= 1) LINE1(NCOLS) = IS
       
       ! Write formatted output
-      write(UNIT_OUTPUT,250) I, X(I), CPLW(I), VLW(I), CPUW(I), VUW(I), LINE1
+      write(UNIT_OUTPUT,'(1H ,I3,3F12.6,4X,2F12.6,2X,60A1)') I, X(I), CPLW(I), VLW(I), CPUW(I), VUW(I), LINE1
     end do
-    
-    return
-    
-    ! Format statements (matching original exactly)
-210 format(1H0,27X,5HLOWER,23X,5HUPPER/28X,4HY=-H,24X,4HY=+H)
-220 format(3X,1HI,8X,1HX,10X,2HCP,9X,5HTHETA,12X,2HCP,9X,5HTHETA/)
-250 format(1H ,I3,3F12.6,4X,2F12.6,2X,60A1)
-903 format(2H1 ,3A4,20H BOUNDARY CONDITION.)
-904 format(1H0,10X,24HH (TUNNEL HALF HEIGHT) =,F9.6)
-905 format(1H0,11X,23HPOR (POROSITY FACTOR) =,F9.6)
-906 format(1H0,14X,20HF (SLOT PARAMETER) =,F9.6)
-907 format(1H0,29X,5HCP* =,F9.6)
     
   end subroutine PRTWAL
   
@@ -995,20 +1069,14 @@ contains
     if (.not. PSAVE) return
     
     ! Write restart data to unit 15 (matching original exactly)
-    write(UNIT_OUTPUT, 900) TITLEO
-    write(UNIT_OUTPUT, 901) IMAXO, JMAXO, IMINO, JMINO
-    write(UNIT_OUTPUT, 902) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
-    write(UNIT_OUTPUT, 902) (XOLD(I), I=IMINO, IMAXO)
-    write(UNIT_OUTPUT, 902) (YOLD(J), J=JMINO, JMAXO)
+    write(UNIT_OUTPUT, '(20A4)') TITLEO
+    write(UNIT_OUTPUT, '(4I5)') IMAXO, JMAXO, IMINO, JMINO
+    write(UNIT_OUTPUT, '(8F10.6)') CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
+    write(UNIT_OUTPUT, '(8F10.6)') (XOLD(I), I=IMINO, IMAXO)
+    write(UNIT_OUTPUT, '(8F10.6)') (YOLD(J), J=JMINO, JMAXO)
     do I = IMINO, IMAXO
-      write(UNIT_OUTPUT, 902) (P(J,I), J=JMINO, JMAXO)
-    end do
-    
-    ! Original format statements (matching exactly)
-  900 format(20A4)
-  901 format(4I5)
-  902 format(8F10.6)
-
+      write(UNIT_OUTPUT, '(8F10.6)') (P(J,I), J=JMINO, JMAXO)
+    end do    
   end subroutine SAVEP
 
   ! Initialize YIN array if not read from namelist
@@ -1064,22 +1132,22 @@ contains
     call initialize_spline(200)
     
     ! Read input parameters from unit 5
-    read(UNIT_DLAOUT_INPUT, 100) NUP, NDOWN, NCON, NTEST, NRUN, NPT
+    read(UNIT_DLAOUT_INPUT, '(6I5)') NUP, NDOWN, NCON, NTEST, NRUN, NPT
     
     ! Convert units and parameters
     R = RE / 1.0E+06
     ALFA = ALPHA_IN * VF
     
     ! Write header information to unit 10
-    write(UNIT_DLAOUT_OUTPUT, 101) EM, ALFA, R, NCON, DFLP, NTEST, NRUN, NPT
+    write(UNIT_DLAOUT_OUTPUT, '(F6.3,F6.2,24X,F6.3,I6,F6.1,16X,2I3,I2)') EM, ALFA, R, NCON, DFLP, NTEST, NRUN, NPT
     
     ! Read upper surface X-coordinates
-    read(UNIT_DLAOUT_INPUT, 102) (XCP(I), I=1, NUP)
+    read(UNIT_DLAOUT_INPUT, '(11F6.3)') (XCP(I), I=1, NUP)
     
     ! Read lower surface X-coordinates
     NS = NUP + 1
     NE = NUP + NDOWN
-    read(UNIT_DLAOUT_INPUT, 102) (XCP(I), I=NS, NE)
+    read(UNIT_DLAOUT_INPUT, '(11F6.3)') (XCP(I), I=NS, NE)
       ! Set spline boundary conditions (K1=1, K2=1 for first derivative specified)
     
     ! Interpolate upper surface CP values
@@ -1114,15 +1182,9 @@ contains
     end do
     
     ! Write interpolated CP values to output
-    write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=1, NUP)
-    write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=NS, NE)
-    
+    write(UNIT_DLAOUT_OUTPUT, '(11F6.3)') (CPP(I), I=1, NUP)
+    write(UNIT_DLAOUT_OUTPUT, '(11F6.3)') (CPP(I), I=NS, NE)
     write(UNIT_OUTPUT,'(A,I0,A,I0,A)') 'DLAOUT: Completed CP interpolation for ', NUP, ' upper and ', NDOWN, ' lower surface points'
-    
-    ! Format statements matching original
-100 format(6I5)
-101 format(F6.3,F6.2,24X,F6.3,I6,F6.1,16X,2I3,I2)
-102 format(11F6.3)
     
   end subroutine DLAOUT
   
@@ -1142,9 +1204,8 @@ contains
     end if
     
     rewind(UNIT_RESTART)
-    
-    ! Read title using original format 900: FORMAT(20A4)
-    read(UNIT_RESTART, 900, iostat=ios_restart) TITLEO
+      ! Read title using original format 900: FORMAT(20A4)
+    read(UNIT_RESTART, '(20A4)', iostat=ios_restart) TITLEO
     if (ios_restart /= 0) then
       write(UNIT_OUTPUT, '(A)') 'Error reading title from restart file'
       call INPERR(2)
@@ -1152,39 +1213,37 @@ contains
     end if
     
     ! Read mesh dimensions using original format 902: FORMAT(4I5)
-    read(UNIT_RESTART, 902, iostat=ios_restart) IMINO, IMAXO, JMINO, JMAXO
+    read(UNIT_RESTART, '(4I5)', iostat=ios_restart) IMINO, IMAXO, JMINO, JMAXO
     if (ios_restart /= 0) then
       write(UNIT_OUTPUT, '(A)') 'Error reading mesh dimensions from restart file'
       call INPERR(2)
       return
     end if
-    
-    ! Read solution parameters using original format 903: FORMAT(8F10.6)
-    read(UNIT_RESTART, 903, iostat=ios_restart) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
+      ! Read solution parameters using original format 903: FORMAT(8F10.6)
+    read(UNIT_RESTART, '(8F10.6)', iostat=ios_restart) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
     if (ios_restart /= 0) then
       write(UNIT_OUTPUT, '(A)') 'Error reading solution parameters from restart file'
       call INPERR(2)
       return
     end if
-    
-    ! Read grid coordinates using original format 903: FORMAT(8F10.6)
-    read(UNIT_RESTART, 903, iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
+      ! Read grid coordinates using original format 903: FORMAT(8F10.6)
+    read(UNIT_RESTART, '(8F10.6)', iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
     if (ios_restart /= 0) then
       write(UNIT_OUTPUT, '(A)') 'Error reading X coordinates from restart file'
       call INPERR(2)
       return
     end if
     
-    read(UNIT_RESTART, 903, iostat=ios_restart) (YOLD(J), J=JMINO, JMAXO)
+    read(UNIT_RESTART, '(8F10.6)', iostat=ios_restart) (YOLD(J), J=JMINO, JMAXO)
     if (ios_restart /= 0) then
       write(UNIT_OUTPUT, '(A)') 'Error reading Y coordinates from restart file'
       call INPERR(2)
       return
     end if
-
+    
     ! Read solution array P using original format 903: FORMAT(8F10.6)
     do I = IMINO, IMAXO
-      read(UNIT_RESTART, 903, iostat=ios_restart) (P(J,I), J=JMINO, JMAXO)
+      read(UNIT_RESTART, '(8F10.6)', iostat=ios_restart) (P(J,I), J=JMINO, JMAXO)
       if (ios_restart /= 0) then
         write(UNIT_OUTPUT, '(A,I0)') 'Error reading P array at I=', I
         call INPERR(2)
@@ -1197,196 +1256,213 @@ contains
     write(UNIT_OUTPUT, '(A)') 'Restart data successfully loaded'
     
     ! Write restart information to output file (like original)
-    write(UNIT_OUTPUT, 1000) TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, &
-                            ALPHAO, DELTAO, VOLO, DUBO
-    
-    ! Original format statements
-900 format(20A4)
-902 format(4I5)
-903 format(8F10.6)
-1000  format(39H1P INITIALIZED FROM PREVIOUS RUN TITLED/ &
+    write(UNIT_OUTPUT, '(39H1P INITIALIZED FROM PREVIOUS RUN TITLED/ &
         1X,20A4/31H WHICH HAD THE FOLLOWING VALUES/ &
         8H IMIN  =,I4/8H IMAX  =,I4/8H JMIN  =,I4/8H JMAX  =,I4/ &
         8H CL    =,F12.8/8H EMACH =,F12.8/8H ALPHA =,F12.8/ &
-        8H DELTA =,F12.8/8H VOL   =,F12.8/8H DUB   =,F12.8/ )
-
+        8H DELTA =,F12.8/8H VOL   =,F12.8/8H DUB   =,F12.8/ )') TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, &
+                            ALPHAO, DELTAO, VOLO, DUBO
+    
   end subroutine LOADP
 
   ! Initialize potential array P based on PSTART value
   subroutine GUESSP()
+    ! SUBROUTINE INITIALIZES P ARRAY AS FOLLOWS
+    !      PSTART = 1  P SET TO ZERO
+    !      PSTART = 2  P READ FROM UNIT 7
+    !      PSTART = 3  P SET TO VALUES IN CORE
+    ! IF PSTART = 2 OR 3, SOLUTION IS INTERPOLATED FROM
+    ! XOLD, YOLD TO X,Y
+    ! BOUNDARY CONDITIONS FOR P ON OUTER BOUNDARIES ARE
+    ! AUTOMATICALLY SET DURING INITIALIZATION
+   
+
+    ! Called by - TSFOIL.
     use common_data
     use solver_module, only: EXTRAP
     implicit none
-    integer :: I, J, K, INEW, JNEW, ISTEP, JSTEP
-    real :: TEST, XP, YP, X1, X2, Y1, Y2, P1, P2
-    real :: PT(100)  ! Temporary array for interpolation
+    integer :: I_LOOP, J_LOOP, K_LOOP, INEW, JNEW, ISTEP, JSTEP
+    real :: TEST, XP_LOCAL, YP_LOCAL, X1, X2, Y1, Y2, P1, P2
+    real :: PT(100)  ! Temporary array for interpolation, matches original COM30
+    logical :: x_meshes_same, y_meshes_same
     
-    ! Branch to appropriate initialization based on PSTART
+    ! Branch to appropriate location using modern select case
     select case (PSTART)
-    
     case (1)
-      ! PSTART = 1: Set P to zero
-      write(UNIT_OUTPUT, '(A)') 'Initializing P array to zero (PSTART=1)'
-      do I = 1, size(P, 2)
-        do J = 1, size(P, 1)
-          P(J, I) = 0.0
+      ! PSTART = 1
+      ! P SET TO ZERO
+      do I_LOOP = 1, 101
+        do J_LOOP = 1, 102
+          P(J_LOOP, I_LOOP) = 0.0
         end do
       end do
       DUB = 0.0
       CIRCFF = 0.0
       CIRCTE = 0.0
       return
+    
+    case (2)
+      ! PSTART = 2
+      ! P, X, Y ARRAYS READ FROM UNIT 7 IN SUBROUTINE READIN
+      ! TOGETHER WITH INFORMATION ABOUT OLD SOLUTION
       
-    case (2, 3)
-      ! PSTART = 2: P read from restart file in READIN
-      ! PSTART = 3: P values already in core from previous case
-      if (PSTART == 2) then
-        write(UNIT_OUTPUT, '(A)') 'Using restart data (PSTART=2)'
-      else
-        write(UNIT_OUTPUT, '(A)') 'Using previous solution in core (PSTART=3)'
-      end if
+    case (3)
+      ! PSTART = 3
+      ! ARRAYS FROM PREVIOUS CASE ARE ALREADY IN P,XOLD,YOLD
       
-      ! Set circulation parameters from old solution
-      DUB = DUBO
-      CIRCFF = CLOLD / CLFACT
-      CIRCTE = CIRCFF
-      
-      ! For PSTART = 2 or 3, old P array on XOLD, YOLD mesh
-      ! must be interpolated onto new X, Y mesh.
-      
-      ! Step 1: Interpolate P from XOLD,YOLD to X,YOLD
-      ! Check if XOLD and XIN are the same mesh
-      if (IMAXI == IMAXO) then
-        ! Check if x-coordinates match
-        do I = IMIN, IMAXI
-          TEST = abs(XIN(I) - XOLD(I))
-          if (TEST > 0.0001) goto 450
-        end do
-        
-        ! XIN and XOLD are same mesh - simple deletion if IREF > 0
-        if (IREF > 0) then
-          ISTEP = 2 * IREF
-          do J = JMINO, JMAXO
-            INEW = 0
-            do I = IMINO, IMAXO, ISTEP
-              INEW = INEW + 1
-              P(J, INEW) = P(J, I)
-            end do
-          end do
+    end select
+    
+    ! Common code for PSTART = 2 or 3
+    DUB = DUBO
+    CIRCFF = CLOLD / CLFACT
+    CIRCTE = CIRCFF
+    
+    ! FOR PSTART = 2 OR 3, OLD P ARRAY ON XOLD, YOLD MESH
+    ! MUST BE INTERPOLATED ONTO NEW X Y MESH.
+    
+    ! INTERPOLATE P FROM XOLD,YOLD TO X,YOLD
+    ! CHECK TO SEE IF XOLD AND XIN ARE THE SAME MESH
+    x_meshes_same = .true.
+    if (IMAXI == IMAXO) then
+      do I_LOOP = IMIN, IMAXI
+        TEST = abs(XIN(I_LOOP) - XOLD(I_LOOP))
+        if (TEST > 0.0001) then
+          x_meshes_same = .false.
+          exit
         end if
-        goto 500
+      end do
+    else
+      x_meshes_same = .false.
+    end if
+    
+    if (x_meshes_same) then
+      ! XIN AND XOLD ARE SAME MESH.
+      ! P ARRAY MAY BE INTERPOLATED BY SIMPLE DELETION OF
+      ! VALUES AT MESH POINTS DELETED IN SUBROUTINE CUTOUT
+      ! IF IREF .LE. ZERO, NO INTERPOLATION IS NEEDED
+      if (IREF > 0) then
+        ISTEP = 2 * IREF
+        do J_LOOP = JMINO, JMAXO
+          INEW = 0
+          do I_LOOP = IMINO, IMAXO, ISTEP
+            INEW = INEW + 1
+            P(J_LOOP, INEW) = P(J_LOOP, I_LOOP)
+          end do
+        end do
       end if
-      
-450   continue
-      ! Interpolate from XOLD to X for arbitrary case
-      do J = JMINO, JMAXO
-        YP = YOLD(J)
-        do I = IMIN, IMAX
-          XP = X(I)
-          
-          if (XP < XOLD(IMINO) .or. XP > XOLD(IMAXO)) then
-            ! New X mesh point is outside range of old X mesh
-            ! For supersonic freestream set P=0, for subsonic
-            ! freestream, extrapolate using far field solution
-            PT(I) = 0.0
-            if (AK > 0.0) call EXTRAP(XP, YP, PT(I))
+      ! INTERPOLATION IN X DIRECTION COMPLETE IF XIN AND XOLD ARE THE SAME.
+
+    else
+      ! INTERPOLATE FROM XOLD TO X FOR ARBITRARY CASE
+      do J_LOOP = JMINO, JMAXO
+        YP_LOCAL = YOLD(J_LOOP)
+        do I_LOOP = IMIN, IMAX
+          XP_LOCAL = X(I_LOOP)
+          if (XP_LOCAL < XOLD(IMINO) .or. XP_LOCAL > XOLD(IMAXO)) then
+            ! NEW X MESH POINT IS OUTSIDE RANGE OF OLD X MESH
+            ! FOR SUPERSONIC FREESTREAM SET P=0, FOR SUBSONIC
+            ! FREESTREAM, EXTRAPOLATE USING FAR FIELD SOLUTION
+            PT(I_LOOP) = 0.0
+            if (AK > 0.0) call EXTRAP(XP_LOCAL, YP_LOCAL, PT(I_LOOP))
           else
-            ! New X mesh point within range of old X mesh
-            ! Find value of XOLD > XP
+            ! NEW X MESH POINT WITHIN RANGE OF OLD X MESH
+            ! FIND VALUE OF XOLD .GT. XP
             X2 = XOLD(1)
-            K = 0
-455         K = K + 1
-            X1 = X2
-            X2 = XOLD(K)
-            if (X2 < XP) goto 455
+            K_LOOP = 0
+            do
+              K_LOOP = K_LOOP + 1
+              X1 = X2
+              X2 = XOLD(K_LOOP)
+              if (X2 >= XP_LOCAL) exit
+            end do
             
-            if (X2 == XP) then
-              PT(I) = P(J, K)
+            if (X2 == XP_LOCAL) then
+              PT(I_LOOP) = P(J_LOOP, K_LOOP)
             else
-              P1 = P(J, K-1)
-              P2 = P(J, K)
-              PT(I) = P1 + (P2 - P1) / (X2 - X1) * (XP - X1)
+              P1 = P(J_LOOP, K_LOOP-1)
+              P2 = P(J_LOOP, K_LOOP)
+              PT(I_LOOP) = P1 + (P2 - P1) / (X2 - X1) * (XP_LOCAL - X1)
             end if
           end if
         end do
-        
-        ! Write new values for P into P array
-        do I = IMIN, IMAX
-          P(J, I) = PT(I)
+        ! WRITE NEW VALUES FOR P INTO P ARRAY
+        do I_LOOP = IMIN, IMAX
+          P(J_LOOP, I_LOOP) = PT(I_LOOP)
         end do
       end do
-      
-500   continue
-      ! Step 2: Interpolate from X,YOLD to X,Y
-      ! Check if YIN and YOLD are the same mesh
-      if (JMAXI == JMAXO) then
-        ! Check if y-coordinates match
-        do J = JMIN, JMAXI
-          TEST = abs(YIN(J) - YOLD(J))
-          if (TEST > 0.0001) goto 550
-        end do
-        
-        ! YIN and YOLD are same mesh - simple deletion if IREF > 0
-        if (IREF > 0) then
-          JSTEP = 2 * IREF
-          do I = IMIN, IMAX
-            JNEW = 0
-            do J = JMINO, JMAXO, JSTEP
-              JNEW = JNEW + 1
-              P(JNEW, I) = P(J, I)
-            end do
-          end do
+    end if
+    
+    ! INTERPOLATE FROM X,YOLD TO X,Y
+    ! CHECK TO SEE IF YIN AND YOLD ARE THE SAME MESH
+    y_meshes_same = .true.
+    if (JMAXI == JMAXO) then
+      do J_LOOP = JMIN, JMAXI
+        TEST = abs(YIN(J_LOOP) - YOLD(J_LOOP))
+        if (TEST > 0.0001) then
+          y_meshes_same = .false.
+          exit
         end if
-        goto 600
+      end do
+    else
+      y_meshes_same = .false.
+    end if
+    
+    if (y_meshes_same) then
+      ! YIN AND YOLD ARE THE SAME MESH
+      ! P ARRAY MAY BE INTERPOLATED BY SIMPLE DELETION OF
+      ! VALUES AT MESH POINTS DELETED IN SUBROUTINE CUTOUT
+      ! IF IREF .LE. ZERO, NO INTERPOLATION IS NEEDED
+      if (IREF > 0) then
+        JSTEP = 2 * IREF
+        do I_LOOP = IMIN, IMAX
+          JNEW = 0
+          do J_LOOP = JMINO, JMAXO, JSTEP
+            JNEW = JNEW + 1
+            P(JNEW, I_LOOP) = P(J_LOOP, I_LOOP)
+          end do
+        end do
       end if
-      
-550   continue
-      ! Interpolate YOLD to Y for arbitrary case
-      do I = IMIN, IMAX
-        XP = X(I)
-        K = 2
+      ! INTERPOLATION IN Y DIRECTION COMPLETE IF YIN AND YOLD ARE THE SAME.
+
+    else      
+      ! INTERPOLATE YOLD TO Y FOR ARBITRARY CASE
+      do I_LOOP = IMIN, IMAX
+        XP_LOCAL = X(I_LOOP)
+        K_LOOP = 2
         Y1 = YOLD(1)
-        
-        do J = JMIN, JMAX
-          YP = Y(J)
-          
-          if (YP < YOLD(JMINO)) then
-            ! New Y mesh point below range of old Y mesh
-            PT(J) = P(JMINO, I)
-            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP, YP, PT(J))
-          else if (YP > YOLD(JMAXO)) then
-            ! New Y mesh point above range of old Y mesh  
-            PT(J) = P(JMAXO, I)
-            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP, YP, PT(J))
+        do J_LOOP = JMIN, JMAX
+          YP_LOCAL = Y(J_LOOP)
+          if (YP_LOCAL < YOLD(JMINO)) then
+            ! NEW Y MESH POINT BELOW RANGE OF OLD Y MESH
+            PT(J_LOOP) = P(JMINO, I_LOOP)
+            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP_LOCAL, YP_LOCAL, PT(J_LOOP))
+          else if (YP_LOCAL > YOLD(JMAXO)) then
+            ! NEW Y MESH POINT ABOVE RANGE OF OLD Y MESH
+            PT(J_LOOP) = P(JMAXO, I_LOOP)
+            if (AK > 0.0 .and. BCTYPE == 1) call EXTRAP(XP_LOCAL, YP_LOCAL, PT(J_LOOP))
           else
-            ! New Y mesh point within range of old Y mesh
-            ! Find value of YOLD > YP
+            ! NEW Y MESH POINT WITHIN RANGE OF OLD Y MESH
+            ! FIND VALUE OF YOLD .GT. YP
             Y2 = Y1
-            K = K - 1
-555         K = K + 1
-            Y1 = Y2
-            Y2 = YOLD(K)
-            if (Y2 <= YP) goto 555
-            
-            P1 = P(K-1, I)
-            P2 = P(K, I)
-            PT(J) = P1 + (P2 - P1) / (Y2 - Y1) * (YP - Y1)
+            K_LOOP = K_LOOP - 1
+            do
+              K_LOOP = K_LOOP + 1
+              Y1 = Y2
+              Y2 = YOLD(K_LOOP)
+              if (Y2 > YP_LOCAL) exit
+            end do
+            P1 = P(K_LOOP-1, I_LOOP)
+            P2 = P(K_LOOP, I_LOOP)
+            PT(J_LOOP) = P1 + (P2 - P1) / (Y2 - Y1) * (YP_LOCAL - Y1)
           end if
         end do
-        
-        ! Put new P values into P array
-        do J = JMIN, JMAX
-          P(J, I) = PT(J)
+        ! PUT NEW P VALUES INTO P ARRAY
+        do J_LOOP = JMIN, JMAX
+          P(J_LOOP, I_LOOP) = PT(J_LOOP)
         end do
       end do
-      
-600   continue
-      write(UNIT_OUTPUT, '(A)') 'Interpolation complete'
-      
-    case default
-      write(UNIT_OUTPUT, '(A,I0)') 'Invalid PSTART value: ', PSTART
-      call INPERR(3)
-    end select
+    end if
+  
   end subroutine GUESSP
 
   ! Compute drag coefficient by momentum integral method
@@ -1399,7 +1475,7 @@ contains
     use common_data, only: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR, YFACT
     use common_data, only: SONVEL, FXL, FXU
     use common_data, only: XI, ARG  ! Working arrays
-    use common_data, only: UNIT_OUTPUT, UNIT_SHOCK, UNIT_FIELD
+    use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY
     use math_module, only: PX, PY, TRAP, FINDSK, NEWISK, DRAG
     implicit none
     
@@ -1428,77 +1504,87 @@ contains
     JT = JMAX - 1
     JB = JMIN + 1
     
-    if (AK > 0.0) goto 30
-    
-    ! Supersonic freestream
-    ! Set JB,JT to include only subsonic part of detached bow wave
-    
-    ! Find bow shock wave
-    ISTOP = ILE - 3
-    call FINDSK(IUP, ISTOP, JUP, IBOW)
-    if (IBOW < 0) goto 325
-    
-    ! Search up shock to find tip of subsonic region
-    ISK = IBOW
-    JSTART = JUP + 1
-    JT = JUP - 1
-    do J = JSTART, JMAX
-      JT = JT + 1
-      ISKOLD = ISK
-      call NEWISK(ISKOLD, J, ISK)
-      if (ISK < 0) exit
-    end do
-    
-    ! Search down shock to find tip of subsonic region
-    ISK = IBOW
-    JB = JLOW + 2
-    do J = JMIN, JLOW
-      JJ = JLOW - J + JMIN
-      JB = JB - 1
-      ISKOLD = ISK
-      call NEWISK(ISKOLD, JJ, ISK)
-      if (ISK < 0) exit
-    end do
-    
-    ! Save I location of bow shock wave on lower boundary
-    IBOW = ISKOLD
-    
-30  continue
+    if (AK <= 0.0) then
+      ! Supersonic freestream
+      ! Set JB,JT to include only subsonic part of detached bow wave
+      
+      ! Find bow shock wave
+      ISTOP = ILE - 3
+      call FINDSK(IUP, ISTOP, JUP, IBOW)
+      if (IBOW < 0) then
+        ! Shock is too close to body to do contour integral.
+        ! Write message and return
+        ULE = PX(ILE, JUP)
+        
+        if (ULE > SONVEL) then
+          write(UNIT_OUTPUT, '("31H1SHOCK WAVE IS ATTACHED TO BODY/", &
+               "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
+               "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
+        else
+          write(UNIT_OUTPUT, '("41H1DETACHED SHOCK WAVE IS TOO CLOSE TO BODY/", &
+               "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
+               "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
+        end if
+        
+        CD = DRAG(CDFACT)
+        write(UNIT_OUTPUT, '("4H0CD=", F12.6)') CD
+        return
+      end if
+      
+      ! Search up shock to find tip of subsonic region
+      ISK = IBOW
+      JSTART = JUP + 1
+      JT = JUP - 1
+      do J = JSTART, JMAX
+        JT = JT + 1
+        ISKOLD = ISK
+        call NEWISK(ISKOLD, J, ISK)
+        if (ISK < 0) exit
+      end do
+      
+      ! Search down shock to find tip of subsonic region
+      ISK = IBOW
+      JB = JLOW + 2
+      do J = JMIN, JLOW
+        JJ = JLOW - J + JMIN
+        JB = JB - 1
+        ISKOLD = ISK
+        call NEWISK(ISKOLD, JJ, ISK)
+        if (ISK < 0) exit
+      end do
+      
+      ! Save I location of bow shock wave on lower boundary
+      IBOW = ISKOLD
+    end if
     
     ! Downstream boundary
     ID = (ITE + IMAX) / 2
-    if (PX(ITE+1, JUP) < SONVEL) goto 40
-    
-    ! Trailing edge is supersonic. Place downstream
-    ! boundary ahead of trailing edge to avoid tail shock
-    I = ITE
-    do while (X(I) > 0.75)
-      I = I - 1
-    end do
-    ID = I
-    
-40  continue
+    if (PX(ITE+1, JUP) >= SONVEL) then
+      ! Trailing edge is supersonic. Place downstream
+      ! boundary ahead of trailing edge to avoid tail shock
+      I = ITE
+      do while (X(I) > 0.75)
+        I = I - 1
+      end do
+      ID = I
+    end if
     
     ! All boundaries are fixed
-    
     ! Compute integrals along boundaries
-    
     ! Integral on upstream boundary
     CDUP = 0.0
-    if (AK < 0.0) goto 120
-    
-    L = 0
-    do J = JB, JT
-      L = L + 1
-      XI(L) = Y(J)
-      U = PX(IU, J)
-      V = PY(IU, J)
-      ARG(L) = ((AK - GAM123*U)*U*U - V*V) * 0.5
-    end do
-    call TRAP(XI, ARG, L, SUM)
-    CDUP = 2.0 * CDFACT * SUM
-    
-120 continue
+    if (AK >= 0.0) then
+      L = 0
+      do J = JB, JT
+        L = L + 1
+        XI(L) = Y(J)
+        U = PX(IU, J)
+        V = PY(IU, J)
+        ARG(L) = ((AK - GAM123*U)*U*U - V*V) * 0.5
+      end do
+      call TRAP(XI, ARG, L, SUM)
+      CDUP = 2.0 * CDFACT * SUM
+    end if
     
     ! Integral on top boundary
     L = 0
@@ -1530,145 +1616,136 @@ contains
       V = PY(ID, J)
       ARG(L) = ((GAM123*U - AK)*U*U + V*V) * 0.5
     end do
+
     call TRAP(XI, ARG, L, SUM)
     CDDOWN = 2.0 * CDFACT * SUM
-    
+      
     ! Integral on body boundary
     CDBODY = 0.0
-    if (ID > ITE) goto 200
-    
-    ILIM = ITE + 1
-    L = 0
-    do I = ID, ILIM
-      IB = I - ILE + 1
-      L = L + 1
-      XI(L) = X(I)
-      UU = CJUP*PX(I, JUP) - CJUP1*PX(I, JUP+1)
-      UL = CJLOW*PX(I, JLOW) - CJLOW1*PX(I, JLOW-1)
-      ARG(L) = -UU*FXU(IB) + UL*FXL(IB)
-    end do
-    call TRAP(XI, ARG, L, SUM)
-    CDBODY = 2.0 * CDFACT * SUM
-    
-200 continue
-    
+    if (ID <= ITE) then
+      ILIM = ITE + 1
+      L = 0
+      do I = ID, ILIM
+        IB = I - ILE + 1
+        L = L + 1
+        XI(L) = X(I)
+        UU = CJUP*PX(I, JUP) - CJUP1*PX(I, JUP+1)
+        UL = CJLOW*PX(I, JLOW) - CJLOW1*PX(I, JLOW-1)
+        ARG(L) = -UU*FXU(IB) + UL*FXL(IB)
+      end do
+      call TRAP(XI, ARG, L, SUM)
+      CDBODY = 2.0 * CDFACT * SUM
+    end if
+      
     ! Integration along shock waves
     CDWAVE = 0.0
     LPRT1 = 0
     LPRT2 = 0
     NSHOCK = 0
     
-    if (AK > 0.0) goto 220
-    
-    ! Integrate along detached bow wave
-    NSHOCK = NSHOCK + 1
-    LPRT1 = 1
-    LPRT2 = 1
-    L = 0
-    ISK = IBOW
-    do J = JB, JT
-      L = L + 1
-      ISKOLD = ISK
-      call NEWISK(ISKOLD, J, ISK)
-      XI(L) = Y(J)
-      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
-    end do
-    call TRAP(XI, ARG, L, SUM)
-    CDSK = -GAM1/6.0 * CDFACT * SUM
-    CDWAVE = CDWAVE + CDSK
-    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
-    
-220 continue
-    
+    if (AK <= 0.0) then
+      ! Integrate along detached bow wave
+      NSHOCK = NSHOCK + 1
+      LPRT1 = 1
+      LPRT2 = 1
+      L = 0
+      ISK = IBOW
+      do J = JB, JT
+        L = L + 1
+        ISKOLD = ISK
+        call NEWISK(ISKOLD, J, ISK)
+        XI(L) = Y(J)
+        ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+      end do
+      call TRAP(XI, ARG, L, SUM)
+      CDSK = -GAM1/6.0 * CDFACT * SUM
+      CDWAVE = CDWAVE + CDSK
+      call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+    end if
+      
     ! Integrate along shocks above airfoil
     ISTART = ILE
     
-225 continue
-    call FINDSK(ISTART, ITE, JUP, ISK)
-    if (ISK < 0) goto 250
-    
-    ! Shock wave found
-    ISTART = ISK + 1
-    NSHOCK = NSHOCK + 1
-    LPRT1 = 0
-    L = 1
-    XI(L) = 0.0
-    ARG(L) = (CJUP*(PX(ISK+1, JUP) - PX(ISK-2, JUP)) - &
-              CJUP1*(PX(ISK+1, JUP+1) - PX(ISK-2, JUP+1)))**3
-    
-    do J = JUP, JT
-      L = L + 1
-      XI(L) = Y(J)
-      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
-      ISKOLD = ISK
-      JSK = J + 1
-      call NEWISK(ISKOLD, JSK, ISK)
-      if (ISK < 0) exit
-      if (ISK > ID) then
-        LPRT1 = 1
-        exit
-      end if
+    ! Loop to find and process all shocks above airfoil
+    do
+      call FINDSK(ISTART, ITE, JUP, ISK)
+      if (ISK < 0) exit  ! No more shocks found
+      
+      ! Shock wave found
+      ISTART = ISK + 1
+      NSHOCK = NSHOCK + 1
+      LPRT1 = 0
+      L = 1
+      XI(L) = 0.0
+      ARG(L) = (CJUP*(PX(ISK+1, JUP) - PX(ISK-2, JUP)) - &
+                CJUP1*(PX(ISK+1, JUP+1) - PX(ISK-2, JUP+1)))**3
+      
+      do J = JUP, JT
+        L = L + 1
+        XI(L) = Y(J)
+        ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+        ISKOLD = ISK
+        JSK = J + 1
+        call NEWISK(ISKOLD, JSK, ISK)
+        if (ISK < 0) exit
+        if (ISK > ID) then
+          LPRT1 = 1
+          exit
+        end if
+      end do
+      
+      if (ISK < 0) LPRT1 = 1
+      
+      call TRAP(XI, ARG, L, SUM)
+      CDSK = -GAM1/6.0 * CDFACT * SUM
+      CDWAVE = CDWAVE + CDSK
+      call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+      if (LPRT1 == 1) LPRT2 = 1
     end do
-    
-    if (ISK < 0) LPRT1 = 1
-    
-    call TRAP(XI, ARG, L, SUM)
-    CDSK = -GAM1/6.0 * CDFACT * SUM
-    CDWAVE = CDWAVE + CDSK
-    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
-    if (LPRT1 == 1) LPRT2 = 1
-    
-    ! Return to find next shock
-    goto 225
-    
-250 continue
-    
+      
     ! Integrate along shocks below airfoil
     ISTART = ILE
     
-260 continue
-    call FINDSK(ISTART, ITE, JLOW, ISK)
-    if (ISK < 0) goto 300
-    
-    ! Shock wave found
-    ISTART = ISK + 1
-    NSHOCK = NSHOCK + 1
-    LPRT1 = 0
-    L = 1
-    XI(L) = 0.0
-    ARG(L) = (CJLOW*(PX(ISK+1, JLOW) - PX(ISK-2, JLOW)) - &
-              CJLOW1*(PX(ISK+1, JLOW-1) - PX(ISK-2, JLOW-1)))**3
-    
-    do JJ = JB, JLOW
-      J = JLOW + JBOT - JJ
-      L = L + 1
-      XI(L) = Y(J)
-      ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
-      ISKOLD = ISK
-      JSK = J - 1
-      call NEWISK(ISKOLD, JSK, ISK)
-      if (ISK < 0) exit
-      if (ISK > ID) then
-        LPRT1 = 1
-        exit
-      end if
+    ! Loop to find and process all shocks below airfoil  
+    do
+      call FINDSK(ISTART, ITE, JLOW, ISK)
+      if (ISK < 0) exit  ! No more shocks found
+      
+      ! Shock wave found
+      ISTART = ISK + 1
+      NSHOCK = NSHOCK + 1
+      LPRT1 = 0
+      L = 1
+      XI(L) = 0.0
+      ARG(L) = (CJLOW*(PX(ISK+1, JLOW) - PX(ISK-2, JLOW)) - &
+                CJLOW1*(PX(ISK+1, JLOW-1) - PX(ISK-2, JLOW-1)))**3
+      
+      do JJ = JB, JLOW
+        J = JLOW + JB - JJ
+        L = L + 1
+        XI(L) = Y(J)
+        ARG(L) = (PX(ISK+1, J) - PX(ISK-2, J))**3
+        ISKOLD = ISK
+        JSK = J - 1
+        call NEWISK(ISKOLD, JSK, ISK)
+        if (ISK < 0) exit
+        if (ISK > ID) then
+          LPRT1 = 1
+          exit
+        end if
+      end do
+      
+      if (ISK < 0) LPRT1 = 1
+      
+      call TRAP(XI, ARG, L, SUM)
+      CDSK = -GAM1/6.0 * (-SUM)
+      CDWAVE = CDWAVE + CDSK
+      call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
+      if (LPRT1 == 1) LPRT2 = 1
     end do
     
-    if (ISK < 0) LPRT1 = 1
-    
-    call TRAP(XI, ARG, L, SUM)
-    CDSK = -GAM1/6.0 * (-SUM)
-    CDWAVE = CDWAVE + CDSK
-    call PRTSK(XI, ARG, L, NSHOCK, CDSK, LPRT1)
-    if (LPRT1 == 1) LPRT2 = 1
-    
-    ! Return to find next shock
-    goto 260
-    
-300 continue
-    
     ! Integration along shocks is complete
-      ! Printout CD information
+    ! Printout CD information
     XU_LOC = X(IU)
     XD_LOC = X(ID)
     YT_LOC = Y(JT) * YFACT
@@ -1677,109 +1754,72 @@ contains
     CD = CDC + CDWAVE
     
     ! Write drag coefficient breakdown
-    write(UNIT_OUTPUT, 1001)
+    write(UNIT_OUTPUT, '("1CALCULATION OF DRAG COEFFICIENT BY MOMENTUM INTEGRAL METHOD")')
     
-    write(UNIT_OUTPUT, 1002) XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
+    write(UNIT_OUTPUT, '("0BOUNDARIES OF CONTOUR USED", 15X, "18HCONTRIBUTION TO CD/", &
+           "16H UPSTREAM    X =", F12.6, 15X, "8HCDUP   =", F12.6/, &
+           "16H DOWNSTREAM  X =", F12.6, 15X, "8HCDDOWN =", F12.6/, &
+           "16H TOP         Y =", F12.6, 15X, "8HCDTOP  =", F12.6/, &
+           "16H BOTTOM      Y =", F12.6, 15X, "8HCDBOT  =", F12.6)') XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
     
     if (XD_LOC < 1.0) then
-      write(UNIT_OUTPUT, 1003) XD_LOC, CDBODY
+      write(UNIT_OUTPUT, '("16H BODY AFT OF X =", F12.6, 15X, "8HCDBODY =", F12.6)') XD_LOC, CDBODY
     end if
     
-    write(UNIT_OUTPUT, 1004) CDC
-    
-    write(UNIT_OUTPUT, 1005) NSHOCK, CDWAVE
-    write(UNIT_FIELD, '("TOTAL CDWAVE =", F16.12)') CDWAVE
+    write(UNIT_OUTPUT, '(15X, "36HTOTAL CONTRIBUTIONS AROUND CONTOUR =", F12.6)') CDC
+    write(UNIT_OUTPUT, '("10H0THERE ARE", I3, "38H SHOCKS INSIDE CONTOUR. TOTAL CDWAVE =", F12.6)') NSHOCK, CDWAVE
+    write(UNIT_SUMMARY, '("TOTAL CDWAVE =", F16.12)') CDWAVE
     
     if (NSHOCK > 0 .and. LPRT2 == 0) then
-      write(UNIT_OUTPUT, 1007)
+      write(UNIT_OUTPUT, '("43H0NOTE - ALL SHOCKS CONTAINED WITHIN CONTOUR/", &
+           "30H CDWAVE EQUALS TOTAL WAVE DRAG")')
     end if
     
     if (NSHOCK > 0 .and. LPRT2 == 1) then
-      write(UNIT_OUTPUT, 1008)
+      write(UNIT_OUTPUT, '("52H0NOTE - ONE OR MORE SHOCKS EXTEND OUTSIDE OF CONTOUR/", &
+           "38H CDWAVE DOES NOT EQUAL TOTAL WAVE DRAG")')
     end if
     
-    write(UNIT_OUTPUT, 1006) CD
-    write(UNIT_FIELD, '("TOTAL CD     =", F16.12)') CD
-    
-    return
-    
-325 continue
-    ! Shock is too close to body to do contour integral.
-    ! Write message and return
-    ULE = PX(ILE, JUP)
-    
-    if (ULE > SONVEL) then
-      write(UNIT_OUTPUT, 1011)
-    else
-      write(UNIT_OUTPUT, 1012)
-    end if
-    
-    CD = DRAG(CDFACT)
-    write(UNIT_OUTPUT, 1013) CD
-    
-    return
-    
-    ! Format statements
-1001 format('1CALCULATION OF DRAG COEFFICIENT BY MOMENTUM INTEGRAL METHOD')
-1002 format('0BOUNDARIES OF CONTOUR USED', 15X, '18HCONTRIBUTION TO CD/', &
-           '16H UPSTREAM    X =', F12.6, 15X, '8HCDUP   =', F12.6/, &
-           '16H DOWNSTREAM  X =', F12.6, 15X, '8HCDDOWN =', F12.6/, &
-           '16H TOP         Y =', F12.6, 15X, '8HCDTOP  =', F12.6/, &
-           '16H BOTTOM      Y =', F12.6, 15X, '8HCDBOT  =', F12.6)
-1003 format('16H BODY AFT OF X =', F12.6, 15X, '8HCDBODY =', F12.6)
-1004 format(15X, '36HTOTAL CONTRIBUTIONS AROUND CONTOUR =', F12.6)
-1005 format('10H0THERE ARE', I3, '38H SHOCKS INSIDE CONTOUR. TOTAL CDWAVE =', F12.6)
-1006 format('51H0DRAG CALCULATED FROM MOMENTUM INTEGRAL    CD     =', F12.6)
-1007 format('43H0NOTE - ALL SHOCKS CONTAINED WITHIN CONTOUR/', &
-           '30H CDWAVE EQUALS TOTAL WAVE DRAG')
-1008 format('52H0NOTE - ONE OR MORE SHOCKS EXTEND OUTSIDE OF CONTOUR/', &
-           '38H CDWAVE DOES NOT EQUAL TOTAL WAVE DRAG')
-1011 format('31H1SHOCK WAVE IS ATTACHED TO BODY/', &
-           '33H MOMENTUM INTEGRAL CANNOT BE DONE/', &
-           '45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/')
-1012 format('41H1DETACHED SHOCK WAVE IS TOO CLOSE TO BODY/', &
-           '33H MOMENTUM INTEGRAL CANNOT BE DONE/', &
-           '45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/')
-1013 format('4H0CD=', F12.6)
+    write(UNIT_OUTPUT, '("51H0DRAG CALCULATED FROM MOMENTUM INTEGRAL    CD     =", F12.6)') CD
+    write(UNIT_SUMMARY, '("TOTAL CD     =", F16.12)') CD
     
   end subroutine CDCOLE
 
   ! Fatal error in input - write message and stop
   ! CALLED BY - READIN, SCALE
-  ! Modernized version with exact same functionality as original
   subroutine INPERR(I)
+    use common_data, only: UNIT_OUTPUT
     implicit none
     integer, intent(in) :: I
     
-    ! Write exact same error messages as original to UNIT_OUTPUT (unit 15)
     select case (I)
     case (1)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'IMAX OR JMAX IS GREATER THAN 100,NOT ALLOWED.'
     case (2)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'X MESH POINTS NOT MONOTONIC INCREASING.'
     case (3)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'Y MESH POINTS NOT MONOTONIC INCREASING.'
     case (4)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER NOT IN PERMITTED RANGE. (.5,2.0)'
     case (5)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'ALPHA NOT IN PERMITTED RANGE. (-9.0, 9.0)'
     case (6)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
     case (7)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'AK=0. VALUE OF AK MUST BE INPUT SINCE PHYS=F.'
     case (8)
-      write(UNIT_OUTPUT, '(A)') ' '  ! Blank line (1H0 equivalent)
+      write(UNIT_OUTPUT, '(A)') ' '
       write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'
     end select
     
-    stop  ! Same behavior as original
+    stop
   end subroutine INPERR
 
   ! Print INP namelist parameters to UNIT_OUTPUT for debugging
@@ -1927,7 +1967,6 @@ contains
   end subroutine PRINT_INP_NAMELIST
 
   ! FIXPLT - Sets up arrays for CPPLOT subroutine
-  ! This matches the original FIXPLT functionality exactly
   subroutine FIXPLT()
     use common_data, only: IMIN, IMAX, CPFACT, CPSTAR, CPU, CPL, X
     implicit none
@@ -1970,9 +2009,10 @@ contains
     call CPPLOT(XP, CPUP, CPLO, CPS, IMP)
     
   end subroutine FIXPLT
-
+  
   ! CPPLOT - Produces a printer plot of critical pressure vs X
-  ! This matches the original CPPLOT functionality exactly
+  ! SUBROUTINE CPPLOT PRODUCES A PRINTER PLOT OF CRITICAL PRESSURE VS X
+  ! CALLED BY - FIXPLT.
   subroutine CPPLOT(X_ARR, Y_ARR, Z_ARR, W_ARR, NP)
     use common_data, only: AMESH, UNIT_OUTPUT
     implicit none
@@ -1980,73 +2020,82 @@ contains
     ! Arguments
     integer, intent(in) :: NP
     real, intent(in) :: X_ARR(101), Y_ARR(101), Z_ARR(101), W_ARR(101)
-      ! Local variables matching original exactly
-    integer :: M(120), IC(3), ISYM(8)
+    
+    ! Local variables exactly matching original
+    integer :: M(120), ISYM(8)
+    integer :: IC(3)
     real :: A(3)
     integer :: NC, NR, NPL, NPR, NL5
-    real :: HL, HR, VB, VT_LOCAL, VDEL, HDEL, HDELM, VL, VH
+    real :: HL, HR, VB, VT_CPPLOT, VDEL, HDEL, HDELM, VL, VH
     integer :: IROW, I, J, K
     
-    ! Data initialization matching original
+    ! Data initialization matching original exactly
     IC(1) = 1
     IC(2) = 1024
     IC(3) = 1048576
     
-    ISYM(1) = ichar(' ')
-    ISYM(2) = ichar('U')
-    ISYM(3) = ichar('L')
-    ISYM(4) = ichar('B')
-    ISYM(5) = ichar('-')
-    ISYM(6) = ichar('U')
-    ISYM(7) = ichar('L')
-    ISYM(8) = ichar('B')
+    ISYM(1) = 32  ! ' '
+    ISYM(2) = 85  ! 'U'
+    ISYM(3) = 76  ! 'L'
+    ISYM(4) = 66  ! 'B'
+    ISYM(5) = 45  ! '-'
+    ISYM(6) = 85  ! 'U'
+    ISYM(7) = 76  ! 'L'  
+    ISYM(8) = 66  ! 'B'
     
     ! NC is the number of columns, NR is the number of rows
     NC = 120
     NR = 50
     
-    ! Initialize ranges
-    if (.not. AMESH) then
-      NPL = 1
-      NPR = NP - 1
-      NL5 = 2
-    else
+    ! Initialize ranges exactly like original
+    if (AMESH) then
       NPL = 2
       NPR = NP - 2
       NL5 = 3
+    else
+      NPL = 1
+      NPR = NP - 1
+      NL5 = 2
     end if
-      HL = X_ARR(NPL)
+    
+    HL = X_ARR(NPL)
     HR = X_ARR(NPL)
     VB = min(Y_ARR(1), Z_ARR(1), W_ARR(1))
-    VT_LOCAL = max(Y_ARR(1), Z_ARR(1), W_ARR(1))
+    VT_CPPLOT = max(Y_ARR(1), Z_ARR(1), W_ARR(1))
     
-    ! Determine ranges
+    ! Determine ranges exactly like original
     do I = NL5, NPR
       HL = min(HL, X_ARR(I))
       HR = max(HR, X_ARR(I))
       VB = min(VB, Y_ARR(I), Z_ARR(I), W_ARR(I))
-      VT_LOCAL = max(VT_LOCAL, Y_ARR(I), Z_ARR(I), W_ARR(I))
+      VT_CPPLOT = max(VT_CPPLOT, Y_ARR(I), Z_ARR(I), W_ARR(I))
     end do
     
-    ! Skip to new page and write plot heading
-    write(UNIT_OUTPUT, 900)
+    ! Skip to new page and write plot heading exactly like original
+    write(UNIT_OUTPUT, '(A1, 34X, A50, //, 9X, A17, 5X, A17, 5X, A27, 5X, A18)') &
+      '1', &
+      'PRINTER PLOT OF CP ON BODY AND DIVIDING STREAMLINE', &
+      'U  FOR CP(UPPER)', &
+      'L  FOR CP(LOWER)', &
+      'B  FOR CP(UPPER)=CP(LOWER)', &
+      '---  FOR CP SONIC'
     
-    VDEL = (VT_LOCAL - VB) / real(NR)
+    VDEL = (VT_CPPLOT - VB) / real(NR)
     HDEL = (HR - HL) / real(NC)
     HDELM = 1.0 / HDEL
-    VL = VT_LOCAL
+    VL = VT_CPPLOT
     
-    ! Main plotting loop
+    ! Main plotting loop exactly like original
     do IROW = 1, NR
       VH = VL
       VL = real(NR - IROW) * VDEL + VB
       
-      ! Initialize line
+      ! Initialize M array
       do I = 1, NC
         M(I) = 0
       end do
       
-      ! Plot points
+      ! Process each data point exactly like original
       do I = NPL, NPR
         J = max(1, min(NC, 1 + int((X_ARR(I) - HL) * HDELM)))
         A(1) = Y_ARR(I)
@@ -2061,7 +2110,7 @@ contains
         end do
       end do
       
-      ! Convert to symbols
+      ! Convert to symbols exactly like original
       do I = 1, NC
         J = 1
         if (M(I) >= IC(3)) then
@@ -2078,18 +2127,267 @@ contains
         M(I) = ISYM(J)
       end do
       
-      ! Write the line using character format
-      write(UNIT_OUTPUT, 901) (char(M(I)), I=1, NC)
+      ! Write line exactly like original
+      write(UNIT_OUTPUT, '(1X, 120A1)') (char(M(I)), I=1, NC)
     end do
+    
+  end subroutine CPPLOT
+
+  ! Prints coordinates where sonic velocity is computed
+  ! Linear interpolation between mesh points is used
+  ! Called by - PRINT.
+  subroutine M1LINE()
+    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX, JLOW
+    use common_data, only: AK, SONVEL, YFACT, BCTYPE
+    use common_data, only: UNIT_OUTPUT
+    use math_module, only: PX
+    implicit none
+    
+    real :: XSLPRT(200), YSLPRT(200)
+    real :: XSONIC(10)
+    real :: YPR, PX1, PX2, RATIO
+    real :: XMIN, XMAX, XINCR, YMIN, YMAX, YINCR
+    real :: YM, YX
+    integer :: NPTS, KMIN, KMAX, JP, K, J, M, IMM, I, L, N
+    
+    NPTS = 0
+    KMIN = JMIN
+    KMAX = JMAX
+    JP = JMAX + JMIN
+    
+    do K = KMIN, KMAX
+      J = JP - K
+      YPR = YFACT * Y(J)
+      PX2 = PX(IMIN, J)
+      M = 0
+      if (J == JLOW) then
+        if (NPTS /= 0) write(UNIT_OUTPUT, 2070)
+      end if
+      
+      IMM = IMIN + 1
+      do I = IMM, IMAX
+        PX1 = PX2
+        PX2 = PX(I, J)
+        
+        if (PX1 > SONVEL .and. PX2 > SONVEL) cycle
+        if (PX1 < SONVEL .and. PX2 < SONVEL) cycle
+        
+        if (NPTS == 0) write(UNIT_OUTPUT, 2000)
+        
+        M = M + 1
+        RATIO = (SONVEL - PX1) / (PX2 - PX1)
+        XSONIC(M) = X(I-1) + (X(I) - X(I-1)) * RATIO
+        NPTS = NPTS + 1
+        XSLPRT(NPTS) = XSONIC(M)
+        YSLPRT(NPTS) = YPR
+        if (NPTS >= 200) then
+          write(UNIT_OUTPUT, 2060)
+          return
+        end if
+      end do
+      
+      if (M == 0) cycle
+      write(UNIT_OUTPUT, 2040) YPR, (XSONIC(L), L=1, M)
+    end do
+    
+    ! Process results if any sonic points were found
+    if (NPTS == 0) return
+    
+    YM = Y(JMIN)
+    YX = Y(JMAX)
+    do N = 1, NPTS
+      if (YSLPRT(N) /= YM .and. YSLPRT(N) /= YX) cycle
+      
+      if (AK > 0.0) write(UNIT_OUTPUT, 2050)
+      if (AK < 0.0 .and. BCTYPE == 1) write(UNIT_OUTPUT, 2050)
+    end do
+    
+    XMIN = -0.75
+    XMAX = 1.75
+    XINCR = 0.25
+    YMIN = -1.0
+    YMAX = 1.5
+    YINCR = 0.5
+    
+    call PLTSON(XSLPRT, YSLPRT, XMIN, XMAX, XINCR, YMIN, YMAX, YINCR, NPTS)
     
     return
     
     ! Format statements matching original exactly
-900 format('1', 34X, 'PRINTER PLOT OF CP ON BODY AND DIVIDING STREAMLINE', //, &
-           9X, 'U  FOR CP(UPPER)', 5X, 'L  FOR CP(LOWER)', &
-           5X, 'B  FOR CP(UPPER)=CP(LOWER)', 5X, '---  FOR CP SONIC')
-901 format(1X, 120A1)
+2000 format('1SONIC LINE COORDINATES'/6X,'Y',10X,'XSONIC'//)
+2040 format(11F10.5)
+2050 format('0***** CAUTION *****'/&
+           ' SONIC LINE HAS REACHED A BOUNDARY'/&
+           ' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS'/&
+           ' SOLUTION IS PROBABLY INVALID')
+2060 format('0***** CAUTION *****'/' NUMBER OF SONIC POINTS EXCEEDED 200'/&
+           ' ARRAY DIMENSION EXCEEDED'/' EXECUTION OF SUBROUTINE M1LINE TERMINATED')
+2070 format(2X,'BODY LOCATION')
     
-  end subroutine CPPLOT
+  end subroutine M1LINE
+  
+  ! PLTSON - Sonic line printer plot routine 
+  ! This is a modified version of PRNPLT and XMAX, XINCR, YMAX, YINCR must be supplied.
+  ! XMIN, and YMIN must also be supplied.
+  ! Printer plot routine M. S. ITZKOWITZ MAY,1967
+  ! Plots the NPTS points given by X(I),Y(I) on a 51 X 101 grid using a total of 56 lines on
+  ! the printer. If either incremental step size is zero, the program exits.
+  ! Neither of the input arrays are destroyed.
+  ! Called by - M1LINE.
+  subroutine PLTSON(X_ARG, Y_ARG, XAXMIN, XMAX_ARG, XINCR_ARG, YAXMIN, YMAX_ARG, YINCR_ARG, NPTS_ARG)
+    use common_data, only: UNIT_OUTPUT
+    implicit none
+    
+    ! Arguments
+    integer, intent(in) :: NPTS_ARG
+    real, intent(in) :: X_ARG(NPTS_ARG), Y_ARG(NPTS_ARG)
+    real, intent(in) :: XAXMIN, XMAX_ARG, XINCR_ARG, YAXMIN, YMAX_ARG, YINCR_ARG
+    
+    ! Local variables
+    integer, dimension(105) :: IGRID
+    real, dimension(11) :: XAXIS
+    character(len=1), parameter :: BLANK = ' ', DOT = '.', STAR = '*', DASH = '-'
+    integer, parameter :: IBS(9) = [ichar('B'),ichar('O'),ichar('D'),ichar('Y'),ichar(' '),&
+                                    ichar('S'),ichar('L'),ichar('I'),ichar('T')]
+    real :: YRNGE, XRNGE, YVAL, XVAL, OXV, OYV, FIZERO, FJZERO, FIZER5, FJZER5
+    integer :: JSLT, IZERO, JZERO, NOPW, JS, I, J, K, L, M, ITEST
+    real :: FM, FI, YAXIS
+    
+    write(UNIT_OUTPUT, 900)
+    write(UNIT_OUTPUT, 910)
+
+    if (XINCR_ARG == 0.0 .or. YINCR_ARG == 0.0) then
+      write(UNIT_OUTPUT, 9800)
+      stop
+    end if
+    
+    YRNGE = YMAX_ARG - YAXMIN
+    XRNGE = XMAX_ARG - XAXMIN
+    YVAL = YRNGE * 0.02
+    XVAL = XRNGE * 0.01
+    JSLT = int(51.0 * (YMAX_ARG / YRNGE)) + 1
+    OXV = 1.0 / XVAL
+    OYV = 1.0 / YVAL
+    IZERO = int(YMAX_ARG * OYV + 1.5)
+    JZERO = int(103.5 - XMAX_ARG * OXV)
+    if (JZERO > 103 .or. JZERO < 4) JZERO = 2
+    FIZERO = real(IZERO)
+    FJZERO = real(JZERO)
+    IGRID(1) = ichar(BLANK)
+    IGRID(2) = ichar(DOT)
+    IGRID(104) = ichar(DOT)
+    IGRID(105) = ichar(BLANK)
+    FIZER5 = FIZERO + 0.5
+    FJZER5 = FJZERO + 0.5
+    
+    ! NOPW is the number of print wheels used to span the body length.
+    NOPW = int(OXV)
+    ! JS - the number of prt wheel positions to be filled at each end of the word "BODY SLIT"
+    JS = 0
+    if (NOPW > 9) JS = (NOPW - 9) / 2
+
+    write(UNIT_OUTPUT, 905)
+    write(UNIT_OUTPUT, 903)
+    
+    ! Loop to set up one line each time thru.
+    do I = 1, 51
+      ! Blank the line to be printed.
+      do J = 3, 103
+        IGRID(J) = ichar(BLANK)
+      end do
+
+      ! Search array for points on this line.
+      do K = 1, NPTS_ARG
+        ITEST = int(FIZER5 - Y_ARG(K) * OYV)
+        if (ITEST /= I) then
+          if (JSLT == I) then
+            ! Write "BODY SLIT" if this is the J0 line.
+            J = JZERO + 1
+            if (JS /= 0) then
+              do L = 1, JS
+                if (IGRID(J) /= ichar(STAR)) IGRID(J) = ichar(DASH)
+                J = J + 1
+              end do
+            end if
+            
+            do L = 1, 9
+              if (IGRID(J) /= ichar(STAR)) IGRID(J) = IBS(L)
+              J = J + 1
+            end do
+            
+            if (JS /= 0) then
+              do L = 1, JS
+                if (IGRID(J) /= ichar(STAR)) IGRID(J) = ichar(DASH)
+                J = J + 1
+              end do
+            end if
+          end if
+          cycle
+        end if
+        
+        J = int(FJZER5 + X_ARG(K) * OXV)
+        if (J > 103) J = 103
+        if (J < 3) J = 3
+        IGRID(J) = ichar(STAR)
+        
+        if (JSLT == I) then
+          ! Write "BODY SLIT" if this is the J0 line.
+          J = JZERO + 1
+          if (JS /= 0) then
+            do L = 1, JS
+              if (IGRID(J) /= ichar(STAR)) IGRID(J) = ichar(DASH)
+              J = J + 1
+            end do
+          end if
+          
+          do L = 1, 9
+            if (IGRID(J) /= ichar(STAR)) IGRID(J) = IBS(L)
+            J = J + 1
+          end do
+          
+          if (JS /= 0) then
+            do L = 1, JS
+              if (IGRID(J) /= ichar(STAR)) IGRID(J) = ichar(DASH)
+              J = J + 1
+            end do
+          end if
+        end if
+      end do
+      
+      if (mod(I, 10) == 1) then
+        FI = real(I - 1)
+        YAXIS = YMAX_ARG - FI * YINCR_ARG * 0.1
+        if (abs(YAXIS) < YAXMIN) YAXIS = 0.0
+        write(UNIT_OUTPUT, 902) YAXIS, (char(IGRID(J)), J=1, 105)
+      else
+        write(UNIT_OUTPUT, 901) (char(IGRID(J)), J=1, 105)
+      end if
+    end do
+    
+    write(UNIT_OUTPUT, 903)
+    write(UNIT_OUTPUT, 905)
+    
+    do M = 1, 11
+      FM = real(11 - M)
+      XAXIS(M) = XMAX_ARG - XINCR_ARG * FM
+      if (XAXIS(M) < XAXMIN) XAXIS(M) = XAXMIN
+    end do
+    
+    write(UNIT_OUTPUT, 904) XAXIS, NPTS_ARG
+    write(UNIT_OUTPUT, 900)
+    
+    return
+    
+    ! Format statements matching original exactly
+900 format('1')
+901 format(14X,105A1)
+902 format(1X,F10.1,2X,1H+,105A1,1H+)
+903 format(15X,103(1H.))
+904 format(7X,11(F10.2),2H (,I4,5H PTS) )
+905 format(16X,11(1H+,9X))
+910 format(35X,15HSONIC LINE PLOT,10X,6HY VS X,10X,20H *  FOR SONIC POINTS//)
+9800 format(46H1SCALING ERROR IN PRNPLT, EXECUTION TERMINATED )
+    
+  end subroutine PLTSON
 
 end module io_module

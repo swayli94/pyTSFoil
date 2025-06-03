@@ -32,12 +32,8 @@ program tsfoil_main
     write(*,'(A)') 'Error: Cannot open input file tsfoil.inp'
     stop 1
   end if
-
-  open(unit=UNIT_OUTPUT, file='tsfoil.out', status='replace')
-  write(UNIT_OUTPUT,'(A)') 'TSFOIL Output File'
-  write(UNIT_OUTPUT,'(A)') '=================='
-  write(UNIT_OUTPUT,*)
-    ! Initialize case counter
+  
+  ! Initialize case counter
   case_number = 0
   
   ! ECHINP provides a listing of all data cards for entire job. 

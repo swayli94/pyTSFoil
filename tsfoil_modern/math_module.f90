@@ -4,7 +4,7 @@
 module math_module
   implicit none
   public :: ARF, SIMP, PX, PY, EMACH1, LIFT, PITCH, TRAP
-  public :: VWEDGE, WANGLE, FINDSK, DROOTS, VROOTS, NEWISK, M1LINE
+  public :: VWEDGE, WANGLE, FINDSK, DROOTS, VROOTS, NEWISK, MACHMP
 
 contains
 
@@ -433,7 +433,6 @@ contains
     use common_data, only: CL, DELTA, DELRT2, EMACH, EMROOT, PHYS, PRTFLO, SIMDEF
     use common_data, only: SONVEL, VFACT, YFACT
     use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, WCONST, REYNLD, NISHK
-    !use solver_module, only: SETBC
     implicit none
     integer :: I, J, N, M, ISK, ISK3, ISK1, ISTART, JMP, NISHK_LOC
     real :: SIGN, U, V1, AM1SQ, REYX, CF, DSTAR1, DXS, AETA, XEND
@@ -543,8 +542,7 @@ contains
     end do
     
     NISHK = NISHK_LOC
-  !  call SETBC(1)
-  !! NOTE: The SETBC subroutine is commented out as it is not defined in this module.
+
   end subroutine VWEDGE
 
   ! Compute wedge angle for viscous correction
@@ -630,98 +628,70 @@ contains
     end do
   end subroutine NEWISK
 
-  ! Prints coordinates where sonic velocity is computed
-  ! Linear interpolation between mesh points is used
-  ! Called by - PRINT.
-  subroutine M1LINE()
-    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX, JLOW
-    use common_data, only: AK, SONVEL, YFACT, BCTYPE
-    use common_data, only: UNIT_OUTPUT
+  ! Subroutine to print map of Mach no. rounded to nearest .1
+  ! Matches original MACHMP functionality exactly
+  subroutine MACHMP()
+    use common_data
     implicit none
     
-    real :: XSLPRT(200), YSLPRT(200)
-    real :: XSONIC(10)
-    real :: YPR, PX1, PX2, RATIO
-    real :: XMIN, XMAX, XINCR, YMIN, YMAX, YINCR
-    real :: YM, YX
-    integer :: NPTS, KMIN, KMAX, JP, K, J, M, IMM, I, L, N
+    integer :: K, J, I, MM(100)
+    real :: U, EM
+    character(len=1) :: IJC
+    character(len=1), parameter :: IB = ' ', IP = '+', IM = '-', IL = 'L', IT = 'T'
     
-    NPTS = 0
-    KMIN = JMIN
-    KMAX = JMAX
-    JP = JMAX + JMIN
+    ! Write header to main output file (Unit 15)
+    write(UNIT_OUTPUT, '(40H1  MACH NO. MAP.   ROUNDED TO NEAREST .1///)')
     
-    do K = KMIN, KMAX
-      J = JP - K
-      YPR = YFACT * Y(J)
-      PX2 = PX(IMIN, J)
-      M = 0
+    do K = 2, JMAX
+      J = JMAX - K + 2
+      IJC = IB
+      if (J == JUP) IJC = IP
+      if (J == JLOW) IJC = IM
       
-      if (J == JLOW) then
-        if (NPTS /= 0) write(UNIT_OUTPUT, 2070)
-      end if
+      ! Initialize MM array with blanks
+      do I = 1, IMAX
+        MM(I) = ichar(IB)
+      end do
       
-      IMM = IMIN + 1
-      do I = IMM, IMAX
-        PX1 = PX2
-        PX2 = PX(I, J)
+      do I = 2, IMAX
+        U = PX(I, J)
+        EM = EMACH1(U)
         
-        if (PX1 > SONVEL .and. PX2 > SONVEL) cycle
-        if (PX1 < SONVEL .and. PX2 < SONVEL) cycle
+        ! Write to mmap.out file (Unit 18) - Mach number data
+        write(UNIT_MMAP, '(F16.12)', ADVANCE="NO") EM
         
-        if (NPTS == 0) write(UNIT_OUTPUT, 2000)
+        ! Write to cpmp.out file (Unit 21) - Pressure coefficient data  
+        write(UNIT_CPMP, '(F16.12)', ADVANCE="NO") -2.0 * U * CPFACT
         
-        M = M + 1
-        RATIO = (SONVEL - PX1) / (PX2 - PX1)
-        XSONIC(M) = X(I-1) + (X(I) - X(I-1)) * RATIO
-        NPTS = NPTS + 1
-        XSLPRT(NPTS) = XSONIC(M)
-        YSLPRT(NPTS) = YPR
-          if (NPTS >= 200) then
-          write(UNIT_OUTPUT, 2060)
-          return
+        if (EM <= 0.0) then
+          MM(I) = ichar('0')
+        else
+          ! Handle Mach numbers > 1.05 by subtracting 1.0 repeatedly
+          do while (EM > 1.05)
+            EM = EM - 1.0
+          end do
+          MM(I) = int(10.0 * EM + 0.5)
         end if
       end do
       
-      if (M == 0) cycle
-      write(UNIT_OUTPUT, 2040) YPR, (XSONIC(L), L=1, M)
-    end do
-    
-    ! Process results if any sonic points were found
-    if (NPTS == 0) return
-    
-    YM = Y(JMIN)
-    YX = Y(JMAX)
-    
-    do N = 1, NPTS
-      if (YSLPRT(N) /= YM .and. YSLPRT(N) /= YX) cycle
+      ! End lines in data files
+      write(UNIT_MMAP, '(A)') ""
+      write(UNIT_CPMP, '(A)') ""
       
-      if (AK > 0.0) write(UNIT_OUTPUT, 2050)
-      if (AK < 0.0 .and. BCTYPE == 1) write(UNIT_OUTPUT, 2050)
+      ! Write map line to main output
+      write(UNIT_OUTPUT, '(11X,A1,99I1)') IJC, (MM(I), I=2, IMAX)
     end do
     
-    XMIN = -0.75
-    XMAX = 1.75
-    XINCR = 0.25
-    YMIN = -1.0
-    YMAX = 1.5
-    YINCR = 0.5
-!! NOTE: PLTSON call commented out as plotting routine is not implemented
-!! call PLTSON(XSLPRT, YSLPRT, XMIN, XMAX, XINCR, YMIN, YMAX, YINCR, NPTS)
+    ! Mark leading and trailing edge positions
+    do I = 1, IMAX
+      MM(I) = ichar(IB)
+      if (I == ILE) MM(I) = ichar(IL)
+      if (I == ITE) MM(I) = ichar(IT)
+    end do
     
-    ! Format statements
-2000 format('1SONIC LINE COORDINATES', /, 6X, '1HY', 10X, '6HXSONIC', //)
-2040 format(11F10.5)
-2050 format('0***** CAUTION *****', /, &
-           ' SONIC LINE HAS REACHED A BOUNDARY', /, &
-           ' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS', /, &
-           ' SOLUTION IS PROBABLY INVALID')
-2060 format('0***** CAUTION *****', /, &
-           ' NUMBER OF SONIC POINTS EXCEEDED 200', /, &
-           ' ARRAY DIMENSION EXCEEDED', /, &
-           ' EXECUTION OF SUBROUTINE M1LINE TERMINATED')
-2070 format(2X, '13HBODY LOCATION')
+    ! Write final line with airfoil markers
+    write(UNIT_OUTPUT, '(12X,99A1)') (char(MM(I)), I=2, IMAX)
     
-  end subroutine M1LINE
+  end subroutine MACHMP
 
 end module math_module

@@ -195,8 +195,8 @@ contains
     use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
     use common_data, only: WCONST, REYNLD, WI, C1
     use common_data, only: CLFACT, CMFACT, UNIT_OUTPUT
-    use math_module, only: LIFT, PITCH
-    use math_module, only: VWEDGE
+    use math_module, only: LIFT, PITCH, VWEDGE
+    use solver_module, only: SETBC
     implicit none
     
     integer :: ITER, MAXITM, KK, J, I, IK, JK, JINC, N, NN
@@ -280,7 +280,10 @@ contains
         call RESET()
         
         ! Compute viscous wedge if enabled
-        if (NWDGE > 0) call VWEDGE()
+        if (NWDGE > 0) then
+          call VWEDGE()
+          call SETBC(1)
+        end if
         
         ! Print iteration results if needed
         if (OUTERR) then
