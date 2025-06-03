@@ -12,9 +12,7 @@ program tsfoil_main
   use numerical_solvers
   implicit none
 
-  character(len=80) :: title_card
-  logical :: end_of_cases
-  integer :: case_number
+  integer :: ios
 
   ! Program header
   write(*,'(A)') '================================================='
@@ -22,41 +20,30 @@ program tsfoil_main
   write(*,'(A)') '         Airfoil Analysis Program              '
   write(*,'(A)') '            Modernized Fortran Version         '
   write(*,'(A)') '================================================='
-  write(*,*)  ! Initialize data structures
+  write(*,*)
+
+  ! Initialize data structures
   call initialize_common()
   call initialize_spline(200)
 
   ! Open input and output files  
-  open(unit=UNIT_INPUT, file='tsfoil.inp', status='old', iostat=case_number)
-  if (case_number /= 0) then
+  open(unit=UNIT_INPUT, file='tsfoil.inp', status='old', iostat=ios)
+  if (ios /= 0) then
     write(*,'(A)') 'Error: Cannot open input file tsfoil.inp'
     stop 1
   end if
-  
-  ! Initialize case counter
-  case_number = 0
   
   ! ECHINP provides a listing of all data cards for entire job. 
   ! Can be deleted, if desired (like in original TSFOIL).
   ! call ECHINP()
   
-  ! Main case processing loop - similar to original TSFOIL structure
+  ! Main program structure - matches original TSFOIL exactly
+  ! Label 1 for case processing (original has this structure)
 1 continue
   
-  ! Call READIN to read one case
+  ! Call READIN to read one case - it handles termination internally with STOP
+  ! when "FINI" card is encountered, just like the original
   call READIN()
-    ! Check if we've reached the end (FINISHED card read)
-  if (trim(TITLE(1)) == 'FINI' .or. trim(TITLE(2)) == 'SHED') then
-    write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
-    goto 999
-  end if
-  
-  ! Increment case counter
-  case_number = case_number + 1
-  write(*,'(A,I0)') 'Processing case ', case_number
-  write(UNIT_OUTPUT,'(A,I0)') 'Processing case ', case_number
-  write(UNIT_OUTPUT,'(20A4)') TITLE
-  write(UNIT_OUTPUT,*)
   
   ! Continue with complete TSFOIL solution workflow
   write(*,'(A)') 'Starting TSFOIL solution sequence...'
@@ -122,17 +109,12 @@ program tsfoil_main
   ! Store solution for potential next case
   call SAVEP()
   
-  write(*,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
-  write(UNIT_OUTPUT,'(A,I0,A)') 'Case ', case_number, ' completed successfully'
+  write(*,'(A)') 'Case completed successfully'
+  write(UNIT_OUTPUT,'(A)') 'Case completed successfully'
   write(UNIT_OUTPUT,*)
   
-  ! Return to read next case
-  goto 1
-  
-999 continue
-  write(*,'(A,I0,A)') 'Processed ', case_number, ' cases successfully'
-  
-  ! Cleanup
+  ! Close all files and end program - matches original structure exactly
+  ! Original TSFOIL closes files after SAVEP and ends (no loop back)
   call cleanup_spline()
   call close_output_files()
   close(UNIT_INPUT)

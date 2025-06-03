@@ -97,20 +97,21 @@ contains
     
     ! Write title to output files exactly as original    
     write(UNIT_OUTPUT, '(1H1,4X,20A4)') TITLE
-      ! Check for termination string exactly as original
+    
+    ! Check for termination string exactly as original
     if (TITLE(1) == DONE) then
-        goto 999
+        stop  ! Terminate program exactly as original
     end if
     
 10  continue
 
     ! Read namelist input for this case
     read(UNIT_INPUT, INP, iostat=ios)
-
+    
     ! Check if namelist read was successful
     if (ios /= 0) then
         write(UNIT_OUTPUT, '(A)') 'Error reading namelist input. Please check the input file.'
-        goto 999
+        stop  ! Terminate on input error like original
     end if
 
     call PRINT_INP_NAMELIST()  ! Print input namelist for debugging
