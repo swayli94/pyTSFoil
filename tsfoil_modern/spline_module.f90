@@ -4,7 +4,7 @@
 module spline_module
   implicit none
   private
-  public :: SPLN1, SPLN1X, initialize_spline, cleanup_spline
+  public :: SPLN1, SPLN1X, initialize_spline, cleanup_spline, set_boundary_conditions
 
   ! Spline coefficients and work arrays
   real, allocatable :: A(:), B(:)
@@ -30,6 +30,17 @@ contains
     if (allocated(A)) deallocate(A)
     if (allocated(B)) deallocate(B)
   end subroutine cleanup_spline
+
+  subroutine set_boundary_conditions(K1_in, K2_in, DY1_in, DY2_in)
+    ! Set boundary conditions for spline interpolation
+    integer, intent(in) :: K1_in, K2_in
+    real, intent(in) :: DY1_in, DY2_in
+    
+    K1 = K1_in
+    K2 = K2_in
+    DY1 = DY1_in
+    DY2 = DY2_in
+  end subroutine set_boundary_conditions
 
   ! Set up cubic spline coefficients
   subroutine SPLN1(X, Y, N)

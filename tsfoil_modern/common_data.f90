@@ -39,11 +39,11 @@ module common_data
   public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: THETA  ! COM33: angle array for each mesh point
   public :: EMU, POLD, DCIRC, OUTERR  ! Missing variables from COM18
-  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables
-  public :: initialize_common
+  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables  public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
   public :: UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT  ! DLAOUT input and output files
+  public :: UNIT_TSFOIL2, UNIT_SUMMARY, UNIT_CPXS, UNIT_MMAP, UNIT_CNVG, UNIT_MESH, UNIT_CPMP
   
   ! Mesh indices (from COMMON /COM1/)
   integer :: IMIN, IMAX       ! grid i-range
@@ -184,6 +184,13 @@ module common_data
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
   
+  ! COM30: general workspace arrays  
+  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
+  real :: XCP(100), CPP(304)  ! Arrays for DLAOUT subroutine - CP interpolation points and values
+  integer :: JLIN(3)           ! Line indices for printing
+  character(len=1) :: IPC(100) ! Flow regime indicators
+  real :: VT(100,2)            ! Velocity time history
+
   ! COM33: angle array for each mesh point
   real :: THETA(100,100)
   
@@ -198,13 +205,6 @@ module common_data
   integer :: NVWPRT(2) ! Number of viscous wedge prints
   integer :: NISHK     ! Number of shocks
   
-  ! COM30: general workspace arrays  
-  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
-  real :: XCP(100), CPP(304)  ! Arrays for DLAOUT subroutine - CP interpolation points and values
-  integer :: JLIN(3)           ! Line indices for printing
-  character(len=1) :: IPC(100) ! Flow regime indicators
-  real :: VT(100,2)            ! Velocity time history
-
   ! File unit numbers for different output files
   integer, parameter :: UNIT_INPUT = 2          ! Input file (like original iread=2)
   integer, parameter :: UNIT_LOG = 10           ! Main log file (tsfoil.log)
@@ -218,6 +218,15 @@ module common_data
   integer, parameter :: UNIT_SHOCK = 18         ! Shock analysis file (tsfoil.shk)
   integer, parameter :: UNIT_DLAOUT_INPUT = 5   ! DLAOUT input file
   integer, parameter :: UNIT_DLAOUT_OUTPUT = 10 ! DLAOUT output file
+  
+  ! Additional file units from original tsfoil.f90
+  integer, parameter :: UNIT_TSFOIL2 = 15       ! tsfoil2.out (same as UNIT_OUTPUT)
+  integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (same as UNIT_WALL)
+  integer, parameter :: UNIT_CPXS = 17          ! cpxs.out file
+  integer, parameter :: UNIT_MMAP = 18          ! mmap.out (same as UNIT_SHOCK)
+  integer, parameter :: UNIT_CNVG = 19          ! cnvg.out file
+  integer, parameter :: UNIT_MESH = 20          ! mesh.out file
+  integer, parameter :: UNIT_CPMP = 21          ! cpmp.out file
 
 contains
 

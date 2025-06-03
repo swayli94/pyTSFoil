@@ -117,16 +117,16 @@ tsfoil_modern/
    | `ECHINP` | `io_module.f90` | Input echoing | ✅ |
    | `PRINT` | `io_module.f90` | Main output driver |  |
    | `PRINT1` | `io_module.f90` | Body Cp and Mach output |  |
-   | `PRTFLD` | `io_module.f90` | Field output |  |
-   | `PRTMC` | `io_module.f90` | Flow type mapping |  |
-   | `PRTSK` | `io_module.f90` | Shock wave output |  |
-   | `PRTWAL` | `io_module.f90` | Wall condition output |  |
-   | `INPERR(I)` | `io_module.f90` | Error message output |  |
-   | `DLAOUT` | `io_module.f90` |  |  |
-   | `LOADP` | `io_module.f90` |  |  |
-   | `CPPLOT` | `io_module.f90` | Cp plot preparation |  |
-   | `FIXPLT` | `io_module.f90` | Plot array construction |  |
-   | `SAVEP` | `io_module.f90` | Solution storage |  |
+   | `PRTFLD` | `io_module.f90` | Field output | ✅ |
+   | `PRTMC` | `io_module.f90` | Flow type mapping | ✅ |
+   | `PRTSK` | `io_module.f90` | Shock wave output | ✅ |
+   | `PRTWAL` | `io_module.f90` | Wall condition output | ✅ |
+   | `INPERR(I)` | `io_module.f90` | Error message output | ✅ |
+   | `DLAOUT` | `io_module.f90` | Output Cp data | ✅ |
+   | `LOADP` | `io_module.f90` | Read restart file | ✅ |
+   | `CPPLOT` | `io_module.f90` | Cp plot preparation | ✅ |
+   | `FIXPLT` | `io_module.f90` | Plot array construction | ✅ |
+   | `SAVEP` | `io_module.f90` | Solution storage | ✅ |
    | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly | ✅ |
 
 ### Compilation Dependencies
