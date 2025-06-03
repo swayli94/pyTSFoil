@@ -83,9 +83,9 @@ contains
 
     end if
 
-5   continue
     ! Timing code to match original (TIME2 would need system-specific implementation)
     TIME1 = TIME2
+
     ! TIME2 = get_time()  ! Would need system-specific timing
     ELPTM = TIME2 - TIME1
     if (ELPTM >= 0.01) then
@@ -102,8 +102,6 @@ contains
     if (TITLE(1) == DONE) then
         stop  ! Terminate program exactly as original
     end if
-    
-10  continue
 
     ! Read namelist input for this case
     read(UNIT_INPUT, INP, iostat=ios)
@@ -115,47 +113,39 @@ contains
     end if
 
     call PRINT_INP_NAMELIST()  ! Print input namelist for debugging
-        
+
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then
       if (ABORT1) then
         write(UNIT_OUTPUT, '(21H0 CALCULATION ABORTED//43H OUTPUT OF PREVIOUS SOLUTION NOT AVAILABLE.)')
-        goto 5
+        ! Return to start of loop for next case
+        return ! Will re-enter READIN for next case
       end if
     end if
     
-13  continue
     ! Set AK=0 for physical coordinates
     if (PHYS) AK = 0.0
     
-    ! Handle automatic mesh generation
+    ! Handle automatic mesh generation or YIN initialization
     if (AMESH) then
       call AYMESH()
-      goto 18
+    else if (YIN(JMIN) == 0.0) then
+      ! YIN needs default initialization for tunnel or free air case
+      if (BCTYPE == 1) then
+        ! Free air case
+        JMAXI = JMXF
+        do J_VAR = JMIN, JMAXI
+          YIN(J_VAR) = YFREE(J_VAR)
+        end do
+      else
+        ! Tunnel case
+        JMAXI = JMXT
+        do J_VAR = JMIN, JMAXI
+          YIN(J_VAR) = YTUN(J_VAR)
+        end do
+      end if
     end if
-    
-14  continue
 
-    ! Check if YIN needs default initialization for tunnel or free air case
-    if (YIN(JMIN) /= 0.0) goto 18
-    
-    if (BCTYPE == 1) then
-      ! Free air case
-      JMAXI = JMXF
-      do J_VAR = JMIN, JMAXI
-        YIN(J_VAR) = YFREE(J_VAR)
-      end do
-      goto 18
-    end if
-    
-16  continue
-    ! Tunnel case
-    JMAXI = JMXT
-    do J_VAR = JMIN, JMAXI
-      YIN(J_VAR) = YTUN(J_VAR)
-    end do
-    
-18  continue
     ! Echo input parameters to output file with exact original format strings
     write(UNIT_OUTPUT, '(1H0,4X,7HEMACH =,F9.5,5X,5HPOR =,F9.5,3X,6HIMIN =,I4,3X,8HBCTYPE =,I3,5X,8HAMESH = ,L1)') &
       EMACH, POR, IMIN, BCTYPE, AMESH
@@ -182,18 +172,18 @@ contains
     write(UNIT_OUTPUT, '(1H0,4X,3HYIN)')
     write(UNIT_OUTPUT, '(4X,6F11.6)') (YIN(JDX), JDX=JMIN, JMAXI)
     
-    if (BCFOIL <= 2) goto 19
-    if (BCFOIL == 5) goto 19
-    write(UNIT_OUTPUT, '(1H0,15X,2HXU)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (XU(IDX), IDX=1, NU)
-    write(UNIT_OUTPUT, '(1H0,15X,2HYU)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (YU(IDX), IDX=1, NU)
-    write(UNIT_OUTPUT, '(1H0,15X,2HXL)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (XL(IDX), IDX=1, NL)
-    write(UNIT_OUTPUT, '(1H0,15X,2HYL)')
-    write(UNIT_OUTPUT, '(4X,6F11.6)') (YL(IDX), IDX=1, NL)
+    ! Print airfoil coordinates if needed (BCFOIL > 2 and BCFOIL /= 5)
+    if (BCFOIL > 2 .and. BCFOIL /= 5) then
+      write(UNIT_OUTPUT, '(1H0,15X,2HXU)')
+      write(UNIT_OUTPUT, '(4X,6F11.6)') (XU(IDX), IDX=1, NU)
+      write(UNIT_OUTPUT, '(1H0,15X,2HYU)')
+      write(UNIT_OUTPUT, '(4X,6F11.6)') (YU(IDX), IDX=1, NU)
+      write(UNIT_OUTPUT, '(1H0,15X,2HXL)')
+      write(UNIT_OUTPUT, '(4X,6F11.6)') (XL(IDX), IDX=1, NL)
+      write(UNIT_OUTPUT, '(1H0,15X,2HYL)')
+      write(UNIT_OUTPUT, '(4X,6F11.6)') (YL(IDX), IDX=1, NL)
+    end if
     
-19  continue
     ! Set derived constants
     GAM1 = GAM + 1.0
     IREF = 0
@@ -204,7 +194,8 @@ contains
     
     ! Check array bounds (any call to INPERR causes message to be printed and execution stopped)
     if (IMAXI > 100 .or. JMAXI > 100) call INPERR(1)
-      ! Check input mesh for monotonically increasing values
+    
+    ! Check input mesh for monotonically increasing values
     do IDX = IMIN, IM1
       if (XIN(IDX) >= XIN(IDX+1)) call INPERR(2)
     end do
@@ -227,52 +218,42 @@ contains
     call CKMESH()
     
     ! Check bounds of YMESH for tunnel calculations
-    if (BCTYPE == 1) goto 90
-    HTM = H - 0.00001
-    HTP = H + 0.00001
-    YS = abs(YIN(JMIN))
-    YE = abs(YIN(JMAX))
-    if (YS >= HTM .and. YS <= HTP) then
-      if (YE >= HTM .and. YE <= HTP) goto 90
+    if (BCTYPE /= 1) then
+      HTM = H - 0.00001
+      HTP = H + 0.00001
+      YS = abs(YIN(JMIN))
+      YE = abs(YIN(JMAX))
+      if (.not. ((YS >= HTM .and. YS <= HTP) .and. (YE >= HTM .and. YE <= HTP))) then
+        ! Rescale Y mesh to -H,+H bounds
+        TERM = -H / YIN(JMIN)
+        do JDX = JMIN, JLOW
+          YIN(JDX) = TERM * YIN(JDX)
+        end do
+        TERM = H / YIN(JMAX)
+        do JDX = JUP, JMAX
+          YIN(JDX) = TERM * YIN(JDX)
+        end do
+      end if
     end if
     
-40  continue
-    ! Rescale Y mesh to -H,+H bounds
-    TERM = -H / YIN(JMIN)
-    do JDX = JMIN, JLOW
-      YIN(JDX) = TERM * YIN(JDX)
-    end do
-    TERM = H / YIN(JMAX)
-    do JDX = JUP, JMAX
-      YIN(JDX) = TERM * YIN(JDX)
-    end do
-    
-90  continue    
     ! If PSTART = 2 read old values from restart file using LOADP subroutine
     if (PSTART == 2) then
       call LOADP()
     end if
     
-100 continue
-    return
-    
-  ! End of file or FINISHED card - use STOP to match original
-999 stop
   end subroutine READIN
   
+  ! Scale physical variables to transonic similarity variables
   subroutine SCALE()
-  !
-  ! SUBROUTINE SCALES PHYSICAL VARIABLES TO TRANSONIC VARIABLES.
-  ! IF PHYS = .TRUE., ALL INPUT/OUTPUT QUANTITIES ARE IN PHYSICAL UNITS NORMALIZED 
-  ! BY FREESTREAM VALUES AND AIRFOIL CHORD. 
-  ! THIS SUBROUTINE THEN SCALES THE QUANTITIES TO TRANSONIC VARIABLES BY THE FOLLOWING CONVENTION
-  !   SIMDEF = 1  COLE SCALING
-  !   SIMDEF = 2  SPREITER SCALING
-  !   SIMDEF = 3  KRUPP SCALING
-  !   SIMDEF = 4  USER CHOICE
-  ! IF PHYS = .FALSE., INPUT IS ALREADY IN SCALED VARIABLES AND NO FURTHER SCALING IS DONE.
-  ! CALLED BY - TSFOIL.
-  !
+    ! IF PHYS = .TRUE., ALL INPUT/OUTPUT QUANTITIES ARE IN PHYSICAL UNITS NORMALIZED 
+    ! BY FREESTREAM VALUES AND AIRFOIL CHORD. 
+    ! THIS SUBROUTINE THEN SCALES THE QUANTITIES TO TRANSONIC VARIABLES BY THE FOLLOWING CONVENTION
+    !   SIMDEF = 1  COLE SCALING
+    !   SIMDEF = 2  SPREITER SCALING
+    !   SIMDEF = 3  KRUPP SCALING
+    !   SIMDEF = 4  USER CHOICE
+    ! IF PHYS = .FALSE., INPUT IS ALREADY IN SCALED VARIABLES AND NO FURTHER SCALING IS DONE.
+    ! CALLED BY - TSFOIL.
     use common_data, only: PHYS, DELTA, EMACH, SIMDEF
     use common_data, only: AK, ALPHA, GAM1, RTK, YFACT, CPFACT, CLFACT, CDFACT, CMFACT, VFACT
     use common_data, only: YIN, YOLD, JMIN, JMAX, JMINO, JMAXO, PSTART
@@ -281,96 +262,101 @@ contains
     real :: EMACH2, BETA, DELRT1
     real :: YFACIV
     integer :: J
-
+    
     if (.not. PHYS) then
-!                  PHYS = .FALSE.  NO SCALING
+      ! PHYS = .FALSE.  NO SCALING
       CPFACT = 1.0
       CDFACT = 1.0
       CLFACT = 1.0
       CMFACT = 1.0
       YFACT = 1.0
       VFACT = 1.0
-      goto 600
-    end if
 
-!                  PHYS = .TRUE.  COMPUTE CONSTANTS
-    EMACH2 = EMACH*EMACH
-    BETA = 1.0 - EMACH2
-    DELRT1 = DELTA**(1.0/3.0)
-    DELRT2 = DELTA**(2.0/3.0)
+    else
+      ! PHYS = .TRUE.  COMPUTE CONSTANTS
+      EMACH2 = EMACH*EMACH
+      BETA = 1.0 - EMACH2
+      DELRT1 = DELTA**(1.0/3.0)
+      DELRT2 = DELTA**(2.0/3.0)
 
-!                  BRANCH TO APPROPRIATE SCALING
-    if (SIMDEF == 1) then
-!                  SIMDEF = 1
-!                  COLE SCALING
-      AK = BETA / DELRT2
-      YFACT = 1.0 / DELRT1
-      CPFACT = DELRT2
-      CLFACT = DELRT2
-      CDFACT = DELRT2 * DELTA
-      CMFACT = DELRT2
-      VFACT = DELTA * 57.295779
-      goto 500
-    else if (SIMDEF == 2) then
-!                  SIMDEF = 2
-!                  SPREITER SCALING
-      EMROOT = EMACH**(2.0/3.0)
-      AK = BETA / (DELRT2 * EMROOT * EMROOT)
-      YFACT = 1.0 / (DELRT1 * EMROOT)
-      CPFACT = DELRT2 / EMROOT
-      CLFACT = CPFACT
-      CMFACT = CPFACT
-      CDFACT = CPFACT * DELTA
-      VFACT = DELTA * 57.295779
-      goto 500
-    else if (SIMDEF == 3) then
-!                  SIMDEF = 3
-!                  KRUPP SCALING
-      AK = BETA / (DELRT2 * EMACH)
-      YFACT = 1.0 / (DELRT1 * EMACH**0.5)
-      CPFACT = DELRT2 / (EMACH**0.75)
-      CLFACT = CPFACT
-      CMFACT = CPFACT
-      CDFACT = CPFACT * DELTA
-      VFACT = DELTA * 57.295779
-      goto 500
-    else if (SIMDEF == 4) then
-!                  SIMDEF = 4
-!                  THIS ADDRESS IS INACTIVE
-!                  USER MAY INSERT SCALING OF OWN CHOICE
-!                  DEFINITION FOR LOCAL MACH NUMBER MUST BE ADJUSTED
-!                  IN EMACH1.
-      write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H SIMDEF=4 IS NOT USEABLE)')
-      stop
-    end if
+      ! Branch to appropriate scaling
+      select case (SIMDEF)
+      case (1)
+        ! SIMDEF = 1
+        ! COLE SCALING
+        AK = BETA / DELRT2
+        YFACT = 1.0 / DELRT1
+        CPFACT = DELRT2
+        CLFACT = DELRT2
+        CDFACT = DELRT2 * DELTA
+        CMFACT = DELRT2
+        VFACT = DELTA * 57.295779
+        
+      case (2)
+        ! SIMDEF = 2
+        ! SPREITER SCALING
+        EMROOT = EMACH**(2.0/3.0)
+        AK = BETA / (DELRT2 * EMROOT * EMROOT)
+        YFACT = 1.0 / (DELRT1 * EMROOT)
+        CPFACT = DELRT2 / EMROOT
+        CLFACT = CPFACT
+        CMFACT = CPFACT
+        CDFACT = CPFACT * DELTA
+        VFACT = DELTA * 57.295779
+        
+      case (3)
+        ! SIMDEF = 3
+        ! KRUPP SCALING
+        AK = BETA / (DELRT2 * EMACH)
+        YFACT = 1.0 / (DELRT1 * EMACH**0.5)
+        CPFACT = DELRT2 / (EMACH**0.75)
+        CLFACT = CPFACT
+        CMFACT = CPFACT
+        CDFACT = CPFACT * DELTA
+        VFACT = DELTA * 57.295779
+        
+      case (4)
+        ! SIMDEF = 4
+        ! THIS ADDRESS IS INACTIVE
+        ! USER MAY INSERT SCALING OF OWN CHOICE
+        ! DEFINITION FOR LOCAL MACH NUMBER MUST BE ADJUSTED
+        ! IN EMACH1.
+        write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H SIMDEF=4 IS NOT USEABLE)')
+        stop
+        
+      case default
+        write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H INVALID SIMDEF VALUE)')
+        stop
+      end select
 
-500 continue
-!                  SCALE Y MESH
-    YFACIV = 1.0 / YFACT
-    do J = JMIN, JMAX
-      YIN(J) = YIN(J) * YFACIV
-    end do
-    
-    if (PSTART /= 1) then
-      do J = JMINO, JMAXO
-        YOLD(J) = YOLD(J) * YFACIV
+      ! SCALE Y MESH
+      YFACIV = 1.0 / YFACT
+      do J = JMIN, JMAX
+        YIN(J) = YIN(J) * YFACIV
       end do
+      
+      if (PSTART /= 1) then
+        do J = JMINO, JMAXO
+          YOLD(J) = YOLD(J) * YFACIV
+        end do
+      end if
+
+      ! SCALE TUNNEL PARAMETERS
+      H = H / YFACT
+      POR = POR * YFACT
+      write(UNIT_OUTPUT,'(//10X,11HSCALED POR=,F10.5)') POR
+
+      ! SCALE ANGLE OF ATTACK
+      ALPHA = ALPHA / VFACT
     end if
 
-!                  SCALE TUNNEL PARAMETERS
-    H = H / YFACT
-    POR = POR * YFACT
-    write(UNIT_OUTPUT,'(//10X,11HSCALED POR=,F10.5)') POR
-
-!                  SCALE ANGLE OF ATTACK
-    ALPHA = ALPHA / VFACT
-
-600 continue
-!                  CHECK VALUE OF AK FOR DEFAULT.
+    ! CHECK VALUE OF AK FOR DEFAULT.
     if (AK == 0.0) call INPERR(7)
-!                  COMPUTE SQUARE ROOT OF AK
+
+    ! COMPUTE SQUARE ROOT OF AK
     RTK = sqrt(abs(AK))
-!                  COMPUTE SONIC VELOCITY
+
+    ! COMPUTE SONIC VELOCITY
     if (abs(GAM1) <= 0.0001) then
       SONVEL = 1.0
       CPSTAR = 0.0
@@ -390,25 +376,21 @@ contains
   subroutine ECHINP()
     implicit none
     character(len=80) :: CRD  ! Input card buffer (20A4 = 80 characters)
-    integer :: ios
+    integer :: read_status
     
     ! Write form feed to output file (1H1 format)
     write(UNIT_OUTPUT,'(A1)') char(12)  ! Form feed character equivalent to 1H1
     
-10  continue
-    ! Read input card from unit 5 (input file) 
-    read(UNIT_INPUT, '(A80)', END=30, iostat=ios) CRD
+    ! Read and echo all input cards until end of file
+    do
+      read(UNIT_INPUT, '(A80)', iostat=read_status) CRD
+      if (read_status /= 0) exit  ! Exit on any read error or EOF
+      write(UNIT_OUTPUT, '(1X,A)') trim(CRD)
+    end do
     
-20  continue
-    ! Write card to output file (unit 15 equivalent)
-    write(UNIT_OUTPUT, '(1X,A)') trim(CRD)
-    goto 10
-    
-30  continue
     ! Rewind input file after reading all cards
     rewind(UNIT_INPUT)
-    return
-    
+
   end subroutine ECHINP
   
   ! Main print driver: prints configuration parameters and calls specialized subroutines
