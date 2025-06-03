@@ -454,12 +454,12 @@ contains
       RTKPOR = RTK / POR
       call DROOTS()
       call VROOTS()
-      write(15, '(A)') '1ABNORMAL STOP IN SUBROUTINE FARFLD'
-      write(15, '(A)') ' BCTYPE=6 IS NOT USEABLE'
+      write(UNIT_OUTPUT, '(A)') '1ABNORMAL STOP IN SUBROUTINE FARFLD'
+      write(UNIT_OUTPUT, '(A)') ' BCTYPE=6 IS NOT USEABLE'
       stop
 
     case default
-      write(15, '(A,I0)') 'FARFLD: Invalid BCTYPE = ', BCTYPE
+      write(UNIT_OUTPUT, '(A,I0)') 'FARFLD: Invalid BCTYPE = ', BCTYPE
       stop
       
     end select

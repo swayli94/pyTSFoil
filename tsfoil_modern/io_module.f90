@@ -20,39 +20,33 @@ module io_module
   public :: open_output_files, close_output_files, PRINT_INP_NAMELIST, CDCOLE, FIXPLT, CPPLOT
 
 contains
-
-  ! Open all output files with unique file units
+  
+! Open all output files with unique file units
   subroutine open_output_files()
     implicit none
     
-    open(unit=UNIT_LOG, file='tsfoil.log', status='replace', action='write')
-    open(unit=UNIT_ECHO, file='tsfoil.ech', status='replace', action='write') 
-    open(unit=UNIT_CP, file='tsfoil.cp', status='replace', action='write')
-    open(unit=UNIT_FIELD, file='tsfoil.fld', status='replace', action='write')
-    open(unit=UNIT_FLOW, file='tsfoil.map', status='replace', action='write')
-    open(unit=UNIT_SHOCK, file='tsfoil.shk', status='replace', action='write')
-    open(unit=UNIT_WALL, file='tsfoil.wal', status='replace', action='write')
-    
-    ! Write headers to files
-    write(UNIT_LOG,'(A)') '! TSFOIL Main Log File'
-    write(UNIT_ECHO,'(A)') '! TSFOIL Input Echo File'
-    write(UNIT_CP,'(A)') '! TSFOIL Pressure Coefficient Distribution'
-    write(UNIT_FIELD,'(A)') '! TSFOIL Field Data'
-    write(UNIT_FLOW,'(A)') '! TSFOIL Flow Type Map'
-    write(UNIT_SHOCK,'(A)') '! TSFOIL Shock Wave Analysis'
-    write(UNIT_WALL,'(A)') '! TSFOIL Wall Data'
+    open(unit=UNIT_OUTPUT, file='tsfoil2.out', status='replace', action='write')   ! Unit 15
+    open(unit=UNIT_SUMMARY, file='smry.out', status='replace', action='write')     ! Unit 16
+    open(unit=UNIT_CPXS, file='cpxs.out', status='replace', action='write')        ! Unit 17
+    open(unit=UNIT_MMAP, file='mmap.out', status='replace', action='write')        ! Unit 18
+    open(unit=UNIT_CNVG, file='cnvg.out', status='replace', action='write')        ! Unit 19
+    open(unit=UNIT_MESH, file='mesh.out', status='replace', action='write')        ! Unit 20
+    open(unit=UNIT_CPMP, file='cpmp.out', status='replace', action='write')        ! Unit 21
+        
   end subroutine open_output_files
 
   ! Close all output files
   subroutine close_output_files()
     implicit none
-    close(UNIT_LOG)
-    close(UNIT_ECHO)
-    close(UNIT_CP)
-    close(UNIT_FIELD)
-    close(UNIT_FLOW)
-    close(UNIT_SHOCK)
-    close(UNIT_WALL)
+
+    close(UNIT_OUTPUT)   ! tsfoil2.out
+    close(UNIT_SUMMARY)  ! smry.out
+    close(UNIT_CPXS)     ! cpxs.out
+    close(UNIT_MMAP)     ! mmap.out
+    close(UNIT_CNVG)     ! cnvg.out
+    close(UNIT_MESH)     ! mesh.out
+    close(UNIT_CPMP)     ! cpmp.out
+
   end subroutine close_output_files
   
   ! Main input reading routine - reads one case at a time
@@ -523,8 +517,7 @@ contains
     end select
     
     write(UNIT_OUTPUT, '(1H0,9X,4HCL =,F10.6/10X,4HCM =,F10.6/9X,5HCP* =,F10.6)') CL_val, CM, CPSTAR
-    write(UNIT_SHOCK, '(1H0,9X,4HCL =,F10.6/10X,4HCM =,F10.6/9X,5HCP* =,F10.6)') CL_val, CM, CPSTAR  
-    write(UNIT_WALL, '(1H0,9X,4HCL =,F16.12/10X,4HCM =,F16.12/9X,5HCP* =,F16.12)') CL_val, CM, CPSTAR
+    write(UNIT_CPXS, '(1H0,9X,4HCL =,F10.6/10X,4HCM =,F10.6/9X,5HCP* =,F10.6)') CL_val, CM, CPSTAR  
     
     ! Check for detached shock - modernized GO TO 70 logic
     if (CPL(IMIN) < CPSTAR .and. CPL(IMIN+1) > CPSTAR) then
@@ -546,7 +539,7 @@ contains
     IPLOT_P1 = 0
     
     if (IREF == 0) then
-      write(UNIT_SHOCK, '(2x,''TSFOIL2'',3x,''Mach = '',f7.3,3x,''CL = '',f7.3/&
+      write(UNIT_CPXS, '(2x,''TSFOIL2'',3x,''Mach = '',f7.3,3x,''CL = '',f7.3/&
             4x,''i'',5x,''X/C'',8x,''Cp-up'',5x,''M-up'',6x,''Cp-low'',4x,''M-low'')') EMACH, CL_val
     end if
       
@@ -581,7 +574,7 @@ contains
       if (I_P1 == ITE) write(UNIT_OUTPUT, '(25X,21HAIRFOIL TRAILING EDGE,44X,21HAIRFOIL TRAILING EDGE)')
       
       ! Save data for plotting exactly like original
-      write(UNIT_SHOCK, '(2x,i3,2x,f7.4,2x,f10.5,2x,f7.4,2x,f10.5,2x,f7.4)') IPLOT_P1, X(I_P1), CPU(I_P1), EM1U(I_P1), CPL(I_P1), EM1L(I_P1)
+      write(UNIT_CPXS, '(2x,i3,2x,f7.4,2x,f10.5,2x,f7.4,2x,f10.5,2x,f7.4)') IPLOT_P1, X(I_P1), CPU(I_P1), EM1U(I_P1), CPL(I_P1), EM1L(I_P1)
     end do
     
     ! Mach number warning exactly like original
@@ -669,7 +662,7 @@ contains
       if (PHYS) IS = 6
       IE = IS + 4
       
-      write(UNIT_FIELD,'(A,5A4,A)') &
+      (UNIT_FIELD,'(A,5A4,A)') &
         'PRESSURE COEFFICIENTS, FLOW ANGLES, AND LOCAL ', &
         (PRT(I), I=IS,IE), ' ON Y=CONSTANT LINES'
       write(UNIT_FIELD,'(A,F12.7)') ' CPSTAR =', CPSTAR
@@ -707,7 +700,7 @@ contains
   ! PRTMC - Print flow type map at each grid point
   ! Matches original PRTMC functionality exactly
   subroutine PRTMC()
-    use common_data, only: P, IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, IPC, VT, C1, CXL, CXC, CXR
+    use common_data, only: P, IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, IPC, VT, C1, CXL, CXC, CXR, UNIT_OUTPUT
     implicit none    
     integer :: I, J, K
     character(len=1), parameter :: ch_par = 'P'    ! Parabolic (sonic)
@@ -717,7 +710,7 @@ contains
     character(len=1), parameter :: ch_blank = ' '  ! Blank
 
     ! Print header (matches original format 100)
-    write(15, '(A,/,28X,A,/,28X,A,/,28X,A,//)')  &
+    write(UNIT_OUTPUT, '(A,/,28X,A,/,28X,A,/,28X,A,//)')  &
       '1 FLOW AT EACH GRID POINT.  P PARABOLIC',   &
       'H HYPERBOLIC',                              &
       'S SHOCK',                                   &
@@ -762,7 +755,7 @@ contains
       end do
       
       ! Write line (matches original format 110)
-      write(15, '(10X,I3,5X,100A1)') J, (IPC(I), I=IUP, IDOWN)
+      write(UNIT_OUTPUT, '(10X,I3,5X,100A1)') J, (IPC(I), I=IUP, IDOWN)
     end do
     
   end subroutine PRTMC
@@ -772,7 +765,7 @@ contains
   ! LOSS ALONG SHOCK WAVE
   ! CALLED BY - CDCOLE.
   subroutine PRTSK(Z,ARG_PARAM,L,NSHOCK,CDSK,LPRT1)
-    use common_data, only: CDFACT, GAM1, DELTA, YFACT, UNIT_SHOCK
+    use common_data, only: CDFACT, GAM1, DELTA, YFACT, UNIT_OUTPUT
     implicit none
     real, intent(in) :: Z(:), ARG_PARAM(:)
     integer, intent(in) :: L, NSHOCK, LPRT1
@@ -785,28 +778,28 @@ contains
     
     ! Write header for first shock wave only (format 1001 equivalent)
     if (NSHOCK == 1) then
-      write(UNIT_SHOCK,'(A)') char(12) // 'INVISCID WAKE PROFILES FOR INDIVIDUAL SHOCK WAVES WITHIN MOMENTUM CONTOUR'
+      write(UNIT_OUTPUT,'(A)') char(12) // 'INVISCID WAKE PROFILES FOR INDIVIDUAL SHOCK WAVES WITHIN MOMENTUM CONTOUR'
     end if
     
     ! Write shock information (format 1002 equivalent)
-    write(UNIT_SHOCK,'(A)') ''  ! blank line for 0 carriage control
-    write(UNIT_SHOCK,'(A,I3)') 'SHOCK', NSHOCK
-    write(UNIT_SHOCK,'(A,F12.6)') ' WAVE DRAG FOR THIS SHOCK=', CDSK
-    write(UNIT_SHOCK,'(A,A,A,A,A)') '      Y', '         ', 'CD(Y)', '        ', 'PO/POINF'
+    write(UNIT_OUTPUT,'(A)') ''  ! blank line for 0 carriage control
+    write(UNIT_OUTPUT,'(A,I3)') 'SHOCK', NSHOCK
+    write(UNIT_OUTPUT,'(A,F12.6)') ' WAVE DRAG FOR THIS SHOCK=', CDSK
+    write(UNIT_OUTPUT,'(A,A,A,A,A)') '      Y', '         ', 'CD(Y)', '        ', 'PO/POINF'
     
     ! Write shock profile data (format 1003 equivalent)
     do K = 1, L
       YY = Z(K) * YFACT
       CDY = CDYCOF * ARG_PARAM(K)
       POY = 1.0 + POYCOF * ARG_PARAM(K)
-      write(UNIT_SHOCK,'(1X,3F12.8)') YY, CDY, POY
+      write(UNIT_OUTPUT,'(1X,3F12.8)') YY, CDY, POY
     end do
     
     ! Write footer if shock extends outside contour (format 1004 equivalent)
     if (LPRT1 == 1) then
-      write(UNIT_SHOCK,'(A)') ''  ! blank line for 0 carriage control
-      write(UNIT_SHOCK,'(A)') 'SHOCK WAVE EXTENDS OUTSIDE CONTOUR'
-      write(UNIT_SHOCK,'(A)') ' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK'
+      write(UNIT_OUTPUT,'(A)') ''  ! blank line for 0 carriage control
+      write(UNIT_OUTPUT,'(A)') 'SHOCK WAVE EXTENDS OUTSIDE CONTOUR'
+      write(UNIT_OUTPUT,'(A)') ' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK'
     end if
   end subroutine PRTSK
 
@@ -963,7 +956,7 @@ contains
     use common_data, only: YIN, ALPHA, H, POR, YFACT, VFACT
     use common_data, only: ALPHAO, CLOLD, DELTAO, DUBO, EMACHO, VOLO
     use common_data, only: IMINO, IMAXO, JMINO, JMAXO, XOLD, YOLD
-    use common_data, only: CL, EMACH, DELTA, VOL, DUB, PSAVE
+    use common_data, only: CL, EMACH, DELTA, VOL, DUB, PSAVE, UNIT_OUTPUT
     implicit none
     integer :: I, J
     
@@ -1002,13 +995,13 @@ contains
     if (.not. PSAVE) return
     
     ! Write restart data to unit 15 (matching original exactly)
-    write(15, 900) TITLEO
-    write(15, 901) IMAXO, JMAXO, IMINO, JMINO
-    write(15, 902) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
-    write(15, 902) (XOLD(I), I=IMINO, IMAXO)
-    write(15, 902) (YOLD(J), J=JMINO, JMAXO)
+    write(UNIT_OUTPUT, 900) TITLEO
+    write(UNIT_OUTPUT, 901) IMAXO, JMAXO, IMINO, JMINO
+    write(UNIT_OUTPUT, 902) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
+    write(UNIT_OUTPUT, 902) (XOLD(I), I=IMINO, IMAXO)
+    write(UNIT_OUTPUT, 902) (YOLD(J), J=JMINO, JMAXO)
     do I = IMINO, IMAXO
-      write(15, 902) (P(J,I), J=JMINO, JMAXO)
+      write(UNIT_OUTPUT, 902) (P(J,I), J=JMINO, JMAXO)
     end do
     
     ! Original format statements (matching exactly)
@@ -1051,7 +1044,7 @@ contains
 
   ! OUTPUTS CP DATA IN FORM USABLE BY ANTANI'S INTEGRATION PROGRAM
   subroutine DLAOUT(ILE_IN, ITE_IN, ALPHA_IN, DFLP, EM, VF, RE)
-    use common_data, only: P, X, Y, CPL, CPU, XCP, CPP, UNIT_LOG, UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT
+    use common_data, only: P, X, Y, CPL, CPU, XCP, CPP, UNIT_OUTPUT, UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT
     use spline_module, only: SPLN1, SPLN1X, initialize_spline, set_boundary_conditions
     implicit none
     
@@ -1065,7 +1058,7 @@ contains
     real :: R, ALFA
     real :: DY1, DY2, XP, YP, DYP
     
-    write(UNIT_LOG,'(A)') 'DLAOUT: Starting CP data output for integration program'
+    write(UNIT_OUTPUT,'(A)') 'DLAOUT: Starting CP data output for integration program'
     
     ! Initialize spline module
     call initialize_spline(200)
@@ -1124,7 +1117,7 @@ contains
     write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=1, NUP)
     write(UNIT_DLAOUT_OUTPUT, 102) (CPP(I), I=NS, NE)
     
-    write(UNIT_LOG,'(A,I0,A,I0,A)') 'DLAOUT: Completed CP interpolation for ', NUP, ' upper and ', NDOWN, ' lower surface points'
+    write(UNIT_OUTPUT,'(A,I0,A,I0,A)') 'DLAOUT: Completed CP interpolation for ', NUP, ' upper and ', NDOWN, ' lower surface points'
     
     ! Format statements matching original
 100 format(6I5)
@@ -1139,11 +1132,11 @@ contains
     implicit none
     integer :: I, J, ios_restart
     
-    write(UNIT_LOG, '(A)') 'Reading restart data from fort.7'
+    write(UNIT_OUTPUT, '(A)') 'Reading restart data from fort.7'
     
     open(unit=UNIT_RESTART, file='fort.7', status='old', action='read', iostat=ios_restart)
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error: Cannot open restart file fort.7'
+      write(UNIT_OUTPUT, '(A)') 'Error: Cannot open restart file fort.7'
       call INPERR(2)
       return
     end if
@@ -1153,7 +1146,7 @@ contains
     ! Read title using original format 900: FORMAT(20A4)
     read(UNIT_RESTART, 900, iostat=ios_restart) TITLEO
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading title from restart file'
+      write(UNIT_OUTPUT, '(A)') 'Error reading title from restart file'
       call INPERR(2)
       return
     end if
@@ -1161,7 +1154,7 @@ contains
     ! Read mesh dimensions using original format 902: FORMAT(4I5)
     read(UNIT_RESTART, 902, iostat=ios_restart) IMINO, IMAXO, JMINO, JMAXO
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading mesh dimensions from restart file'
+      write(UNIT_OUTPUT, '(A)') 'Error reading mesh dimensions from restart file'
       call INPERR(2)
       return
     end if
@@ -1169,7 +1162,7 @@ contains
     ! Read solution parameters using original format 903: FORMAT(8F10.6)
     read(UNIT_RESTART, 903, iostat=ios_restart) CLOLD, EMACHO, ALPHAO, DELTAO, VOLO, DUBO
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading solution parameters from restart file'
+      write(UNIT_OUTPUT, '(A)') 'Error reading solution parameters from restart file'
       call INPERR(2)
       return
     end if
@@ -1177,14 +1170,14 @@ contains
     ! Read grid coordinates using original format 903: FORMAT(8F10.6)
     read(UNIT_RESTART, 903, iostat=ios_restart) (XOLD(I), I=IMINO, IMAXO)
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading X coordinates from restart file'
+      write(UNIT_OUTPUT, '(A)') 'Error reading X coordinates from restart file'
       call INPERR(2)
       return
     end if
     
     read(UNIT_RESTART, 903, iostat=ios_restart) (YOLD(J), J=JMINO, JMAXO)
     if (ios_restart /= 0) then
-      write(UNIT_LOG, '(A)') 'Error reading Y coordinates from restart file'
+      write(UNIT_OUTPUT, '(A)') 'Error reading Y coordinates from restart file'
       call INPERR(2)
       return
     end if
@@ -1193,7 +1186,7 @@ contains
     do I = IMINO, IMAXO
       read(UNIT_RESTART, 903, iostat=ios_restart) (P(J,I), J=JMINO, JMAXO)
       if (ios_restart /= 0) then
-        write(UNIT_LOG, '(A,I0)') 'Error reading P array at I=', I
+        write(UNIT_OUTPUT, '(A,I0)') 'Error reading P array at I=', I
         call INPERR(2)
         close(UNIT_RESTART)
         return
@@ -1201,7 +1194,7 @@ contains
     end do
 
     close(UNIT_RESTART)
-    write(UNIT_LOG, '(A)') 'Restart data successfully loaded'
+    write(UNIT_OUTPUT, '(A)') 'Restart data successfully loaded'
     
     ! Write restart information to output file (like original)
     write(UNIT_OUTPUT, 1000) TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, &
@@ -1233,7 +1226,7 @@ contains
     
     case (1)
       ! PSTART = 1: Set P to zero
-      write(UNIT_LOG, '(A)') 'Initializing P array to zero (PSTART=1)'
+      write(UNIT_OUTPUT, '(A)') 'Initializing P array to zero (PSTART=1)'
       do I = 1, size(P, 2)
         do J = 1, size(P, 1)
           P(J, I) = 0.0
@@ -1248,9 +1241,9 @@ contains
       ! PSTART = 2: P read from restart file in READIN
       ! PSTART = 3: P values already in core from previous case
       if (PSTART == 2) then
-        write(UNIT_LOG, '(A)') 'Using restart data (PSTART=2)'
+        write(UNIT_OUTPUT, '(A)') 'Using restart data (PSTART=2)'
       else
-        write(UNIT_LOG, '(A)') 'Using previous solution in core (PSTART=3)'
+        write(UNIT_OUTPUT, '(A)') 'Using previous solution in core (PSTART=3)'
       end if
       
       ! Set circulation parameters from old solution
@@ -1388,10 +1381,10 @@ contains
       end do
       
 600   continue
-      write(UNIT_LOG, '(A)') 'Interpolation complete'
+      write(UNIT_OUTPUT, '(A)') 'Interpolation complete'
       
     case default
-      write(UNIT_LOG, '(A,I0)') 'Invalid PSTART value: ', PSTART
+      write(UNIT_OUTPUT, '(A,I0)') 'Invalid PSTART value: ', PSTART
       call INPERR(3)
     end select
   end subroutine GUESSP
@@ -1685,35 +1678,27 @@ contains
     
     ! Write drag coefficient breakdown
     write(UNIT_OUTPUT, 1001)
-    write(UNIT_SHOCK, 1001)
     
     write(UNIT_OUTPUT, 1002) XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
-    write(UNIT_SHOCK, 1002) XU_LOC, CDUP, XD_LOC, CDDOWN, YT_LOC, CDTOP, YB_LOC, CDBOT
     
     if (XD_LOC < 1.0) then
       write(UNIT_OUTPUT, 1003) XD_LOC, CDBODY
-      write(UNIT_SHOCK, 1003) XD_LOC, CDBODY
     end if
     
     write(UNIT_OUTPUT, 1004) CDC
-    write(UNIT_SHOCK, 1004) CDC
     
     write(UNIT_OUTPUT, 1005) NSHOCK, CDWAVE
-    write(UNIT_SHOCK, 1005) NSHOCK, CDWAVE
     write(UNIT_FIELD, '("TOTAL CDWAVE =", F16.12)') CDWAVE
     
     if (NSHOCK > 0 .and. LPRT2 == 0) then
       write(UNIT_OUTPUT, 1007)
-      write(UNIT_SHOCK, 1007)
     end if
     
     if (NSHOCK > 0 .and. LPRT2 == 1) then
       write(UNIT_OUTPUT, 1008)
-      write(UNIT_SHOCK, 1008)
     end if
     
     write(UNIT_OUTPUT, 1006) CD
-    write(UNIT_SHOCK, 1006) CD
     write(UNIT_FIELD, '("TOTAL CD     =", F16.12)') CD
     
     return
@@ -1725,15 +1710,12 @@ contains
     
     if (ULE > SONVEL) then
       write(UNIT_OUTPUT, 1011)
-      write(UNIT_SHOCK, 1011)
     else
       write(UNIT_OUTPUT, 1012)
-      write(UNIT_SHOCK, 1012)
     end if
     
     CD = DRAG(CDFACT)
     write(UNIT_OUTPUT, 1013) CD
-    write(UNIT_SHOCK, 1013) CD
     
     return
     

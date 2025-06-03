@@ -39,7 +39,8 @@ module common_data
   public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: THETA  ! COM33: angle array for each mesh point
   public :: EMU, POLD, DCIRC, OUTERR  ! Missing variables from COM18
-  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables  public :: initialize_common
+  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables
+  public :: initialize_common
   public :: UNIT_INPUT, UNIT_LOG, UNIT_ECHO, UNIT_CP, UNIT_FIELD
   public :: UNIT_FLOW, UNIT_OUTPUT, UNIT_WALL, UNIT_RESTART, UNIT_SHOCK
   public :: UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT  ! DLAOUT input and output files
@@ -212,7 +213,6 @@ module common_data
   integer, parameter :: UNIT_CP = 12            ! Cp distribution file (tsfoil.cp)
   integer, parameter :: UNIT_FIELD = 13         ! Field data file (tsfoil.fld)
   integer, parameter :: UNIT_FLOW = 14          ! Flow map file (tsfoil.map)
-  integer, parameter :: UNIT_OUTPUT = 15        ! Standard output (tsfoil.out)
   integer, parameter :: UNIT_WALL = 16          ! Wall data file (tsfoil.wal)
   integer, parameter :: UNIT_RESTART = 7        ! Restart file (fort.7)
   integer, parameter :: UNIT_SHOCK = 18         ! Shock analysis file (tsfoil.shk)
@@ -220,13 +220,13 @@ module common_data
   integer, parameter :: UNIT_DLAOUT_OUTPUT = 10 ! DLAOUT output file
   
   ! Additional file units from original tsfoil.f90
-  integer, parameter :: UNIT_TSFOIL2 = 15       ! tsfoil2.out (same as UNIT_OUTPUT)
-  integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (same as UNIT_WALL)
-  integer, parameter :: UNIT_CPXS = 17          ! cpxs.out file
-  integer, parameter :: UNIT_MMAP = 18          ! mmap.out (same as UNIT_SHOCK)
-  integer, parameter :: UNIT_CNVG = 19          ! cnvg.out file
-  integer, parameter :: UNIT_MESH = 20          ! mesh.out file
-  integer, parameter :: UNIT_CPMP = 21          ! cpmp.out file
+  integer, parameter :: UNIT_OUTPUT = 15        ! tsfoil2.out (Main output file with comprehensive results)
+  integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (Summary file with key results)
+  integer, parameter :: UNIT_CPXS = 17          ! cpxs.out (Pressure coefficient vs. X-coordinate data)
+  integer, parameter :: UNIT_MMAP = 18          ! mmap.out (Mach number map data)
+  integer, parameter :: UNIT_CNVG = 19          ! cnvg.out (Convergence history file)
+  integer, parameter :: UNIT_MESH = 20          ! mesh.out (Mesh coordinate data)
+  integer, parameter :: UNIT_CPMP = 21          ! cpmp.out (Pressure coefficient map data)
 
 contains
 

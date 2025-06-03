@@ -266,14 +266,15 @@ contains
   
   ! Helper subroutine for convergence error reporting
   subroutine report_convergence_error(subroutine_name, variable_name, iteration_number)
+    use common_data, only: UNIT_OUTPUT
     implicit none
     character(len=*), intent(in) :: subroutine_name, variable_name
     integer, intent(in) :: iteration_number
     
     write(*,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name
     write(*,'(A,A,I0)') 'NONCONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
-    write(15,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name  
-    write(15,'(A,A,I0)') 'NONCONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
+    write(UNIT_OUTPUT,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name  
+    write(UNIT_OUTPUT,'(A,A,I0)') 'NONCONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
     stop
   end subroutine report_convergence_error
 
