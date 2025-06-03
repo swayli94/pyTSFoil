@@ -92,8 +92,20 @@ contains
       write(UNIT_OUTPUT, '(25H0  TIME TO RUN CASE WAS  ,F6.2,9H SECONDS.)') ELPTM
     end if
     
-    ! Read title card for this case with exact original format
-    read(UNIT_INPUT, '(20A4)', END=999) TITLE
+    ! Read title card for this case
+    read(UNIT_INPUT, '(20A4)', iostat=ios) TITLE
+    
+    ! Handle end-of-file or read error
+    if (ios /= 0) then
+        if (ios < 0) then
+            ! End of file reached
+            write(UNIT_OUTPUT, '(A)') 'End of input file reached. Program terminated.'
+        else
+            ! Read error
+            write(UNIT_OUTPUT, '(A,I0)') 'Error reading title card. IOSTAT = ', ios
+        end if
+        stop
+    end if
     
     ! Write title to output files exactly as original    
     write(UNIT_OUTPUT, '(1H1,4X,20A4)') TITLE
@@ -111,8 +123,9 @@ contains
         write(UNIT_OUTPUT, '(A)') 'Error reading namelist input. Please check the input file.'
         stop  ! Terminate on input error like original
     end if
-
-    call PRINT_INP_NAMELIST()  ! Print input namelist for debugging
+    
+    ! Print input namelist for debugging
+    call PRINT_INP_NAMELIST()
 
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then
@@ -321,12 +334,13 @@ contains
         ! USER MAY INSERT SCALING OF OWN CHOICE
         ! DEFINITION FOR LOCAL MACH NUMBER MUST BE ADJUSTED
         ! IN EMACH1.
-        write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H SIMDEF=4 IS NOT USEABLE)')
+        write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE SCALE', ' SIMDEF=4 IS NOT USEABLE'
         stop
         
       case default
-        write(UNIT_OUTPUT,'(34H1ABNORMAL STOP IN SUBROUTINE SCALE/24H INVALID SIMDEF VALUE)')
+        write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE SCALE', ' INVALID SIMDEF VALUE'
         stop
+
       end select
 
       ! SCALE Y MESH
@@ -470,12 +484,11 @@ contains
       write(UNIT_OUTPUT, '(2X,18HDOUBLET STRENGTH =,F12.7)') DUB
       write(UNIT_SUMMARY, '(2X,18HDOUBLET STRENGTH =,F12.7)') DUB
     end if
-    
-    if (PHYS) then
-      write(UNIT_OUTPUT, '(8HCPFACT =,F12.7/12X,8HCDFACT =,F12.7/12X,8HCMFACT =,F12.7/12X,8HCLFACT =,F12.7/13X,7HYFACT =,F12.7/13X,7HVFACT =,F12.7)') &
-        CPFACT, CDFACT, CMFACT, CLFACT, YFACT, VFACT
-      write(UNIT_SUMMARY, '(8HCPFACT =,F12.7/12X,8HCDFACT =,F12.7/12X,8HCMFACT =,F12.7/12X,8HCLFACT =,F12.7/13X,7HYFACT =,F12.7/13X,7HVFACT =,F12.7)') &
-        CPFACT, CDFACT, CMFACT, CLFACT, YFACT, VFACT
+      if (PHYS) then
+      write(UNIT_OUTPUT, '(A, F12.7, /, 12X, A, F12.7, /, 12X, A, F12.7, /, 12X, A, F12.7, /, 13X, A, F12.7, /, 13X, A, F12.7)') &
+        'CPFACT =', CPFACT, 'CDFACT =', CDFACT, 'CMFACT =', CMFACT, 'CLFACT =', CLFACT, 'YFACT =', YFACT, 'VFACT =', VFACT
+      write(UNIT_SUMMARY, '(A, F12.7, /, 12X, A, F12.7, /, 12X, A, F12.7, /, 12X, A, F12.7, /, 13X, A, F12.7, /, 13X, A, F12.7)') &
+        'CPFACT =', CPFACT, 'CDFACT =', CDFACT, 'CMFACT =', CMFACT, 'CLFACT =', CLFACT, 'YFACT =', YFACT, 'VFACT =', VFACT
     end if
     
     ! Call specialized print routines
@@ -561,11 +574,10 @@ contains
     COL_P1 = -CPSTAR / UNPCOL_P1
     NCOL_P1 = sign(int(abs(COL_P1) + 0.5), nint(COL_P1))
     NCOLS_P1 = NCOL_P1 + 30
-    
-    ! Print single variables using exact original format
-    write(UNIT_OUTPUT, '(60H1 FORCE COEFFICIENTS, PRESSURE COEFFICIENT, AND MACH NUM&
-          BER /2X,59H(OR SIMILARITY PARAMETER) ON BODY AND DIVIDING STREAM L&
-          INE.)')
+      ! Print single variables using exact original format
+    write(UNIT_OUTPUT, '(A, /, 2X, A)') &
+          '1 FORCE COEFFICIENTS, PRESSURE COEFFICIENT, AND MACH NUMBER', &
+          '(OR SIMILARITY PARAMETER) ON BODY AND DIVIDING STREAM LINE.'
     select case (IREF)
       case (2)
         write(UNIT_OUTPUT, '(20X,11HCOARSE MESH)')
@@ -581,8 +593,8 @@ contains
     
     ! Check for detached shock - exactly like original with GO TO 70 logic
     if (CPL(IMIN) < CPSTAR .and. CPL(IMIN+1) > CPSTAR) then
-      write(UNIT_OUTPUT, '(1H0,//&
-           &'' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.'')')
+      write(UNIT_OUTPUT, '(A, //, A)') '0', &
+           ' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.'
       if (IREF /= 2) then
         ABORT1 = .true.
       end if
@@ -590,17 +602,17 @@ contains
     end if
     
     ! Print column headers with exact original formatting
-    write(UNIT_OUTPUT, '(1H0,27X,5HLOWER,23X,5HUPPER/28X,4HY=0-,24X,4HY=0+)')
+    write(UNIT_OUTPUT, '(A, 27X, A, 23X, A, /, 28X, A, 24X, A)') '0', 'LOWER', 'UPPER', 'Y=0-', 'Y=0+'
     
     KT_P1 = 2
     if (PHYS) KT_P1 = 1
-    write(UNIT_OUTPUT, '(3X,1HI,8X,1HX,10X,2HCP,10X,A2,14X,2HCP,10X,A2/)') TMAC_P1(KT_P1), TMAC_P1(KT_P1)
-    
-    IPLOT_P1 = 0
+    write(UNIT_OUTPUT, '(3X, A, 8X, A, 10X, A, 10X, A2, 14X, A, 10X, A2, /)') 'I', 'X', 'CP', TMAC_P1(KT_P1), 'CP', TMAC_P1(KT_P1)
+      IPLOT_P1 = 0
     
     if (IREF == 0) then
-      write(UNIT_CPXS, '(2x,''TSFOIL2'',3x,''Mach = '',f7.3,3x,''CL = '',f7.3/&
-            4x,''i'',5x,''X/C'',8x,''Cp-up'',5x,''M-up'',6x,''Cp-low'',4x,''M-low'')') EMACH, CL_val
+      write(UNIT_CPXS, '(2x,A,3x,A,f7.3,3x,A,f7.3,/,4x,A,5x,A,8x,A,5x,A,6x,A,4x,A)') &
+            'TSFOIL2', 'Mach = ', EMACH, 'CL = ', CL_val, &
+            'i', 'X/C', 'Cp-up', 'M-up', 'Cp-low', 'M-low'
     end if
       
     ! Main output loop with exact original logic
@@ -624,27 +636,26 @@ contains
       if (NCOLL_P1 >= 1 .and. NCOLL_P1 <= 60) LINE1_P1(NCOLL_P1) = IL_P1
       if (NCOLL_P1 == NCOLU_P1 .and. NCOLL_P1 >= 1 .and. NCOLL_P1 <= 60) LINE1_P1(NCOLL_P1) = IBB_P1
       if (abs(NCOLS_P1) < 61 .and. NCOLS_P1 >= 1 .and. NCOLS_P1 <= 60) LINE1_P1(NCOLS_P1) = IS_P1
-      
-      ! Print leading edge marker exactly like original
-      if (I_P1 == ILE) write(UNIT_OUTPUT, '(25X,20HAIRFOIL LEADING EDGE,45X,20HAIRFOIL LEADING EDGE)')
+        ! Print leading edge marker exactly like original
+      if (I_P1 == ILE) write(UNIT_OUTPUT, '(25X, A, 45X, A)') 'AIRFOIL LEADING EDGE', 'AIRFOIL LEADING EDGE'
       
       ! Print main data line with exact original format
       write(UNIT_OUTPUT, '(1H ,I3,3F12.6,4X,2F12.6,2X,60A1)') I_P1, X(I_P1), CPL(I_P1), EM1L(I_P1), CPU(I_P1), EM1U(I_P1), LINE1_P1
       
       ! Print trailing edge marker exactly like original
-      if (I_P1 == ITE) write(UNIT_OUTPUT, '(25X,21HAIRFOIL TRAILING EDGE,44X,21HAIRFOIL TRAILING EDGE)')
+      if (I_P1 == ITE) write(UNIT_OUTPUT, '(25X, A, 44X, A)') 'AIRFOIL TRAILING EDGE', 'AIRFOIL TRAILING EDGE'
       
       ! Save data for plotting exactly like original
       write(UNIT_CPXS, '(2x,i3,2x,f7.4,2x,f10.5,2x,f7.4,2x,f10.5,2x,f7.4)') IPLOT_P1, X(I_P1), CPU(I_P1), EM1U(I_P1), CPL(I_P1), EM1L(I_P1)
     end do
-
-    ! Mach number warning exactly like original
+        ! Mach number warning exactly like original
     if (IEM == 1) then
       if (PHYS) then
-        write(UNIT_OUTPUT, '(20H0***** CAUTION *****/&
-              32H MAXIMUM MACH NUMBER EXCEEDS 1.3/&
-              69H SHOCK JUMPS IN ERROR IF UPSTREAM NORMAL MACH NUMBER GREATER T&
-              HAN 1.3)')
+        write(UNIT_OUTPUT, '(A, /, A, /, A, A)') &
+              '0***** CAUTION *****', &
+              ' MAXIMUM MACH NUMBER EXCEEDS 1.3', &
+              ' SHOCK JUMPS IN ERROR IF UPSTREAM NORMAL MACH NUMBER GREATER T', &
+              'HAN 1.3'
       end if
     end if
       
@@ -1237,14 +1248,21 @@ contains
 
     close(UNIT_RESTART)
     write(UNIT_OUTPUT, '(A)') 'Restart data successfully loaded'
-    
-    ! Write restart information to output file (like original)
-    write(UNIT_OUTPUT, '(39H1P INITIALIZED FROM PREVIOUS RUN TITLED/ &
-        1X,20A4/31H WHICH HAD THE FOLLOWING VALUES/ &
-        8H IMIN  =,I4/8H IMAX  =,I4/8H JMIN  =,I4/8H JMAX  =,I4/ &
-        8H CL    =,F12.8/8H EMACH =,F12.8/8H ALPHA =,F12.8/ &
-        8H DELTA =,F12.8/8H VOL   =,F12.8/8H DUB   =,F12.8/ )') TITLEO, IMINO, IMAXO, JMINO, JMAXO, CLOLD, EMACHO, &
-                            ALPHAO, DELTAO, VOLO, DUBO
+      ! Write restart information to output file (like original)
+    write(UNIT_OUTPUT, '(A, /, 1X, 20A4, /, A, /, A, I4, /, A, I4, /, A, I4, /, A, I4, /, A, F12.8, /, A, F12.8, /, A, F12.8, /, A, F12.8, /, A, F12.8, /, A, F12.8)') &
+        '1P INITIALIZED FROM PREVIOUS RUN TITLED', &
+        TITLEO, &
+        ' WHICH HAD THE FOLLOWING VALUES', &
+        ' IMIN  =', IMINO, &
+        ' IMAX  =', IMAXO, &
+        ' JMIN  =', JMINO, &
+        ' JMAX  =', JMAXO, &
+        ' CL    =', CLOLD, &
+        ' EMACH =', EMACHO, &
+        ' ALPHA =', ALPHAO, &
+        ' DELTA =', DELTAO, &
+        ' VOL   =', VOLO, &
+        ' DUB   =', DUBO
     
   end subroutine LOADP
 
@@ -2143,8 +2161,8 @@ contains
       YPR = YFACT * Y(J)
       PX2 = PX(IMIN, J)
       M = 0
-      if (J == JLOW) then
-        if (NPTS /= 0) write(UNIT_OUTPUT, 2070)
+      if (J == JLOW .and. NPTS /= 0) then
+        write(UNIT_OUTPUT, '(2X,''BODY LOCATION'')')
       end if
       
       IMM = IMIN + 1
@@ -2154,8 +2172,7 @@ contains
         
         if (PX1 > SONVEL .and. PX2 > SONVEL) cycle
         if (PX1 < SONVEL .and. PX2 < SONVEL) cycle
-        
-        if (NPTS == 0) write(UNIT_OUTPUT, 2000)
+        if (NPTS == 0) write(UNIT_OUTPUT, '(''1SONIC LINE COORDINATES''/6X,''Y'',10X,''XSONIC''//)')
         
         M = M + 1
         RATIO = (SONVEL - PX1) / (PX2 - PX1)
@@ -2164,13 +2181,14 @@ contains
         XSLPRT(NPTS) = XSONIC(M)
         YSLPRT(NPTS) = YPR
         if (NPTS >= 200) then
-          write(UNIT_OUTPUT, 2060)
+          write(UNIT_OUTPUT, '(''0***** CAUTION *****''/'' NUMBER OF SONIC POINTS EXCEEDED 200''/&
+           '' ARRAY DIMENSION EXCEEDED''/'' EXECUTION OF SUBROUTINE M1LINE TERMINATED'')')
           return
         end if
       end do
       
       if (M == 0) cycle
-      write(UNIT_OUTPUT, 2040) YPR, (XSONIC(L), L=1, M)
+      write(UNIT_OUTPUT, '(11F10.5)') YPR, (XSONIC(L), L=1, M)
     end do
     
     ! Process results if any sonic points were found
@@ -2180,9 +2198,14 @@ contains
     YX = Y(JMAX)
     do N = 1, NPTS
       if (YSLPRT(N) /= YM .and. YSLPRT(N) /= YX) cycle
-      
-      if (AK > 0.0) write(UNIT_OUTPUT, 2050)
-      if (AK < 0.0 .and. BCTYPE == 1) write(UNIT_OUTPUT, 2050)
+        if (AK > 0.0) write(UNIT_OUTPUT, '(''0***** CAUTION *****''/&
+           '' SONIC LINE HAS REACHED A BOUNDARY''/&
+           '' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS''/&
+           '' SOLUTION IS PROBABLY INVALID'')')
+      if (AK < 0.0 .and. BCTYPE == 1) write(UNIT_OUTPUT, '(''0***** CAUTION *****''/&
+           '' SONIC LINE HAS REACHED A BOUNDARY''/&
+           '' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS''/&
+           '' SOLUTION IS PROBABLY INVALID'')')
     end do
     
     XMIN = -0.75
@@ -2193,20 +2216,7 @@ contains
     YINCR = 0.5
     
     call PLTSON(XSLPRT, YSLPRT, XMIN, XMAX, XINCR, YMIN, YMAX, YINCR, NPTS)
-    
-    return
-    
-    ! Format statements matching original exactly
-2000 format('1SONIC LINE COORDINATES'/6X,'Y',10X,'XSONIC'//)
-2040 format(11F10.5)
-2050 format('0***** CAUTION *****'/&
-           ' SONIC LINE HAS REACHED A BOUNDARY'/&
-           ' THIS VIOLATES ASSUMPTIONS USED TO DERIVE BOUNDARY CONDITIONS'/&
-           ' SOLUTION IS PROBABLY INVALID')
-2060 format('0***** CAUTION *****'/' NUMBER OF SONIC POINTS EXCEEDED 200'/&
-           ' ARRAY DIMENSION EXCEEDED'/' EXECUTION OF SUBROUTINE M1LINE TERMINATED')
-2070 format(2X,'BODY LOCATION')
-    
+
   end subroutine M1LINE
   
   ! PLTSON - Sonic line printer plot routine 
@@ -2236,11 +2246,11 @@ contains
     integer :: JSLT, IZERO, JZERO, NOPW, JS, I, J, K, L, M, ITEST
     real :: FM, FI, YAXIS
     
-    write(UNIT_OUTPUT, 900)
-    write(UNIT_OUTPUT, 910)
+    write(UNIT_OUTPUT, '(''1'')')
+    write(UNIT_OUTPUT, '(35X,15HSONIC LINE PLOT,10X,6HY VS X,10X,20H *  FOR SONIC POINTS//)')
 
     if (XINCR_ARG == 0.0 .or. YINCR_ARG == 0.0) then
-      write(UNIT_OUTPUT, 9800)
+      write(UNIT_OUTPUT, '(46H1SCALING ERROR IN PRNPLT, EXECUTION TERMINATED )')
       stop
     end if
     
@@ -2269,8 +2279,8 @@ contains
     JS = 0
     if (NOPW > 9) JS = (NOPW - 9) / 2
 
-    write(UNIT_OUTPUT, 905)
-    write(UNIT_OUTPUT, 903)
+    write(UNIT_OUTPUT, '(16X,11(1H+,9X))')
+    write(UNIT_OUTPUT, '(15X,103(1H.))')
     
     ! Loop to set up one line each time thru.
     do I = 1, 51
@@ -2341,14 +2351,14 @@ contains
         FI = real(I - 1)
         YAXIS = YMAX_ARG - FI * YINCR_ARG * 0.1
         if (abs(YAXIS) < YAXMIN) YAXIS = 0.0
-        write(UNIT_OUTPUT, 902) YAXIS, (char(IGRID(J)), J=1, 105)
+        write(UNIT_OUTPUT, '(1X,F10.1,2X,1H+,105A1,1H+)') YAXIS, (char(IGRID(J)), J=1, 105)
       else
-        write(UNIT_OUTPUT, 901) (char(IGRID(J)), J=1, 105)
+        write(UNIT_OUTPUT, '(14X,105A1)') (char(IGRID(J)), J=1, 105)
       end if
     end do
     
-    write(UNIT_OUTPUT, 903)
-    write(UNIT_OUTPUT, 905)
+    write(UNIT_OUTPUT, '(15X,103(1H.))')
+    write(UNIT_OUTPUT, '(16X,11(1H+,9X))')
     
     do M = 1, 11
       FM = real(11 - M)
@@ -2356,20 +2366,8 @@ contains
       if (XAXIS(M) < XAXMIN) XAXIS(M) = XAXMIN
     end do
     
-    write(UNIT_OUTPUT, 904) XAXIS, NPTS_ARG
-    write(UNIT_OUTPUT, 900)
-    
-    return
-    
-    ! Format statements matching original exactly
-900 format('1')
-901 format(14X,105A1)
-902 format(1X,F10.1,2X,1H+,105A1,1H+)
-903 format(15X,103(1H.))
-904 format(7X,11(F10.2),2H (,I4,5H PTS) )
-905 format(16X,11(1H+,9X))
-910 format(35X,15HSONIC LINE PLOT,10X,6HY VS X,10X,20H *  FOR SONIC POINTS//)
-9800 format(46H1SCALING ERROR IN PRNPLT, EXECUTION TERMINATED )
+    write(UNIT_OUTPUT, '(7X,11(F10.2),2H (,I4,5H PTS) )') XAXIS, NPTS_ARG
+    write(UNIT_OUTPUT, '(''1'')')
     
   end subroutine PLTSON
 
