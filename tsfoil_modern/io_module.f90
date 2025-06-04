@@ -119,10 +119,8 @@ contains
     if (TITLE(1) == DONE) then
         stop  ! Terminate program exactly as original
     end if
-    write(*,'(A)') 'DEBUG: Termination check passed'    ! Read namelist input for this case
 
     read(UNIT_INPUT, INP, iostat=ios)
-    write(*,'(A,I0)') 'DEBUG: Namelist read iostat = ', ios
     
     ! Check if namelist read was successful
     if (ios /= 0) then
@@ -132,7 +130,6 @@ contains
     
     ! Print input namelist for debugging
     call PRINT_INP_NAMELIST()
-    write(*,'(A)') 'DEBUG: PRINT_INP_NAMELIST completed'
 
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then

@@ -10,8 +10,6 @@ program tsfoil_main
   use mesh_module
   use solver_module
   use numerical_solvers
-  use ieee_arithmetic, only: ieee_set_halting_mode, ieee_all, ieee_invalid, &
-                             ieee_overflow, ieee_divide_by_zero, ieee_underflow
   implicit none
 
   integer :: ios
@@ -22,13 +20,6 @@ program tsfoil_main
   write(*,'(A)') '         Airfoil Analysis Program              '
   write(*,'(A)') '            Modernized Fortran Version         '
   write(*,'(A)') '================================================='
-  write(*,*)
-
-  ! Enable floating-point exception handling
-  call ieee_set_halting_mode(ieee_underflow, .true.)
-  write(*,'(A)') 'Floating-point exception handling enabled'
-  write(*,'(A)') 'Program will halt on: INVALID, OVERFLOW, DIVIDE_BY_ZERO, UNDERFLOW'
-  write(*,*)
 
   ! Initialize data structures
   call initialize_common()
