@@ -2,8 +2,6 @@
 ! Module for input/output routines
 
 module io_module
-  use common_data
-  use mesh_module, only: ISLIT, JSLIT, CKMESH, AYMESH
   implicit none
 
   ! Complete namelist matching the original /INP/ namelist exactly
@@ -25,6 +23,8 @@ contains
   
   ! Open all output files with unique file units
   subroutine open_output_files()
+    use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY, UNIT_CPXS, UNIT_MMAP
+    use common_data, only: UNIT_CNVG, UNIT_MESH, UNIT_CPMP
     implicit none
     
     open(unit=UNIT_OUTPUT, file='tsfoil2.out', status='replace', action='write')   ! Unit 15
@@ -39,6 +39,8 @@ contains
 
   ! Close all output files
   subroutine close_output_files()
+    use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY, UNIT_CPXS, UNIT_MMAP
+    use common_data, only: UNIT_CNVG, UNIT_MESH, UNIT_CPMP
     implicit none
 
     close(UNIT_OUTPUT)   ! tsfoil2.out
@@ -55,6 +57,8 @@ contains
   ! Reads title card, namelist input, and manages restart data for current case  
   ! The original READIN is designed to be called once per case from main program
   subroutine READIN()
+    use common_data
+    use mesh_module, only: ISLIT, JSLIT, CKMESH, AYMESH
     implicit none    
     character(len=4), parameter :: DONE = 'FINI'  ! Declare DONE to match original exactly
     integer :: J_VAR, IM1, JM1, IDX, JDX
@@ -388,6 +392,7 @@ contains
   ! NOTE: This should be called ONCE before any case processing,
   ! not from within READIN, to echo the entire input file
   subroutine ECHINP()
+    use common_data, only: UNIT_INPUT, UNIT_OUTPUT
     implicit none
     character(len=80) :: CRD  ! Input card buffer (20A4 = 80 characters)
     integer :: read_status
@@ -1276,8 +1281,6 @@ contains
     ! XOLD, YOLD TO X,Y
     ! BOUNDARY CONDITIONS FOR P ON OUTER BOUNDARIES ARE
     ! AUTOMATICALLY SET DURING INITIALIZATION
-   
-
     ! Called by - TSFOIL.
     use common_data
     use solver_module, only: EXTRAP

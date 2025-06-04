@@ -14,8 +14,9 @@ module spline_module
 
 contains
 
+  ! Initialize spline coefficients and allocate arrays
   subroutine initialize_spline(max_points)
-    ! Initialize spline arrays
+    implicit none
     integer, intent(in) :: max_points
     max_n = max_points
     if (allocated(A)) deallocate(A)
@@ -25,14 +26,16 @@ contains
     B = 0.0
   end subroutine initialize_spline
 
+  ! Cleanup routine to deallocate spline arrays
   subroutine cleanup_spline()
-    ! Cleanup allocated arrays
+    implicit none
     if (allocated(A)) deallocate(A)
     if (allocated(B)) deallocate(B)
   end subroutine cleanup_spline
 
+  ! Set boundary conditions for spline interpolation
   subroutine set_boundary_conditions(K1_in, K2_in, DY1_in, DY2_in)
-    ! Set boundary conditions for spline interpolation
+    implicit none
     integer, intent(in) :: K1_in, K2_in
     real, intent(in) :: DY1_in, DY2_in
     

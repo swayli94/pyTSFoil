@@ -2,7 +2,6 @@
 ! Module for finite-difference setup and boundary condition routines
 
 module solver_module
-  use common_data
   implicit none
   public :: DIFCOE, SETBC, BCEND, FARFLD, ANGLE, EXTRAP
 
@@ -131,26 +130,28 @@ contains
     integer, intent(in) :: IJUMP
     integer :: I, IF, N, NFOIL, INT, JINT
 
-    if (IJUMP > 0) goto 20
-    
     ! Set limits on I and J indices
-    INT = 0
-    if (AK < 0.0) INT = 1
-    IUP = IMIN + 1 + INT
-    IDOWN = IMAX - 1 + INT
-    
-    JINT = 0
-    if (BCTYPE == 1 .and. AK > 0.0) JINT = 1
-    if (BCTYPE == 3) JINT = 1
-    if (BCTYPE == 5 .and. POR > 1.5) JINT = 1
-    JBOT = JMIN + JINT
-    JTOP = JMAX - JINT
-    J1 = JBOT + 1
-    J2 = JTOP - 1
+    if (IJUMP <= 0) then
+      ! IJUMP <= 0, use full range of I and J
+      INT = 0
+      if (AK < 0.0) INT = 1
+      IUP = IMIN + 1 + INT
+      IDOWN = IMAX - 1 + INT
+      
+      JINT = 0
+      if (BCTYPE == 1 .and. AK > 0.0) JINT = 1
+      if (BCTYPE == 3) JINT = 1
+      if (BCTYPE == 5 .and. POR > 1.5) JINT = 1
+      JBOT = JMIN + JINT
+      JTOP = JMAX - JINT
+      J1 = JBOT + 1
+      J2 = JTOP - 1
+
+    end if
 
     ! Airfoil body boundary condition
     ! Zero elements in arrays for upper and lower body boundary conditions
-20  do I = IMIN, IMAX
+    do I = IMIN, IMAX
       FXLBC(I) = 0.0
       FXUBC(I) = 0.0
     end do
@@ -193,8 +194,11 @@ contains
     
     integer :: I, II
     real :: DFACL, DFACU, RFACL, RFACU, PJMIN, PJMAX, TERM
+    logical :: apply_dirichlet, apply_neumann
     
     I = IVAL
+    apply_dirichlet = .false.
+    apply_neumann = .false.
     
     ! Branch to appropriate address for BCTYPE
     select case (BCTYPE)
@@ -208,7 +212,7 @@ contains
       DFACU = -CYYU(JTOP) * RTK * XDIFF(I)
       RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
       RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
-      goto 95
+      apply_neumann = .true.
         
     case (2)  
       ! BCTYPE = 2, SOLID WALL
@@ -226,7 +230,7 @@ contains
           PJMIN = -0.75 * CIRCFF
           PJMAX = -0.25 * CIRCFF
       end if
-      goto 90
+      apply_dirichlet = .true.
         
     case (4)  
       ! BCTYPE = 4, IDEAL SLOTTED WALL
@@ -240,7 +244,7 @@ contains
           RFACL = DFACL * (0.75 * CIRCFF + P(JBOT,I))
           RFACU = DFACU * (0.25 * CIRCFF + P(JTOP,I))
       end if
-      goto 95
+      apply_neumann = .true.
         
     case (5)  
       ! BCTYPE = 5, POROUS/PERFORATED WALL
@@ -270,7 +274,7 @@ contains
         DFACU = -CYYU(JTOP) * POR * XDIFF(I)
         RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
         RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
-        goto 95
+        apply_neumann = .true.
       end if
         
     case (6)  
@@ -278,9 +282,8 @@ contains
       ! Difference equations for this boundary condition
       ! have not yet been worked out. User must insert
       ! information needed for calculation
-      write(UNIT_OUTPUT, 1000)
-1000  format('1ABNORMAL STOP IN SUBROUTINE BCEND', /, &
-               'BCTYPE=6 IS NOT USEABLE')
+      write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE BCEND', &
+                                      'BCTYPE=6 IS NOT USEABLE'
       stop
         
     case default
@@ -289,18 +292,20 @@ contains
         
     end select
     
-    ! Dirichlet boundary conditions
-90  continue
-    RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(PJMIN-P(JBOT-1,I)))
-    RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(PJMAX-P(JTOP+1,I)))
-    return
+    ! Apply Dirichlet boundary conditions
+    if (apply_dirichlet) then
+      RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(PJMIN-P(JBOT-1,I)))
+      RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(PJMAX-P(JTOP+1,I)))
+      return
+    end if
     
-    ! Neumann boundary conditions
-95  continue
-    DIAG(JBOT) = DIAG(JBOT) + DFACL
-    DIAG(JTOP) = DIAG(JTOP) + DFACU
-    RHS(JBOT) = RHS(JBOT) - RFACL + CYYD(JBOT)*P(JBOT-1,I)
-    RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
+    ! Apply Neumann boundary conditions
+    if (apply_neumann) then
+      DIAG(JBOT) = DIAG(JBOT) + DFACL
+      DIAG(JTOP) = DIAG(JTOP) + DFACU
+      RHS(JBOT) = RHS(JBOT) - RFACL + CYYD(JBOT)*P(JBOT-1,I)
+      RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
+    end if
     
   end subroutine BCEND
 
@@ -538,89 +543,54 @@ contains
   ! far-field solutions when new mesh points are outside the range of old mesh points
   ! during restart interpolation. Called by GUESSP during restart operations.
   subroutine EXTRAP(XP, YP, PNEW)
+    ! COMPUTE P AT X, YP USING FAR FIELD SOLUTION ! FOR SUBSONIC FLOW
+    ! CALLED BY - GUESSP.
     use common_data, only: AK, DUB, GAM1, RTK, BCTYPE, CIRCFF, FHINV, POR, CIRCTE
     use common_data, only: F, H, HALFPI, PI, RTKPOR, TWOPI
     use common_data, only: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
     use common_data, only: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
     implicit none
     real, intent(in) :: XP, YP    ! Coordinates where P is to be computed
-    real, intent(out) :: PNEW     ! Computed potential value
-      ! Local variables
-    real :: XI_LOC, ETA_LOC, TERM, ARG1, ARG2, YP_local
+    real, intent(out) :: PNEW     ! Computed potential value    ! Local variables
+    real :: XI_VAR, ETA_VAR, TERM, ARG1, ARG2, YP_local
     
-    ! Handle the three boundary condition cases
-    select case (BCTYPE)
-    
-    case (1)
-      ! BCTYPE = 1: FREE AIR BOUNDARY CONDITION
-      YP_local = YP
-      if (abs(YP_local) < 1.0E-6) YP_local = -1.0E-6
-      
-      XI_LOC = XP - XSING
-      ETA_LOC = YP_local * RTK
-      
-      ! Far-field solution for free air
-      PNEW = -CIRCFF / TWOPI * (atan2(ETA_LOC, XI_LOC) + PI - sign(PI, ETA_LOC)) + &
-             DUB / TWOPI / RTK * (XI_LOC / (XI_LOC*XI_LOC + ETA_LOC*ETA_LOC))
-      
-    case (2, 4, 5)
-      ! BCTYPE = 2, 4, 5: TUNNEL WALL BOUNDARY CONDITIONS
-      ETA_LOC = YP / H
-      XI_LOC = (XP - XSING) / (H * RTK)
-      
-      if (XI_LOC >= 0.0) then
-        ! XP is downstream of airfoil
-        TERM = ETA_LOC
-        if (BCTYPE /= 3) TERM = sin(ETA_LOC * BETA0) / BETA0
+    if (BCTYPE == 1) then
+        ! FREE AIR BOUNDARY CONDITION
+        YP_local = YP
+        if (abs(YP_local) < 1.0E-6) YP_local = -1.0E-6
+          XI_VAR = XP - XSING
+        ETA_VAR = YP_local * RTK
         
-        PNEW = -0.5 * CIRCFF * (1.0 - sign(1.0, ETA_LOC) + &
-               (1.0 - JET) * PSI0 * TERM * exp(-BETA0 * XI_LOC)) + &
-               DUB * 0.5 / (AK * H) * (B + OMEGA0 * cos(ETA_LOC * ALPHA0) * &
-               exp(-ALPHA0 * XI_LOC))
-      else
-        ! XP is upstream of airfoil
-        TERM = 0.0
-        if (JET /= 0.0) TERM = JET * ETA_LOC / (1.0 + F)
+        PNEW = -CIRCFF / TWOPI * (atan2(ETA_VAR, XI_VAR) + PI - sign(PI, ETA_VAR)) + &
+               DUB / TWOPI / RTK * (XI_VAR / (XI_VAR*XI_VAR + ETA_VAR*ETA_VAR))
+
+    else
+        ! TUNNEL WALL BOUNDARY CONDITION (all other BCTYPE values)
+        ETA_VAR = YP / H
+        XI_VAR = (XP - XSING) / (H * RTK)
         
-        ARG1 = PI - ALPHA1
-        ARG2 = PI - BETA2
-        
-        PNEW = -0.5 * CIRCFF * (1.0 - TERM - PSI2 * sin(ETA_LOC * ARG2) / ARG2 * &
-               exp(ARG2 * XI_LOC)) - 0.5 * DUB / (AK * H) * &
-               ((1.0 - B) * OMEGA1 * cos(ETA_LOC * ARG1) * exp(XI_LOC * ARG1))
-      end if
-      
-    case (3)
-      ! BCTYPE = 3: FREE JET
-      ETA_LOC = YP / H
-      XI_LOC = (XP - XSING) / (H * RTK)
-      
-      if (XI_LOC >= 0.0) then
-        ! XP is downstream of airfoil - for free jet, TERM = ETA_LOC (no sine)
-        TERM = ETA_LOC
-        
-        PNEW = -0.5 * CIRCFF * (1.0 - sign(1.0, ETA_LOC) + &
-               (1.0 - JET) * PSI0 * TERM * exp(-BETA0 * XI_LOC)) + &
-               DUB * 0.5 / (AK * H) * (B + OMEGA0 * cos(ETA_LOC * ALPHA0) * &
-               exp(-ALPHA0 * XI_LOC))
-      else
-        ! XP is upstream of airfoil
-        TERM = 0.0
-        if (JET /= 0.0) TERM = JET * ETA_LOC / (1.0 + F)
-        
-        ARG1 = PI - ALPHA1
-        ARG2 = PI - BETA2
-        
-        PNEW = -0.5 * CIRCFF * (1.0 - TERM - PSI2 * sin(ETA_LOC * ARG2) / ARG2 * &
-               exp(ARG2 * XI_LOC)) - 0.5 * DUB / (AK * H) * &
-               ((1.0 - B) * OMEGA1 * cos(ETA_LOC * ARG1) * exp(XI_LOC * ARG1))
-      end if
-      
-    case default
-      ! For other boundary types, set to zero (supersonic behavior)
-      PNEW = 0.0
-      
-    end select
+        if (XI_VAR >= 0.0) then
+            ! XP is downstream of airfoil
+            TERM = ETA_VAR
+            if (BCTYPE /= 3) TERM = sin(ETA_VAR * BETA0) / BETA0
+            
+            PNEW = -0.5 * CIRCFF * (1.0 - sign(1.0, ETA_VAR) + &
+                   (1.0 - JET) * PSI0 * TERM * exp(-BETA0 * XI_VAR)) + &
+                   DUB * 0.5 / (AK * H) * (B + OMEGA0 * cos(ETA_VAR * ALPHA0) * &
+                   exp(-ALPHA0 * XI_VAR))
+        else
+            ! XP is upstream of airfoil
+            TERM = 0.0
+            if (JET /= 0.0) TERM = JET * ETA_VAR / (1.0 + F)
+            
+            ARG1 = PI - ALPHA1
+            ARG2 = PI - BETA2
+            
+            PNEW = -0.5 * CIRCFF * (1.0 - TERM - PSI2 * sin(ETA_VAR * ARG2) / ARG2 * &
+                   exp(ARG2 * XI_VAR)) - 0.5 * DUB / (AK * H) * &
+                   ((1.0 - B) * OMEGA1 * cos(ETA_VAR * ARG1) * exp(XI_VAR * ARG1))
+        end if
+    end if
     
   end subroutine EXTRAP
 

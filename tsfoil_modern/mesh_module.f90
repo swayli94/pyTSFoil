@@ -2,10 +2,8 @@
 ! Module for mesh generation and refinement routines
 
 module mesh_module
-  use common_data
   implicit none
   public :: AYMESH, CKMESH, CUTOUT, REFINE, ISLIT, JSLIT
-  ! Public subroutines for mesh generation and refinement
 
 contains
 
@@ -282,12 +280,13 @@ contains
     use common_data, only: NWDGE, WSLP
     implicit none
     integer :: I, J, K, JMAXO_LOCAL, JE, JST, IM2, JM2, JL
-    integer :: XLEO_LOCAL, ILEO, INC, M, ISTEP, ISTRT, IEND, IM, IMM
+    integer :: ILEO, INC, M, ISTEP, ISTRT, IEND, IM, IMM
     real :: PT(100)
     real :: D1, D2, CL1, CL2, CU1, CU2, RATIO
+    real :: XLEO_LOCAL  ! Must be REAL to store X-coordinate
 
     ! Store original leading edge position and index for viscous wedge processing
-    XLEO_LOCAL = X(ILE)    
+    XLEO_LOCAL = X(ILE)
     ILEO = ILE
     JMAXO_LOCAL = JMAX
 

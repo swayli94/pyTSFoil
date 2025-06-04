@@ -2,7 +2,6 @@
 ! Module for airfoil geometry routines
 
 module airfoil_module
-  use common_data
   implicit none
   public :: BODY, PRBODY
 

@@ -43,7 +43,7 @@ tsfoil_modern/
 2. **`math_module.f90`** - Mathematical utilities
 
    | Original Subroutine |  Description | Status |
-   |---------------------|--------------|---------|
+   |---------------------|--------------|--------|
    | `ARF(X)` | Error function approximation | ✅ |
    | `SIMP(R,X,Y,N,IER)` | Simpson's rule integration | ✅ |
    | `PX(I,J)` | ∂P/∂x finite difference | ✅ |
@@ -65,54 +65,56 @@ tsfoil_modern/
 3. **`spline_module.f90`** - Cubic spline interpolation
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
-   | `SPLN1(X, Y, N)` | Set up cubic spline coefficients |  |
-   | `SPLN1X(X, Y, N, XP, YP, DYP)` | Evaluate spline at point XP |  |
+   |---------------------|-------------|--------|
+   | `SPLN1(X, Y, N)` | Set up cubic spline coefficients | ✅ |
+   | `SPLN1X(X, Y, N, XP, YP, DYP)` | Evaluate spline at point XP | ✅ |
+   | `initialize_spline(max_points)` | Initialize spline coefficients | ✅ |
+   | `cleanup_spline` | Deallocate spline arrays | ✅ |
+   | `set_boundary_conditions` | Set boundary conditions for spline | ✅ |
 
 4. **`airfoil_module.f90`** - Geometry handling
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
-   | `BODY` | Airfoil geometry processing |  |
-   | `PRBODY` | Geometry summary |  |
+   |---------------------|-------------|--------|
+   | `BODY` | Airfoil geometry processing | ✅ |
+   | `PRBODY` | Geometry summary | ✅ |
 
 5. **`mesh_module.f90`** - Mesh operations
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
-   | `AYMESH` | Analytical mesh generation |  |
-   | `CKMESH` | Mesh validation/adjustment |  |
-   | `CUTOUT` | Mesh coarsening |  |
-   | `REFINE` | Mesh refinement |  |
-   | `ISLIT(X)` | Leading/trailing edge location |  |
-   | `JSLIT(Y)` | Upper/lower surface location |  |
+   |---------------------|-------------|--------|
+   | `AYMESH` | Analytical mesh generation | ✅ |
+   | `CKMESH` | Mesh validation/adjustment | ✅ |
+   | `CUTOUT` | Mesh coarsening | ✅ |
+   | `REFINE` | Mesh refinement | ✅ |
+   | `ISLIT(X)` | Leading/trailing edge location | ✅ |
+   | `JSLIT(Y)` | Upper/lower surface location | ✅ |
 
 6. **`solver_module.f90`** - Numerical setup
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
-   | `ANGLE` | Angle potential calculation |  |
-   | `BCEND` | Boundary condition application |  |
-   | `DIFCOE` | Finite difference coefficients |  |
-   | `EXTRAP` | Far-field extrapolation |  |
-   | `FARFLD` | Far-field boundary setup |  |
-   | `SETBC(IJUMP)` | Solution limits and BC setup |  |
+   |---------------------|-------------|--------|
+   | `DIFCOE` | Finite difference coefficients | ✅ |
+   | `SETBC(IJUMP)` | Solution limits and BC setup | ✅ |
+   | `BCEND` | Boundary condition application | ✅ |
+   | `FARFLD` | Far-field boundary setup | ✅ |
+   | `ANGLE` | Angle potential calculation | ✅ |
+   | `EXTRAP` | Far-field extrapolation | ✅ |
 
 7. **`numerical_solvers.f90`** - Core algorithms
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
-   | `SOLVE` | Main iteration loop |  |
-   | `SYOR` | SOR sweep |  |
-   | `GUESSP` | Solution initialization |  |
-   | `RECIRC` | Circulation updates |  |
-   | `REDUB` | Doublet strength updates |  |
-   | `RESET` | Far-field boundary updates |  |
+   |---------------------|-------------|--------|
+   | `SYOR` | SOR sweep | ✅ |
+   | `SOLVE` | Main iteration loop | ✅ |
+   | `RECIRC` | Circulation updates | ✅ |
+   | `REDUB` | Doublet strength updates | ✅ |
+   | `RESET` | Far-field boundary updates | ✅ |
 
 8. **`io_module.f90`** - Input/output operations
 
    | Original Subroutine | Description | Status |
-   |---------------------|-------------|---------|
+   |---------------------|-------------|--------|
    | `READIN` | Input parameter reading |  |
    | `SCALE` | Variable scaling |  |
    | `ECHINP` | Input echoing |  |
@@ -131,6 +133,7 @@ tsfoil_modern/
    | `CDCOLE` | Drag coefficient assembly |  |
    | `M1LINE` | Sonic line detection |  |
    | `PLTSON` | Sonic line printer |  |
+   | `GUESSP` | Solution initialization |  |
 
 ### Compilation Dependencies
 

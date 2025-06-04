@@ -2,8 +2,6 @@
 ! Module for SOR solver and iteration control routines
 
 module numerical_solvers
-  use common_data
-  use solver_module, only: BCEND
   implicit none
   public :: SYOR, SOLVE, RECIRC, REDUB, RESET
 
@@ -405,56 +403,53 @@ contains
   ! For lifting free air flows, doublet strength is set equal to model volume.
   ! For other flows, the nonlinear contribution is added.
   subroutine REDUB()
-    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
-    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
-    use common_data, only: AK, ALPHA, DUB, GAM1, RTK, XDIFF, YDIFF
-    use common_data, only: BCTYPE, CIRCFF, VOL, XI, ARG
-    use math_module, only: PX, TRAP
+    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX
+    use common_data, only: DUB, GAM1, XDIFF, BCTYPE, CIRCFF, VOL, XI, ARG
+    use math_module, only: TRAP
     implicit none
     
-    integer :: I, J, K, L, JSTART, JEND
-    real :: UPXSQ, SUM, UPSQ, UU
+    ! Local variables
+    integer :: I, J, IEND, NARG
+    real :: DBLSUM, SUM, TEMP
     
-    ! For free air with circulation, set DUB = VOL
+    ! For lifting free air flows with circulation, set doublet strength equal to model volume
     if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
       DUB = VOL
       return
     end if
     
     ! Compute double integral of U*U over mesh domain for doublet strength
-    ! U = PX is centered midway between X mesh points.
-    ! First the integral (PX**2)DY is calculated for X = constant lines
+    ! U = (∂P/∂x) is centered midway between X mesh points.
+    ! First the integral (∂P/∂x)²dy is calculated for X held constant.
+    ! Thus 1/(X(I+1)-X(I))² may be pulled out of the integral which is
+    ! calculated by the trapezoidal rule. The X integration corresponds
+    ! to summing these integrals, which lie midway between X mesh points,
+    ! using a modified trapezoidal rule.
     
-    L = 0
-    do I = IUP, IDOWN
-      L = L + 1
-      XI(L) = 0.5 * (X(I) + X(I-1))
+    IEND = IMAX - 1
+    DBLSUM = 0.0
+    
+    do I = IMIN, IEND
+      NARG = 0
       
-      ! Integrate (PX**2) in Y direction
-      K = 0
-      JSTART = JBOT
-      JEND = JTOP
-      
-      do J = JSTART, JEND
-        K = K + 1
-        UU = PX(I,J)
-        ARG(K) = UU * UU
-        if (K == 1) then
-          Y(K) = 0.5 * (Y(J) + Y(J-1))
-        else
-          Y(K) = 0.5 * (Y(J) + Y(J-1))
-        end if
+      ! Build arrays for Y-direction integration at constant X
+      do J = JMIN, JMAX
+        NARG = NARG + 1
+        TEMP = P(J, I+1) - P(J, I)  ! Finite difference approximation of ∂P/∂x
+        ARG(NARG) = TEMP * TEMP     ! Square of velocity component
+        XI(NARG) = Y(J)             ! Y-coordinates for integration
       end do
       
-      call TRAP(Y, ARG, K, UPSQ)
-      ARG(L) = UPSQ
+      ! Integrate (∂P/∂x)² in Y-direction using trapezoidal rule
+      call TRAP(XI, ARG, NARG, SUM)
+      
+      ! Add contribution to double sum with X-direction weighting
+      DBLSUM = DBLSUM + SUM * XDIFF(I+1)
     end do
     
-    ! Now integrate UPSQ in X direction
-    call TRAP(XI, ARG, L, UPXSQ)
-    
-    ! Update doublet strength
-    DUB = DUB + UPXSQ
+    ! Apply scaling factor and update doublet strength
+    DBLSUM = GAM1 * 0.25 * DBLSUM
+    DUB = VOL + DBLSUM
 
   end subroutine REDUB
 
@@ -477,8 +472,8 @@ contains
       P(J,IMAX) = CIRCFF*VDOWN(K) + DUB*DDOWN(K)
     end do
 
-    if (BCTYPE /= 1) then
-      ! Update boundary conditions on top and bottom
+    ! Update boundary conditions on top and bottom
+    if (BCTYPE == 1) then
       K = IMIN - KSTEP
       do I = IMIN, IMAX
         K = K + KSTEP
