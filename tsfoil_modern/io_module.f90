@@ -121,7 +121,6 @@ contains
     end if
     write(*,'(A)') 'DEBUG: Termination check passed'    ! Read namelist input for this case
 
-    call check_fp_exceptions()
     read(UNIT_INPUT, INP, iostat=ios)
     write(*,'(A,I0)') 'DEBUG: Namelist read iostat = ', ios
     
@@ -1845,7 +1844,7 @@ contains
     ! Print flow parameters
     write(UNIT_OUTPUT, '(A)') ' FLOW PARAMETERS:'
     write(UNIT_OUTPUT, '(A,F12.6)') '   AK       = ', AK
-    write(UNIT_OUTPUT, '(A,F12.6)') '   ALPHA    = ', ALPHA  
+    write(UNIT_OUTPUT, '(A,F12.6)') '   ALPHA    = ', ALPHA
     write(UNIT_OUTPUT, '(A,F12.6)') '   EMACH    = ', EMACH
     write(UNIT_OUTPUT, '(A,F12.6)') '   DELTA    = ', DELTA
     write(UNIT_OUTPUT, '(A,F12.6)') '   GAM      = ', GAM

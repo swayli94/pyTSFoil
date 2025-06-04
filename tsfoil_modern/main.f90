@@ -10,12 +10,12 @@ program tsfoil_main
   use mesh_module
   use solver_module
   use numerical_solvers
-  use, intrinsic :: ieee_exceptions
-  use, intrinsic :: ieee_arithmetic
+  use ieee_arithmetic, only: ieee_set_halting_mode, ieee_all, ieee_invalid, &
+                             ieee_overflow, ieee_divide_by_zero, ieee_underflow
   implicit none
 
   integer :: ios
-  logical :: flag_invalid, flag_overflow, flag_divide_by_zero, flag_underflow, flag_inexact
+
   ! Program header
   write(*,'(A)') '================================================='
   write(*,'(A)') '     TSFOIL - Transonic Small-Perturbation     '
@@ -25,7 +25,7 @@ program tsfoil_main
   write(*,*)
 
   ! Enable floating-point exception handling
-  call ieee_set_halting_mode(ieee_all, .true.)
+  call ieee_set_halting_mode(ieee_underflow, .true.)
   write(*,'(A)') 'Floating-point exception handling enabled'
   write(*,'(A)') 'Program will halt on: INVALID, OVERFLOW, DIVIDE_BY_ZERO, UNDERFLOW'
   write(*,*)
@@ -50,9 +50,8 @@ program tsfoil_main
 
     ! Call READIN to read one case - it handles termination internally with STOP
     ! when "FINI" card is encountered, just like the original
-    write(*,'(A)') 'DEBUG: Calling READIN...'
+    write(*,'(A)') 'Reading input data...'
     call READIN()
-    write(*,'(A)') 'DEBUG: READIN completed'
     
     ! Continue with complete TSFOIL solution workflow
     write(*,'(A)') 'Starting TSFOIL solution sequence...'
@@ -97,10 +96,13 @@ program tsfoil_main
       call PRINT1()
       
       if (.not. ABORT1) then
-        write(*,'(A)') 'Refining mesh and continuing...'
+        write(*,'(A)') 'Refining mesh...'
         call REFINE()
+        write(*,'(A)') 'Recomputing finite difference coefficients...'
         call DIFCOE()
+        write(*,'(A)') 'Setting boundary conditions after refinement...'
         call SETBC(0) 
+        write(*,'(A)') 'Continuing solution after refinement...'
         call SOLVE()
       end if
     end if

@@ -91,7 +91,6 @@ module common_data
 
   ! COM8: solver control parameters
   real :: CVERGE, DVERGE, TOL, RSAVE
-  real :: EPS = 1.0e-6              ! Convergence tolerance
   real :: WI = 1.05                 ! SOR relaxation factor (from COM18)
   real :: WE(3)
   integer :: IPRTER, MAXIT, NEX, N_O, NPRINT, NPT
@@ -177,7 +176,7 @@ module common_data
   integer :: IDLA
   
   ! COM27: transonic similarity state
-  real :: CL, DELTA, DELRT2, EMACH, EMROOT
+  real :: CL, DELTA, DELRT2, EMACH, EMROOT, EPS
   integer :: PRTFLO, SIMDEF
   real :: SONVEL, VFACT, YFACT
   
@@ -267,25 +266,14 @@ contains
     KSTEP = 1
     ABORT1 = .true.   ! Updated to match BLOCK DATA  
     PHYS = .true.
-    SIMDEF = 3   ! Updated to match BLOCK DATA
     BCFOIL = 3   ! Updated to match BLOCK DATA
     BCTYPE = 1  ! Default to free air boundary condition
     DELTA = 0.115  ! Updated to match BLOCK DATA
-    EMACH = 0.75   ! Updated to match BLOCK DATA
-    PRTFLO = 1
-    PSTART = 1  ! Default to fresh start
     
     ! Initialize airfoil control parameters
-    RIGF = 0.0     ! Updated to match BLOCK DATA
-    IFLAP = 0
-    DELFLP = 5.0   ! Updated to match BLOCK DATA
-    FLPLOC = 0.77  ! Updated to match BLOCK DATA
     FSYM = 0
     
     ! Initialize viscous wedge parameters
-    NWDGE = 0
-    REYNLD = 4.0E+06  ! Updated to match BLOCK DATA
-    WCONST = 4.0
     WSLP = 0.0
     XSHK = 0.0
     THAMAX = 0.0
@@ -309,7 +297,7 @@ contains
     AK = 0.0
     GAM = 1.4
     RIGF = 0.0
-    EPS = 0.2
+    EPS = 0.2     ! Default epsilon for convergence checks
     
     ! Solver parameters (from BLOCK DATA)
     CLSET = 0.0
@@ -341,7 +329,7 @@ contains
     ! Boundary condition parameters (from BLOCK DATA)
     BCFOIL = 3
     BCTYPE = 1
-    PSTART = 1
+    PSTART = 1  ! Default to fresh start
     PRTFLO = 1
     SIMDEF = 3
     
@@ -355,10 +343,10 @@ contains
     WCONST = 4.0
     NWDGE = 0
     IDLA = 0
-    
-    ! Initialize YIN array to zero (from BLOCK DATA)
-    YIN = 0.0
-    
+
+    ! Initialize boundary condition identifiers
+    POR = 0.0
+        
     ! Initialize airfoil coordinate arrays to zero to prevent namelist floating-point exceptions
     XU = 0.0
     YU = 0.0

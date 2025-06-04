@@ -21,10 +21,10 @@ contains
     use common_data, only: EMU, POLD, I1, I2, OUTERR, BIGRL, IRL, JRL
     use solver_module, only: BCEND
     implicit none
-    
     integer :: I, J, K, IM2, JA, JB, ISAVE
-    real :: EPSX, ARHS, DNOM
-    real, dimension(100) :: VC, SAVE
+    real :: EPSX, ARHS, DNOM, denominator
+    real, dimension(100) :: VC, SAVE_VAR
+    real, parameter :: TOLERANCE = 1.0E-6   ! Tolerance for division by zero protection (more reasonable value)
     
     IM2 = IUP - 1
     if (AK < 0.0) IM2 = IUP - 2
@@ -133,18 +133,22 @@ contains
         
         ! Solve tridiagonal matrix equation
         DNOM = 1.0 / DIAG(JBOT)
-        SAVE(JBOT) = SUB(JBOT) * DNOM
+        SAVE_VAR(JBOT) = SUB(JBOT) * DNOM
         RHS(JBOT) = RHS(JBOT) * DNOM
-        
+
         do J = J1, JTOP
-            DNOM = 1.0 / (DIAG(J) - SUP(J)*SAVE(J-1))
-            SAVE(J) = SUB(J) * DNOM
+            denominator = DIAG(J) - SUP(J)*SAVE_VAR(J-1)
+            DNOM = 1.0 / denominator
+            SAVE_VAR(J) = SUB(J) * DNOM
             RHS(J) = (RHS(J) - SUP(J)*RHS(J-1)) * DNOM
+            if (abs(RHS(J)) < 1.0E-30) RHS(J) = 0.0
         end do
         
+        ! Back-substitution with floating-point protection
         do K = 1, J2
             J = JTOP - K
-            RHS(J) = RHS(J) - SAVE(J) * RHS(J+1)
+            RHS(J) = RHS(J) - SAVE_VAR(J) * RHS(J+1)
+            if (abs(RHS(J)) < 1.0E-30) RHS(J) = 0.0
         end do
         
         ! Compute new P
