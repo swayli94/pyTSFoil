@@ -30,91 +30,94 @@ program tsfoil_main
   open(unit=UNIT_INPUT, file='tsfoil.inp', status='old', iostat=ios)
   if (ios /= 0) then
     write(*,'(A)') 'Error: Cannot open input file tsfoil.inp'
-    stop 1
+    stop
   end if
   
   ! ECHINP provides a listing of all data cards for entire job. 
-  ! Can be deleted, if desired (like in original TSFOIL).
   ! call ECHINP()
   
-  ! Main program structure - matches original TSFOIL exactly
-  ! Label 1 for case processing (original has this structure)
-1 continue
-  
-  ! Call READIN to read one case - it handles termination internally with STOP
-  ! when "FINI" card is encountered, just like the original
-  call READIN()
-  
-  ! Continue with complete TSFOIL solution workflow
-  write(*,'(A)') 'Starting TSFOIL solution sequence...'
-  write(UNIT_OUTPUT,'(A)') 'TSFOIL Solution Sequence'
-  write(UNIT_OUTPUT,'(A)') '========================'
-  
-  ! SCALE: Rescale all physical variables to transonic similarity form
-  write(*,'(A)') 'Scaling variables to similarity form...'
-  call SCALE()
-  
-  ! FARFLD: Set far field boundary conditions
-  write(*,'(A)') 'Setting far-field boundary conditions...'
-  call FARFLD()
-  
-  ! BODY: Compute airfoil geometry and print geometrical information
-  write(*,'(A)') 'Computing airfoil geometry...'
-  call BODY()
-  
-  ! CUTOUT: Remove mesh points for initial coarse mesh solution
-  write(*,'(A)') 'Setting up coarse mesh...'
-  call CUTOUT()
-  
-  ! GUESSP: Initialize potential array P
-  write(*,'(A)') 'Initializing potential array...'
-  call GUESSP()
-  
-  ! DIFCOE: Compute difference coefficients in field
-  write(*,'(A)') 'Computing finite difference coefficients...'
-  call DIFCOE()
-  
-  ! SETBC: Set boundary conditions
-  write(*,'(A)') 'Setting boundary conditions...'
-  call SETBC(0)
-  
-  ! SOLVE: Execute main relaxation solution
-  write(*,'(A)') 'Solving transonic flow equations...'
-  call SOLVE()
-  
-  ! Check for mesh refinement or final results
-  if (IREF > 0 .and. .not. ABORT1) then
-    write(*,'(A)') 'Printing intermediate results...'
-    call PRINT1()
+  ! Main case processing loop
+  ! The loop continues until READIN encounters "FINI" and calls STOP
+  do
+
+    ! Call READIN to read one case - it handles termination internally with STOP
+    ! when "FINI" card is encountered, just like the original
+    call READIN()
     
-    if (.not. ABORT1) then
-      write(*,'(A)') 'Refining mesh and continuing...'
-      call REFINE()
-      call DIFCOE()
-      call SETBC(0) 
-      call SOLVE()
+    ! Continue with complete TSFOIL solution workflow
+    write(*,'(A)') 'Starting TSFOIL solution sequence...'
+    write(UNIT_OUTPUT,'(A)') 'TSFOIL Solution Sequence'
+    write(UNIT_OUTPUT,'(A)') '========================'
+    
+    ! SCALE: Rescale all physical variables to transonic similarity form
+    write(*,'(A)') 'Scaling variables to similarity form...'
+    call SCALE()
+    
+    ! FARFLD: Set far field boundary conditions
+    write(*,'(A)') 'Setting far-field boundary conditions...'
+    call FARFLD()
+    
+    ! BODY: Compute airfoil geometry and print geometrical information
+    write(*,'(A)') 'Computing airfoil geometry...'
+    call BODY()
+    
+    ! CUTOUT: Remove mesh points for initial coarse mesh solution
+    write(*,'(A)') 'Setting up coarse mesh...'
+    call CUTOUT()
+    
+    ! GUESSP: Initialize potential array P
+    write(*,'(A)') 'Initializing potential array...'
+    call GUESSP()
+    
+    ! DIFCOE: Compute difference coefficients in field
+    write(*,'(A)') 'Computing finite difference coefficients...'
+    call DIFCOE()
+    
+    ! SETBC: Set boundary conditions
+    write(*,'(A)') 'Setting boundary conditions...'
+    call SETBC(0)
+    
+    ! SOLVE: Execute main relaxation solution
+    write(*,'(A)') 'Solving transonic flow equations...'
+    call SOLVE()
+    
+    ! Check for mesh refinement or final results
+    if (IREF > 0 .and. .not. ABORT1) then
+      write(*,'(A)') 'Printing intermediate results...'
+      call PRINT1()
+      
+      if (.not. ABORT1) then
+        write(*,'(A)') 'Refining mesh and continuing...'
+        call REFINE()
+        call DIFCOE()
+        call SETBC(0) 
+        call SOLVE()
+      end if
     end if
-  end if
+    
+    ! Print final results
+    write(*,'(A)') 'Printing final results...'
+    call PRINT()
+    
+    ! Additional mesh refinement if requested
+    if (IREF > 0) then
+      call REFINE()
+      call REFINE()
+    end if
+    
+    ! Store solution for potential next case
+    call SAVEP()
+    
+    write(*,'(A)') 'Case completed successfully'
+    write(UNIT_OUTPUT,'(A)') 'Case completed successfully'
+    write(UNIT_OUTPUT,*)
   
-  ! Print final results
-  write(*,'(A)') 'Printing final results...'
-  call PRINT()
+  end do
+
+  ! Note: Code below this point will never be reached as READIN calls STOP
+  ! when "FINI" is encountered, exactly like the original
   
-  ! Additional mesh refinement if requested
-  if (IREF > 0) then
-    call REFINE()
-    call REFINE()
-  end if
-  
-  ! Store solution for potential next case
-  call SAVEP()
-  
-  write(*,'(A)') 'Case completed successfully'
-  write(UNIT_OUTPUT,'(A)') 'Case completed successfully'
-  write(UNIT_OUTPUT,*)
-  
-  ! Close all files and end program - matches original structure exactly
-  ! Original TSFOIL closes files after SAVEP and ends (no loop back)
+  ! Close all files and end program - this cleanup is never reached in practice
   call cleanup_spline()
   call close_output_files()
   close(UNIT_INPUT)

@@ -42,93 +42,95 @@ tsfoil_modern/
 
 2. **`math_module.f90`** - Mathematical utilities
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `ARF(X)` | `math_module.f90` | Error function approximation | ✅ |
-   | `SIMP(R,X,Y,N,IER)` | `math_module.f90` | Simpson's rule integration | ✅ |
-   | `EMACH1(U)` | `math_module.f90` | Local Mach number computation | ✅ |
-   | `PX(I,J)` | `math_module.f90` | ∂P/∂x finite difference | ✅ |
-   | `PY(I,J)` | `math_module.f90` | ∂P/∂y finite difference | ✅ |
-   | `TRAP` | `math_module.f90` | Integrate Y DX by trapezoidal rule | ✅ |
-   | `DRAG(CDFACT)` | `math_module.f90` | Pressure drag integration | ✅ |
-   | `LIFT(CLFACT)` | `math_module.f90` | Lift coefficient computation | ✅ |
-   | `PITCH(CMFACT)` | `math_module.f90` | Pitching moment calculation | ✅ |
-   | `VWEDGE` | `math_module.f90` | Viscous wedge corrections | ✅ |
-   | `WANGLE` | `math_module.f90` | Wedge angle for viscous correction | ✅ |
-   | `FINDSK` | `math_module.f90` | Find shock location | ✅ |
-   | `NEWISK` | `math_module.f90` | Shock index adjustment | ✅ |
-   | `DROOTS` | `math_module.f90` | Compute constants for wind tunnel | ✅ |
-   | `VROOTS` | `math_module.f90` | Slotted-wall angle roots | ✅ |
+   | Original Subroutine |  Description | Status |
+   |---------------------|--------------|---------|
+   | `ARF(X)` | Error function approximation | ✅ |
+   | `SIMP(R,X,Y,N,IER)` | Simpson's rule integration | ✅ |
+   | `PX(I,J)` | ∂P/∂x finite difference | ✅ |
+   | `PY(I,J)` | ∂P/∂y finite difference | ✅ |
+   | `EMACH1(U)` | Local Mach number computation | ✅ |
+   | `DRAG(CDFACT)` | Pressure drag integration | ✅ |
+   | `LIFT(CLFACT)` | Lift coefficient computation | ✅ |
+   | `PITCH(CMFACT)` | Pitching moment calculation | ✅ |
+   | `TRAP` | Integrate Y DX by trapezoidal rule | ✅ |
+   | `report_convergence_error` | Report convergence errors | ✅ |
+   | `DROOTS` | Compute constants for wind tunnel | ✅ |
+   | `VROOTS` | Slotted-wall angle roots | ✅ |
+   | `VWEDGE` | Viscous wedge corrections | ✅ |
+   | `WANGLE` | Wedge angle for viscous correction | ✅ |
+   | `FINDSK` | Find shock location | ✅ |
+   | `NEWISK` | Shock index adjustment | ✅ |
+   | `MACHMP` | Print map of Mach number | ✅ |
 
 3. **`spline_module.f90`** - Cubic spline interpolation
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `SPLN1(X, Y, N)` | `spline_module.f90` | Set up cubic spline coefficients |  |
-   | `SPLN1X(X, Y, N, XP, YP, DYP)` | `spline_module.f90` | Evaluate spline at point XP |  |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `SPLN1(X, Y, N)` | Set up cubic spline coefficients |  |
+   | `SPLN1X(X, Y, N, XP, YP, DYP)` | Evaluate spline at point XP |  |
 
 4. **`airfoil_module.f90`** - Geometry handling
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `BODY` | `airfoil_module.f90` | Airfoil geometry processing | ✅ |
-   | `PRBODY` | `airfoil_module.f90` | Geometry summary | ✅ |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `BODY` | Airfoil geometry processing |  |
+   | `PRBODY` | Geometry summary |  |
 
 5. **`mesh_module.f90`** - Mesh operations
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `AYMESH` | `mesh_module.f90` | Analytical mesh generation | ✅ |
-   | `CKMESH` | `mesh_module.f90` | Mesh validation/adjustment | ✅ |
-   | `CUTOUT` | `mesh_module.f90` | Mesh coarsening | ✅ |
-   | `REFINE` | `mesh_module.f90` | Mesh refinement | ✅ |
-   | `ISLIT(X)` | `mesh_module.f90` | Leading/trailing edge location | ✅ |
-   | `JSLIT(Y)` | `mesh_module.f90` | Upper/lower surface location | ✅ |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `AYMESH` | Analytical mesh generation |  |
+   | `CKMESH` | Mesh validation/adjustment |  |
+   | `CUTOUT` | Mesh coarsening |  |
+   | `REFINE` | Mesh refinement |  |
+   | `ISLIT(X)` | Leading/trailing edge location |  |
+   | `JSLIT(Y)` | Upper/lower surface location |  |
 
 6. **`solver_module.f90`** - Numerical setup
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `ANGLE` | `solver_module.f90` | Angle potential calculation | ✅ |
-   | `BCEND` | `solver_module.f90` | Boundary condition application | ✅ |
-   | `DIFCOE` | `solver_module.f90` | Finite difference coefficients | ✅ |
-   | `EXTRAP` | `solver_module.f90` | Far-field extrapolation | ✅ |
-   | `FARFLD` | `solver_module.f90` | Far-field boundary setup | ✅ |
-   | `SETBC(IJUMP)` | `solver_module.f90` | Solution limits and BC setup | ✅ |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `ANGLE` | Angle potential calculation |  |
+   | `BCEND` | Boundary condition application |  |
+   | `DIFCOE` | Finite difference coefficients |  |
+   | `EXTRAP` | Far-field extrapolation |  |
+   | `FARFLD` | Far-field boundary setup |  |
+   | `SETBC(IJUMP)` | Solution limits and BC setup |  |
 
 7. **`numerical_solvers.f90`** - Core algorithms
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `SOLVE` | `numerical_solvers.f90` | Main iteration loop | ✅ |
-   | `SYOR` | `numerical_solvers.f90` | SOR sweep | ✅ |
-   | `GUESSP` | `numerical_solvers.f90` | Solution initialization |  |
-   | `RECIRC` | `numerical_solvers.f90` | Circulation updates | ✅ |
-   | `REDUB` | `numerical_solvers.f90` | Doublet strength updates | ✅ |
-   | `RESET` | `numerical_solvers.f90` | Far-field boundary updates | ✅ |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `SOLVE` | Main iteration loop |  |
+   | `SYOR` | SOR sweep |  |
+   | `GUESSP` | Solution initialization |  |
+   | `RECIRC` | Circulation updates |  |
+   | `REDUB` | Doublet strength updates |  |
+   | `RESET` | Far-field boundary updates |  |
 
 8. **`io_module.f90`** - Input/output operations
 
-   | Original Subroutine | Modern Location | Description | Status |
-   |---------------------|-----------------|-------------|---------|
-   | `READIN` | `io_module.f90` | Input parameter reading | ✅ |
-   | `SCALE` | `io_module.f90` | Variable scaling | ✅ |
-   | `ECHINP` | `io_module.f90` | Input echoing | ✅ |
-   | `PRINT` | `io_module.f90` | Main output driver |  |
-   | `PRINT1` | `io_module.f90` | Body Cp and Mach output |  |
-   | `PRTFLD` | `io_module.f90` | Field output | ✅ |
-   | `PRTMC` | `io_module.f90` | Flow type mapping | ✅ |
-   | `PRTSK` | `io_module.f90` | Shock wave output | ✅ |
-   | `PRTWAL` | `io_module.f90` | Wall condition output | ✅ |
-   | `INPERR(I)` | `io_module.f90` | Error message output | ✅ |
-   | `DLAOUT` | `io_module.f90` | Output Cp data | ✅ |
-   | `LOADP` | `io_module.f90` | Read restart file | ✅ |
-   | `CPPLOT` | `io_module.f90` | Cp plot preparation | ✅ |
-   | `FIXPLT` | `io_module.f90` | Plot array construction | ✅ |
-   | `SAVEP` | `io_module.f90` | Solution storage | ✅ |
-   | `CDCOLE` | `numerical_solvers.f90` | Drag coefficient assembly | ✅ |
-   | `M1LINE` | `io_module.f90` | Sonic line detection | ✅ |
-   | `PLTSON` | `io_module.f90` | Sonic line printer | ✅ |
+   | Original Subroutine | Description | Status |
+   |---------------------|-------------|---------|
+   | `READIN` | Input parameter reading |  |
+   | `SCALE` | Variable scaling |  |
+   | `ECHINP` | Input echoing |  |
+   | `PRINT` | Main output driver |  |
+   | `PRINT1` | Body Cp and Mach output |  |
+   | `PRTFLD` | Field output |  |
+   | `PRTMC` | Flow type mapping |  |
+   | `PRTSK` | Shock wave output |  |
+   | `PRTWAL` | Wall condition output |  |
+   | `INPERR(I)` | Error message output |  |
+   | `DLAOUT` | Output Cp data |  |
+   | `LOADP` | Read restart file |  |
+   | `CPPLOT` | Cp plot preparation |  |
+   | `FIXPLT` | Plot array construction |  |
+   | `SAVEP` | Solution storage |  |
+   | `CDCOLE` | Drag coefficient assembly |  |
+   | `M1LINE` | Sonic line detection |  |
+   | `PLTSON` | Sonic line printer |  |
 
 ### Compilation Dependencies
 

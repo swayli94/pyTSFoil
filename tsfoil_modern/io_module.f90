@@ -51,9 +51,9 @@ contains
 
   end subroutine close_output_files
   
-  ! Main input reading routine - reads one case at a time
-  ! Reads title card, namelist input, and manages restart data for current case
-  ! This matches the original TSFoil READIN functionality exactly
+  ! Main input reading routine - reads one case at a time and returns for processing
+  ! Reads title card, namelist input, and manages restart data for current case  
+  ! The original READIN is designed to be called once per case from main program
   subroutine READIN()
     implicit none    
     character(len=4), parameter :: DONE = 'FINI'  ! Declare DONE to match original exactly
