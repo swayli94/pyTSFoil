@@ -8,7 +8,7 @@ REM Clean up any previous compilation files
 del *.mod *.o *.exe 2>nul
 
 REM Set compiler flags
-set FFLAGS=-O2 -Wall -fcheck=all
+set FFLAGS=-O2 -Wall -fcheck=all -ffpe-trap=invalid,zero,overflow
 
 REM Compile modules in dependency order
 echo Compiling common_data module...

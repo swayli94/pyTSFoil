@@ -87,10 +87,10 @@ contains
       first_call = .false.
 
     end if
-
-    ! Timing code to match original (TIME2 would need system-specific implementation)
-    TIME1 = TIME2
-
+    
+    TIME1 = 0.0
+    TIME2 = 0.0
+    
     ! TIME2 = get_time()  ! Would need system-specific timing
     ELPTM = TIME2 - TIME1
     if (ELPTM >= 0.01) then
@@ -119,9 +119,11 @@ contains
     if (TITLE(1) == DONE) then
         stop  ! Terminate program exactly as original
     end if
+    write(*,'(A)') 'DEBUG: Termination check passed'    ! Read namelist input for this case
 
-    ! Read namelist input for this case
+    call check_fp_exceptions()
     read(UNIT_INPUT, INP, iostat=ios)
+    write(*,'(A,I0)') 'DEBUG: Namelist read iostat = ', ios
     
     ! Check if namelist read was successful
     if (ios /= 0) then
@@ -131,6 +133,7 @@ contains
     
     ! Print input namelist for debugging
     call PRINT_INP_NAMELIST()
+    write(*,'(A)') 'DEBUG: PRINT_INP_NAMELIST completed'
 
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then

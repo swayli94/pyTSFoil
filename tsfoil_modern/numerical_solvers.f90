@@ -343,6 +343,9 @@ contains
             exit
         end if
         
+        ! Check for floating-point exceptions during iteration
+        call check_iteration_fp_exceptions(ITER)
+        
         ! Check divergence
         if (ERROR >= DVERGE) then
             ABORT1 = .true.
@@ -486,5 +489,41 @@ contains
     end if
 
   end subroutine RESET
+
+!===============================================================================
+! Subroutine to check for floating-point exceptions during iterations
+!===============================================================================
+subroutine check_iteration_fp_exceptions(iter_num)
+  use, intrinsic :: ieee_exceptions
+  implicit none
+  
+  integer, intent(in) :: iter_num
+  logical :: flag_invalid, flag_overflow, flag_divide_by_zero
+  
+  ! Get the status of critical floating-point exception flags
+  call ieee_get_flag(ieee_invalid, flag_invalid)
+  call ieee_get_flag(ieee_overflow, flag_overflow)
+  call ieee_get_flag(ieee_divide_by_zero, flag_divide_by_zero)
+  
+  ! Report and halt if any critical exceptions occurred
+  if (flag_invalid) then
+    write(*,'(A,I0)') 'FATAL: IEEE_INVALID exception (NaN) detected at iteration ', iter_num
+    write(*,'(A)') 'This indicates invalid mathematical operations (e.g., 0/0, sqrt(-1))'
+    stop 2
+  end if
+  
+  if (flag_overflow) then
+    write(*,'(A,I0)') 'FATAL: IEEE_OVERFLOW exception detected at iteration ', iter_num
+    write(*,'(A)') 'This indicates numerical values exceeded representable range'
+    stop 3
+  end if
+  
+  if (flag_divide_by_zero) then
+    write(*,'(A,I0)') 'FATAL: IEEE_DIVIDE_BY_ZERO exception detected at iteration ', iter_num
+    write(*,'(A)') 'This indicates division by zero occurred'
+    stop 4
+  end if
+  
+end subroutine check_iteration_fp_exceptions
 
 end module numerical_solvers

@@ -44,6 +44,7 @@ module common_data
   public :: UNIT_INPUT, UNIT_OUTPUT, UNIT_RESTART
   public :: UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT  ! DLAOUT input and output files
   public :: UNIT_SUMMARY, UNIT_CPXS, UNIT_MMAP, UNIT_CNVG, UNIT_MESH, UNIT_CPMP
+  public :: check_fp_exceptions
   
   ! Mesh indices (from COMMON /COM1/)
   integer :: IMIN, IMAX       ! grid i-range
@@ -358,6 +359,12 @@ contains
     ! Initialize YIN array to zero (from BLOCK DATA)
     YIN = 0.0
     
+    ! Initialize airfoil coordinate arrays to zero to prevent namelist floating-point exceptions
+    XU = 0.0
+    YU = 0.0
+    XL = 0.0
+    YL = 0.0
+    
     ! Initialize XIN array with default mesh distribution (from BLOCK DATA)
     XIN(1:77) = (/ -1.075, -0.950, -0.825, -0.7, -0.575, -0.45, -0.35, &
                    -0.25, -0.175, -0.125, -0.075, -0.0525, -0.035, -0.0225, -0.015, &
@@ -456,5 +463,52 @@ contains
     THETA = 0.0
 
   end subroutine initialize_common
+
+  ! Subroutine to check for floating-point exceptions
+  subroutine check_fp_exceptions()
+    use, intrinsic :: ieee_exceptions
+    implicit none
+    
+    logical :: flag_invalid, flag_overflow, flag_divide_by_zero, flag_underflow, flag_inexact
+    
+    ! Get the status of all floating-point exception flags
+    call ieee_get_flag(ieee_invalid, flag_invalid)
+    call ieee_get_flag(ieee_overflow, flag_overflow)
+    call ieee_get_flag(ieee_divide_by_zero, flag_divide_by_zero)
+    call ieee_get_flag(ieee_underflow, flag_underflow)
+    call ieee_get_flag(ieee_inexact, flag_inexact)
+    
+    ! Report any exceptions that occurred
+    if (flag_invalid) then
+      write(*,'(A)') 'WARNING: IEEE_INVALID exception occurred (NaN generated)'
+    end if
+    
+    if (flag_overflow) then
+      write(*,'(A)') 'WARNING: IEEE_OVERFLOW exception occurred'
+    end if
+    
+    if (flag_divide_by_zero) then
+      write(*,'(A)') 'WARNING: IEEE_DIVIDE_BY_ZERO exception occurred'
+    end if
+    
+    if (flag_underflow) then
+      write(*,'(A)') 'WARNING: IEEE_UNDERFLOW exception occurred'
+    end if
+    
+    if (flag_inexact) then
+      write(*,'(A)') 'INFO: IEEE_INEXACT exception occurred (normal for most calculations)'
+    end if
+    
+    ! Halt the program if any critical exceptions occurred
+    if (flag_invalid .or. flag_overflow .or. flag_divide_by_zero) then
+      write(*,'(A)') 'FATAL: Critical floating-point exceptions detected!'
+      write(*,'(A)') 'Program terminating due to floating-point errors.'
+      stop
+    end if
+
+    write(*,'(A)') 'Floating-point exception check completed successfully.'
+    
+  end subroutine check_fp_exceptions
+
 
 end module common_data

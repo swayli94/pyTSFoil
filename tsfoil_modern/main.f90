@@ -10,16 +10,24 @@ program tsfoil_main
   use mesh_module
   use solver_module
   use numerical_solvers
+  use, intrinsic :: ieee_exceptions
+  use, intrinsic :: ieee_arithmetic
   implicit none
 
   integer :: ios
-
+  logical :: flag_invalid, flag_overflow, flag_divide_by_zero, flag_underflow, flag_inexact
   ! Program header
   write(*,'(A)') '================================================='
   write(*,'(A)') '     TSFOIL - Transonic Small-Perturbation     '
   write(*,'(A)') '         Airfoil Analysis Program              '
   write(*,'(A)') '            Modernized Fortran Version         '
   write(*,'(A)') '================================================='
+  write(*,*)
+
+  ! Enable floating-point exception handling
+  call ieee_set_halting_mode(ieee_all, .true.)
+  write(*,'(A)') 'Floating-point exception handling enabled'
+  write(*,'(A)') 'Program will halt on: INVALID, OVERFLOW, DIVIDE_BY_ZERO, UNDERFLOW'
   write(*,*)
 
   ! Initialize data structures
@@ -42,7 +50,9 @@ program tsfoil_main
 
     ! Call READIN to read one case - it handles termination internally with STOP
     ! when "FINI" card is encountered, just like the original
+    write(*,'(A)') 'DEBUG: Calling READIN...'
     call READIN()
+    write(*,'(A)') 'DEBUG: READIN completed'
     
     ! Continue with complete TSFOIL solution workflow
     write(*,'(A)') 'Starting TSFOIL solution sequence...'
@@ -123,6 +133,10 @@ program tsfoil_main
   close(UNIT_INPUT)
   close(UNIT_OUTPUT)
   
+  ! Check for any floating-point exceptions before finishing
+  call check_fp_exceptions()
+  
   write(*,'(A)') 'Program completed normally'
 
 end program tsfoil_main
+
