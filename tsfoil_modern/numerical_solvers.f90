@@ -152,17 +152,15 @@ contains
             P(J,I) = P(J,I) + RHS(J)
         end do
         
-        ! Compute max error
-        if (OUTERR) then
-            do J = JBOT, JTOP
-                ARHS = abs(RHS(J))
-                if (ARHS > ERROR) then
-                    ERROR = ARHS
-                    IERROR = I
-                    JERROR = J
-                end if
-            end do
-        end if
+        ! Compute max error (always needed for convergence checking)
+        do J = JBOT, JTOP
+            ARHS = abs(RHS(J))
+            if (ARHS > ERROR) then
+                ERROR = ARHS
+                IERROR = I
+                JERROR = J
+            end if
+        end do
         
         ! Supersonic freestream flow condition
         if (AK <= 0.0 .and. I == IDOWN-1) then
@@ -228,7 +226,7 @@ contains
     
     ! Main iteration loop
     do ITER = 1, MAXITM
-      
+
         ! Initialize EMU array
         I1 = 1
         I2 = 2
@@ -247,8 +245,9 @@ contains
         ! Set output flag for this iteration
         OUTERR = .false.
         if (mod(ITER, IPRTER) == 0) OUTERR = .true.
-        
-        ! Reset error tracking
+        if (ITER == 1) OUTERR = .true.
+
+        ! Reset error tracking for this iteration
         ERROR = 0.0
         if (OUTERR) BIGRL = 0.0
         
@@ -294,7 +293,8 @@ contains
             
             write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
             write(UNIT_CNVG, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
-            
+            write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
+
             ! Output viscous wedge quantities if enabled
             if (NWDGE > 0) then
                 
@@ -339,6 +339,7 @@ contains
         if (ERROR <= CVERGE) then
             CONVERGED = .true.
             write(UNIT_OUTPUT, '(//20X,"........SOLUTION CONVERGED........")')
+            write(*,*) 'Solution converged after', ITER, 'iterations.'
             exit
         end if
         
@@ -346,6 +347,7 @@ contains
         if (ERROR >= DVERGE) then
             ABORT1 = .true.
             write(UNIT_OUTPUT, '(//20X,"******  SOLUTION DIVERGED  ******")')
+            write(*,*) 'Solution diverged after', ITER, 'iterations.'
             exit
         end if
 
@@ -354,6 +356,7 @@ contains
     ! Handle case where iteration limit is reached
     if (.not. CONVERGED .and. .not. ABORT1) then
       write(UNIT_OUTPUT, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
+      write(*,*) 'Iteration limit reached after', MAXITM, 'iterations.'
     end if
 
     return

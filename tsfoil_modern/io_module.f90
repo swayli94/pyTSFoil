@@ -2,6 +2,7 @@
 ! Module for input/output routines
 
 module io_module
+  use common_data
   implicit none
 
   ! Complete namelist matching the original /INP/ namelist exactly
