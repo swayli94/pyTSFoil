@@ -5320,7 +5320,7 @@ SUBROUTINE TRAP(X,Y,N,SUM)
 !                  RESULTING INTEGRAL.
 !                  CALLED BY - CDCOLE, DRAG, PITCH, REDUB.
 !                  INTEGRAL
-    DIMENSION X(1),Y(1)
+    DIMENSION X(N),Y(N)
     SUM = 0.
     NM1 = N-1
     DO 10 I=1,NM1

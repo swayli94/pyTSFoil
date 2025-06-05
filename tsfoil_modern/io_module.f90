@@ -129,7 +129,7 @@ contains
     end if
     
     ! Print input namelist for debugging
-    call PRINT_INP_NAMELIST()
+    ! call PRINT_INP_NAMELIST()
 
     ! Handle PSTART=3 case - test if P array in core is usable (original check)
     if (PSTART == 3) then
