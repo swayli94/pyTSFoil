@@ -18,7 +18,7 @@ contains
     use common_data, only: BCFOIL, NL, NU, XL, XU, YL, YU, RIGF, IFLAP, DELFLP, FLPLOC
     use common_data, only: PHYS, DELTA, FSYM, UNIT_INPUT
     use math_module, only: SIMP
-    use spline_module, only: SPLN1, SPLN1X
+    use spline_module, only: SPLN1, SPLN1X, set_boundary_conditions
     implicit none
     integer :: I, IC, IFP, IERR, ISYM, N
     real :: Z, RTZ, Z2, Z3, Z4
@@ -92,7 +92,9 @@ contains
       if (PHYS) DELINV = 1.0/DELTA
       ! Upper surface
       DY1 = (YU(2) - YU(1))/(XU(2) - XU(1))
-      DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))      
+      DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))
+      ! Set boundary conditions: K1=1, K2=1 for first derivative specified at both ends
+      call set_boundary_conditions(1, 1, DY1, DY2)
       call SPLN1(XU, YU, NU)
       IC = 0
       do I = ILE, ITE
@@ -106,6 +108,8 @@ contains
       ! Lower surface
       DY1 = (YL(2) - YL(1))/(XL(2) - XL(1))
       DY2 = (YL(NL) - YL(NL-1))/(XL(NL) - XL(NL-1))
+      ! Set boundary conditions: K1=1, K2=1 for first derivative specified at both ends
+      call set_boundary_conditions(1, 1, DY1, DY2)
       call SPLN1(XL, YL, NL)
       IC = 0
       do I = ILE, ITE
@@ -134,6 +138,8 @@ contains
       DY1 = (YU(2) - YU(1))/(XU(2) - XU(1))
       DY2 = (YU(NU) - YU(NU-1))/(XU(NU) - XU(NU-1))
 
+      ! Set boundary conditions: K1=1, K2=1 for first derivative specified at both ends
+      call set_boundary_conditions(1, 1, DY1, DY2)
       call SPLN1(XU, YU, NU)
 
       IC = 0
@@ -166,6 +172,8 @@ contains
         DY1 = (YL(2) - YL(1))/(XL(2) - XL(1))
         DY2 = (YL(NL) - YL(NL-1))/(XL(NL) - XL(NL-1))
 
+        ! Set boundary conditions: K1=1, K2=1 for first derivative specified at both ends
+        call set_boundary_conditions(1, 1, DY1, DY2)
         call SPLN1(XL, YL, NL)
 
         IC = 0
