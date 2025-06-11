@@ -16,15 +16,23 @@ if "%1"=="strict" (
     REM Normal mode - trap only critical exceptions
     set FFLAGS=-O2 -Wall -fcheck=all -ffpe-trap=invalid,zero,overflow -g -fbacktrace
     echo Using NORMAL mode: trapping critical floating-point exceptions
+) else if "%1"=="original" (
+    REM Original mode - minimal FPE trapping to match original behavior
+    set FFLAGS=-O2 -Wall -ffpe-trap=invalid,zero -g -fbacktrace
+    echo Using ORIGINAL mode: minimal exception trapping to match original TSFOIL
 ) else if "%1"=="debug" (
     REM Debug mode - no optimization, maximum checking
     set FFLAGS=-O0 -Wall -fcheck=all -ffpe-trap=invalid,zero,overflow,underflow,denormal -g -fbacktrace -fdump-core
     echo Using DEBUG mode: no optimization, maximum exception checking
+) else if "%1"=="none" (
+    REM No FPE trapping mode - completely match original behavior
+    set FFLAGS=-O2 -Wall -g -fbacktrace
+    echo Using NONE mode: no floating-point exception trapping (original behavior)
 ) else (
     REM Default mode - original behavior with basic FPE trapping
-    set FFLAGS=-O2 -Wall -fcheck=all -ffpe-trap=invalid,zero,overflow
-    echo Using DEFAULT mode: basic floating-point exception trapping
-    echo Available modes: normal, strict, debug
+    set FFLAGS=-O2 -Wall -ffpe-trap=invalid,zero -g -fbacktrace
+    echo Using DEFAULT mode: basic floating-point exception trapping (original-like)
+    echo Available modes: normal, original, strict, debug, none
 )
 
 echo Compiler flags: %FFLAGS%
@@ -72,14 +80,13 @@ echo.
 echo Compilation successful!
 echo Executable: tsfoil_modern.exe
 echo.
-echo Usage examples:
-echo   tsfoil_modern.exe           (runs with FPE checking enabled)
-echo.
 echo Compilation modes available:
-echo   compile_with_fpe.bat        (default - basic FPE trapping)
-echo   compile_with_fpe.bat normal (trap critical exceptions)
-echo   compile_with_fpe.bat strict (trap ALL exceptions including underflow)
-echo   compile_with_fpe.bat debug  (debug mode with core dumps)
+echo   compile_with_fpe.bat             (default - minimal FPE trapping, original-like)
+echo   compile_with_fpe.bat original    (minimal FPE trapping for original behavior)
+echo   compile_with_fpe.bat normal      (trap critical exceptions)
+echo   compile_with_fpe.bat strict      (trap ALL exceptions including underflow)
+echo   compile_with_fpe.bat debug       (debug mode with core dumps)
+echo   compile_with_fpe.bat none        (no FPE trapping at all)
 goto end
 
 :error

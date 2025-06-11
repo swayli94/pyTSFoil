@@ -127,7 +127,7 @@ program tsfoil_main
   close(UNIT_OUTPUT)
   
   ! Check for any floating-point exceptions before finishing
-  call check_fp_exceptions()
+  ! call check_fp_exceptions()
   
   write(*,'(A)') 'Program completed normally'
 

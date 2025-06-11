@@ -1,6 +1,6 @@
 # TSFOIL Modern Fortran Version
 
-This directory contains the modernized version of the TSFOIL transonic small-perturbation airfoil analysis program, converted from Fortran 77 to modern Fortran.
+This directory contains the modernized version of the TSFOIL transonic small-perturbation airfoil analysis program, converted from Fortran 77 (tsfoil.f90) to modern Fortran.
 
 ## Project Status: Debugging
 
