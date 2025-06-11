@@ -115,25 +115,25 @@ tsfoil_modern/
 
    | Original Subroutine | Description | Status |
    |---------------------|-------------|--------|
-   | `READIN` | Input parameter reading |  |
-   | `SCALE` | Variable scaling |  |
-   | `ECHINP` | Input echoing |  |
-   | `PRINT` | Main output driver |  |
-   | `PRINT1` | Body Cp and Mach output |  |
-   | `PRTFLD` | Field output |  |
-   | `PRTMC` | Flow type mapping |  |
-   | `PRTSK` | Shock wave output |  |
-   | `PRTWAL` | Wall condition output |  |
-   | `INPERR(I)` | Error message output |  |
-   | `DLAOUT` | Output Cp data |  |
-   | `LOADP` | Read restart file |  |
-   | `CPPLOT` | Cp plot preparation |  |
-   | `FIXPLT` | Plot array construction |  |
-   | `SAVEP` | Solution storage |  |
-   | `CDCOLE` | Drag coefficient assembly |  |
-   | `M1LINE` | Sonic line detection |  |
-   | `PLTSON` | Sonic line printer |  |
-   | `GUESSP` | Solution initialization |  |
+   | `READIN` | Input parameter reading | ✅ |
+   | `SCALE` | Variable scaling | ✅ |
+   | `ECHINP` | Input echoing | ✅ |
+   | `PRINT` | Main output driver | ✅ |
+   | `PRINT1` | Body Cp and Mach output | ✅ |
+   | `PRTFLD` | Field output | ✅ |
+   | `PRTMC` | Flow type mapping | ✅ |
+   | `PRTSK` | Shock wave output | ✅ |
+   | `PRTWAL` | Wall condition output | ✅ |
+   | `INPERR(I)` | Error message output | ✅ |
+   | `DLAOUT` | Output Cp data | ✅ |
+   | `LOADP` | Read restart file | ✅ |
+   | `CPPLOT` | Cp plot preparation | ✅ |
+   | `FIXPLT` | Plot array construction | ✅ |
+   | `SAVEP` | Solution storage | ✅ |
+   | `CDCOLE` | Drag coefficient assembly | ✅ |
+   | `M1LINE` | Sonic line detection | ✅ |
+   | `PLTSON` | Sonic line printer | ✅ |
+   | `GUESSP` | Solution initialization | ✅ |
 
 ### Compilation Dependencies
 
