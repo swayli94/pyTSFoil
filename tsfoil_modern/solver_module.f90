@@ -115,20 +115,20 @@ contains
   end subroutine DIFCOE
 
   ! Define solution limits and apply body slope boundary conditions
+  ! SUBROUTINE SETBC sets the limits on range of I and J
+  ! for solution of the difference equations.
+  ! The body slope boundary condition at the current
+  ! X mesh points on the body are multiplied by mesh
+  ! spacing constants and entered into arrays FXUBC and
+  ! FXLBC for use in subroutine SYOR.
   subroutine SETBC(IJUMP)
-    ! SUBROUTINE SETBC sets the limits on range of I and J
-    ! for solution of the difference equations.
-    ! The body slope boundary condition at the current
-    ! X mesh points on the body are multiplied by mesh
-    ! spacing constants and entered into arrays FXUBC and
-    ! FXLBC for use in subroutine SYOR.
-    use common_data, only: IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, J1, J2
-    use common_data, only: ILE, ITE, JUP, JLOW, FXLBC, FXUBC, FXL, FXU
-    use common_data, only: AK, ALPHA, BCTYPE, POR, IREF, KSTEP, IFOIL
+    use common_data, only: IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT
+    use common_data, only: ILE, ITE, FXLBC, FXUBC, FXL, FXU
+    use common_data, only: AK, ALPHA, BCTYPE, POR, KSTEP, IFOIL
     use common_data, only: CYYBLU, CYYBUD, WSLP
     implicit none
     integer, intent(in) :: IJUMP
-    integer :: I, IF, N, NFOIL, INT, JINT
+    integer :: I, IF1, N, NFOIL, INT, JINT
 
     ! Set limits on I and J indices
     if (IJUMP <= 0) then
@@ -144,9 +144,6 @@ contains
       if (BCTYPE == 5 .and. POR > 1.5) JINT = 1
       JBOT = JMIN + JINT
       JTOP = JMAX - JINT
-      J1 = JBOT + 1
-      J2 = JTOP - 1
-
     end if
 
     ! Airfoil body boundary condition
@@ -158,37 +155,34 @@ contains
     
     ! Enter body slopes at mesh points on airfoil
     ! into arrays for body boundary conditions
-    if (IREF <= 0) KSTEP = 1
-    if (IREF == 1) KSTEP = 2
-    if (IREF == 2) KSTEP = 4
+    KSTEP = 1
     
     NFOIL = ITE - ILE + 1
-    IF = IFOIL + KSTEP
+    IF1 = IFOIL + KSTEP
     I = ITE + 1
     
     do N = 1, NFOIL
       I = I - 1
-      IF = IF - KSTEP
-      FXLBC(I) = CYYBLU * (FXL(IF) - ALPHA + WSLP(I,2))
-      FXUBC(I) = CYYBUD * (FXU(IF) - ALPHA + WSLP(I,1))
+      IF1 = IF1 - KSTEP
+      FXLBC(I) = CYYBLU * (FXL(IF1) - ALPHA + WSLP(I,2))
+      FXUBC(I) = CYYBUD * (FXU(IF1) - ALPHA + WSLP(I,1))
     end do
 
   end subroutine SETBC
 
   ! Apply boundary conditions on each i-line (upper/lower boundaries)
-  subroutine BCEND()
-    ! SUBROUTINE BCEND modifies the DIAG and RHS vectors
-    ! on each I line in the appropriate way to include the
-    ! boundary conditions at JBOT and JTOP.
-    ! Called by - SYOR.
-    
-    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE, &
-                          JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2, &
-                          AK, ALPHA, DUB, GAM1, RTK, &
-                          XDIFF, YDIFF, &
-                          DIAG, RHS, SUB, SUP, &
-                          CYYC, CYYD, CYYU, IVAL, &
-                          BCTYPE, CIRCFF, FHINV, POR, CIRCTE, &
+  ! SUBROUTINE BCEND modifies the DIAG and RHS vectors
+  ! on each I line in the appropriate way to include the
+  ! boundary conditions at JBOT and JTOP.
+  ! Called by - SYOR.
+  subroutine BCEND()    
+    use common_data, only: P, X, Y, IUP, IDOWN, &
+                          JMIN, JMAX, JTOP, JBOT, &
+                          AK, RTK, &
+                          XDIFF, &
+                          DIAG, RHS, &
+                          CYYD, CYYU, IVAL, &
+                          BCTYPE, CIRCFF, FHINV, POR, &
                           UNIT_OUTPUT
     implicit none
     
@@ -545,10 +539,10 @@ contains
   subroutine EXTRAP(XP, YP, PNEW)
     ! COMPUTE P AT X, YP USING FAR FIELD SOLUTION ! FOR SUBSONIC FLOW
     ! CALLED BY - GUESSP.
-    use common_data, only: AK, DUB, GAM1, RTK, BCTYPE, CIRCFF, FHINV, POR, CIRCTE
-    use common_data, only: F, H, HALFPI, PI, RTKPOR, TWOPI
-    use common_data, only: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
-    use common_data, only: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
+    use common_data, only: AK, DUB, RTK, BCTYPE, CIRCFF
+    use common_data, only: F, H, PI, TWOPI
+    use common_data, only: B, BETA0, BETA2, PSI0, PSI2
+    use common_data, only: ALPHA0, ALPHA1, XSING, OMEGA0, OMEGA1, JET
     implicit none
     real, intent(in) :: XP, YP    ! Coordinates where P is to be computed
     real, intent(out) :: PNEW     ! Computed potential value    ! Local variables

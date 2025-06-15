@@ -4,20 +4,25 @@
 module common_data
   implicit none
   private
-  public :: IMIN, IMAX, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
+  
+  ! Mesh size parameter - change this to adjust mesh dimensions
+  integer, parameter :: N_MESH_POINTS = 1000
+  integer, parameter :: NMP_plus2 = N_MESH_POINTS + 2  ! Number of mesh points + 2
+  integer, parameter :: NMP_plus1 = N_MESH_POINTS + 1  ! Number of mesh points + 1
+  
+  public :: N_MESH_POINTS, NMP_plus2, NMP_plus1
+  public :: IMIN, IMAX, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
   public :: AK, ALPHA, DUB, GAM1, RTK, PHYS
-  public :: IREF, ICUT, KSTEP, ABORT1
-  public :: XIN, YIN, AMESH
+  public :: KSTEP, ABORT1
+  public :: XIN, YIN
   public :: P, X, Y  ! Main solution and coordinate arrays
   public :: FL, FXL, FU, FXU, CAMBER, THICK, XFOIL, VOL, IFOIL
-  public :: BCFOIL, NL, NU, XL, XU, YL, YU, PERCENT, CHORD
+  public :: NL, NU, XL, XU, YL, YU, PERCENT, CHORD
   public :: RIGF, IFLAP, DELFLP, FLPLOC, FSYM
-  public :: SIMDEF, DELTA, EMACH, PRTFLO, DELRT2, EMROOT, CL
+  public :: SIMDEF, DELTA, EMACH, DELRT2, EMROOT, CL
   public :: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR, YFACT, VFACT, SONVEL
   public :: F, H, HALFPI, PI, RTKPOR, TWOPI
-  public :: ALPHAO, CLOLD, DELTAO, DUBO, EMACHO, VOLO
-  public :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
-  public :: PSAVE, TITLE, TITLEO, XOLD, YOLD
+  public :: IMAXI, JMAXI
   public :: XMID, YMID  ! Additional public declarations for io_module and other modules
   public :: BCTYPE, CPL, CPU, C1, CXL, CXC, CXR
   public :: CXXC, CXXL, CXXR, CYYC, CYYD, CYYU, IVAL, XDIFF, YDIFF
@@ -25,41 +30,35 @@ module common_data
   public :: CYYBLU, CYYBLC, CYYBLD, FXLBC, FXUBC    
   public :: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
   public :: DIAG, RHS, SUB, SUP
-  public :: JLIN, IPC, VT, PSTART, CIRCFF, CIRCTE
+  public :: CIRCFF, CIRCTE
   public :: PJUMP, FCR, KUTTA, CVERGE, ERROR, IERROR, JERROR, MAXIT, IPRTER
-  public :: CLSET, IDLA
-  public :: I1, I2  ! Iteration control variables from COM18
+  public :: CLSET
   public :: EPS, WE, NWDGE, REYNLD, WCONST, WSLP, WI
-  public :: XCP, CPP  ! For DLAOUT functionality
   public :: XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
   public :: DVERGE, GAM, POR, FHINV, WCIRC
   public :: YFREE, YTUN, JMXF, JMXT
   public :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
   public :: ALPHA0, ALPHA1, ALPHA2, XSING, OMEGA0, OMEGA1, OMEGA2, JET
-  public :: XI, ARG, REST  ! Working arrays for DRAG function
   public :: THETA  ! COM33: angle array for each mesh point
   public :: EMU, POLD, DCIRC, OUTERR  ! Missing variables from COM18
-  public :: BIGRL, IRL, JRL  ! COM32: maximum residual tracking variables
-  public :: initialize_common
-  public :: UNIT_INPUT, UNIT_OUTPUT, UNIT_RESTART
-  public :: UNIT_DLAOUT_INPUT, UNIT_DLAOUT_OUTPUT  ! DLAOUT input and output files
-  public :: UNIT_SUMMARY, UNIT_CPXS, UNIT_MMAP, UNIT_CNVG, UNIT_MESH, UNIT_CPMP
-  public :: check_fp_exceptions
+  public :: initialize_common, INPERR
+  public :: UNIT_INPUT, UNIT_OUTPUT
+  public :: UNIT_SUMMARY, UNIT_CPXS, UNIT_MESH, UNIT_FIELD
   
   ! Mesh indices (from COMMON /COM1/)
-  integer :: IMIN, IMAX       ! grid i-range
+
   integer :: IUP, IDOWN       ! upstream/downstream indices
   integer :: ILE, ITE         ! leading/trailing edge i-indices
-  integer :: JMIN, JMAX       ! grid j-range
-  integer :: JUP, JLOW        ! upper/lower surface j-indices
+  
+  integer :: JUP              ! upper surface j-indices, index of first point where Y > 0.0 (calculated by JSLIT)
+  integer :: JLOW             ! lower surface j-indices, JLOW = JUP - 1 (calculated by JSLIT)
   integer :: JTOP, JBOT       ! far-field top/bottom j-indices
-  integer :: J1, J2           ! auxiliary indices
 
   ! Main solution arrays
-  real, allocatable :: P(:,:)    ! Potential solution array
-  real, allocatable :: X(:), Y(:) ! Coordinate arrays
+  real :: P(NMP_plus2, NMP_plus1)    ! Potential solution array
 
-  ! Flow parameters (from COMMON /COM2/ and logical PHYS)
+
+  ! Flow parameters (from /COM2/)
   real :: AK       ! freestream similarity parameter
   real :: ALPHA    ! angle of attack
   real :: DUB      ! doublet strength
@@ -67,37 +66,45 @@ module common_data
   real :: RTK      ! sqrt(gamma)
   logical :: PHYS  ! physical (True) vs similarity (False)
 
-  ! Control flags and refinement (from COMMON /COM3/)
-  integer :: IREF   ! mesh refinement flag
-  integer :: ICUT   ! number of coarse refinements
+  ! Control flags and refinement (from /COM3/)
   integer :: KSTEP  ! SOR sweep step size
   logical :: ABORT1 ! input abort flag
 
-  ! Analytical mesh arrays (from COMMON /COM4/)
-  real, allocatable :: XIN(:) ! mesh x-coordinates
-  real, allocatable :: YIN(:) ! mesh y-coordinates
-  logical :: AMESH           ! use analytical mesh
+  ! User-input mesh coordinate arrays (from /COM4/)
+  real :: XIN(NMP_plus2), YIN(NMP_plus2)  ! room for 2 extra points in CKMESH
+  
+  ! Mesh coordinate arrays
+  real :: X(NMP_plus2), Y(NMP_plus2) ! room for extra points
 
-  ! Shared data replacing COMMON / COM5/ - / COM30/
+  ! Coarse mesh coordinate arrays: midpoint (from /COM20/)
+  real :: XMID(N_MESH_POINTS), YMID(N_MESH_POINTS)
+
+  integer :: IMIN, IMAX   ! maximum number of grid points in i-direction used in code
+  integer :: JMIN, JMAX   ! maximum number of grid points in j-direction used in code
+  integer :: IMAXI, JMAXI ! User-input maximum number of streamwise (X-direction) and spanwise (Y-direction) grid points
+
   ! COM5: mesh derivative arrays
-  real :: XDIFF(100), YDIFF(100)
+  real :: XDIFF(N_MESH_POINTS), YDIFF(N_MESH_POINTS)
   
   ! COM6: surface and flow arrays
-  real :: FL(100), FXL(100), FU(100), FXU(100), CAMBER(100), THICK(100), XFOIL(100), VOL
+  real :: FU(N_MESH_POINTS), FL(N_MESH_POINTS), FXU(N_MESH_POINTS), FXL(N_MESH_POINTS)
+  real :: CAMBER(N_MESH_POINTS), THICK(N_MESH_POINTS), XFOIL(N_MESH_POINTS)
+  real :: VOL
   integer :: IFOIL
   
   ! COM7: boundary extrapolation/coefficient flags
   real :: CJUP, CJUP1, CJLOW, CJLOW1
 
   ! COM8: solver control parameters
-  real :: CVERGE, DVERGE, TOL, RSAVE
+  real :: CVERGE, DVERGE
   real :: WI = 1.05                 ! SOR relaxation factor (from COM18)
   real :: WE(3)
-  integer :: IPRTER, MAXIT, NEX, N_O, NPRINT, NPT
+  integer :: IPRTER, MAXIT
   
   ! COM9: airfoil definition flags
-  integer :: BCFOIL, NL, NU
-  real :: XL(100), XU(100), YL(100), YU(100), PERCENT, CHORD
+  integer :: NL, NU
+  real :: XL(N_MESH_POINTS), XU(N_MESH_POINTS), YL(N_MESH_POINTS), YU(N_MESH_POINTS)
+  real :: PERCENT, CHORD
   
   ! Airfoil control parameters
   real :: RIGF        ! rigidity factor for transonic effects
@@ -107,16 +114,8 @@ module common_data
   integer :: FSYM     ! symmetry flag
   
   ! COM10: free-stream/tunnel arrays
-  real :: YFREE(100), YTUN(100), GAM
+  real :: YFREE(N_MESH_POINTS), YTUN(N_MESH_POINTS), GAM
   integer :: JMXF, JMXT
-  
-  ! COM11: restart and case storage
-  real :: ALPHAO, CLOLD, DELTAO, DUBO, EMACHO, VOLO
-  integer :: IMINO, IMAXO, IMAXI, JMINO, JMAXO, JMAXI
-  logical :: PSAVE
-  integer :: PSTART
-  character(len=4) :: TITLE(20), TITLEO(20)
-  real :: XOLD(100), YOLD(100)
   
   ! COM12: wall/tunnel constants  
   real :: F, H, HALFPI, PI, RTKPOR, TWOPI
@@ -125,8 +124,10 @@ module common_data
   real :: CDFACT, CLFACT, CMFACT, CPFACT, CPSTAR
   
   ! COM14: Kutta and circulation flags
-  real :: CLSET, WCIRC
-  logical :: FCR, KUTTA
+  real :: CLSET     ! Lift coefficient setpoint
+  real :: WCIRC     ! Weight for circulation jump at trailing edge (0.0-1.0)
+  logical :: FCR    ! Whether difference equations are fully conservative
+  logical :: KUTTA  ! Whether Kutta condition is enforced
   
   ! COM15: vortex/doublet parameters
   real :: B, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
@@ -136,68 +137,54 @@ module common_data
   
   ! COM17: special boundary coefficient arrays
   real :: CYYBLC, CYYBLD, CYYBLU, CYYBUC, CYYBUD, CYYBUU
-  real :: FXLBC(100), FXUBC(100)
-  integer :: ITEMP1, ITEMP2
+  real :: FXLBC(N_MESH_POINTS), FXUBC(N_MESH_POINTS)
     
   ! COM18: error tracking and diagnostics
   real :: ERROR
-  integer :: I1, I2, IERROR, JERROR, IPRINT, LERR, NVAR, STATUS, NEXT
-  real :: EMU(100,2)   ! Missing from COM18 - circulation factors
-  real :: POLD(100,2)  ! Missing from COM18 - old pressure values  
-  real :: DCIRC        ! Missing from COM18 - circulation change
-  logical :: OUTERR    ! Missing from COM18 - outer iteration error (logical)
-  
-  ! COM32: maximum residual tracking (from original COM32)
-  real :: BIGRL        ! Maximum residual value
-  integer :: IRL, JRL  ! Location indices of maximum residual
+  integer :: IERROR, JERROR
+  real :: EMU(N_MESH_POINTS,2)   ! circulation factors
+  real :: POLD(N_MESH_POINTS,2)  ! old potential values  
+  real :: DCIRC        ! circulation change
+  logical :: OUTERR    ! outer iteration error (logical)
   
   ! COM19: jump arrays and pressure jump
-  real :: PJUMP(100)
+  real :: PJUMP(N_MESH_POINTS)
   
   ! COM19: tridiagonal solver arrays
-  real :: DIAG(100), RHS(100), SUB(100), SUP(100)
-  
-  ! COM20: mesh midpoint storage
-  real :: XMID(100), YMID(100)
-  
+  real :: DIAG(N_MESH_POINTS), RHS(N_MESH_POINTS), SUB(N_MESH_POINTS), SUP(N_MESH_POINTS)
+    
   ! COM22: central differencing coefficients
-  real :: CXC(100), CXL(100), CXR(100), CXXC(100), CXXL(100), CXXR(100), C1(100)
+  real :: CXC(N_MESH_POINTS), CXL(N_MESH_POINTS), CXR(N_MESH_POINTS)
+  real :: CXXC(N_MESH_POINTS), CXXL(N_MESH_POINTS), CXXR(N_MESH_POINTS)
+  real :: C1(N_MESH_POINTS)
   
   ! COM23: boundary differencing coefficients
-  real :: CYYC(100), CYYD(100), CYYU(100)
+  real :: CYYC(N_MESH_POINTS), CYYD(N_MESH_POINTS), CYYU(N_MESH_POINTS)
   integer :: IVAL
   
   ! COM24: far-field boundary arrays
-  real :: DTOP(100), DBOT(100), DUP(100), DDOWN(100)
-  real :: VTOP(100), VBOT(100), VUP(100), VDOWN(100)
+  real :: DTOP(N_MESH_POINTS), DBOT(N_MESH_POINTS), DUP(N_MESH_POINTS), DDOWN(N_MESH_POINTS)
+  real :: VTOP(N_MESH_POINTS), VBOT(N_MESH_POINTS), VUP(N_MESH_POINTS), VDOWN(N_MESH_POINTS)
   
-  ! COM25: plot arrays
-  real :: CPL(100), CPU(100)
-  integer :: IDLA
+  ! COM25: pressure coefficient arrays on X-line (Y=0)
+  real :: CPU(N_MESH_POINTS), CPL(N_MESH_POINTS)
   
   ! COM27: transonic similarity state
   real :: CL, DELTA, DELRT2, EMACH, EMROOT, EPS
-  integer :: PRTFLO, SIMDEF
+  integer :: SIMDEF
   real :: SONVEL, VFACT, YFACT
   
   ! COM28: boundary condition identifiers
   integer :: BCTYPE
   real :: CIRCFF, FHINV, POR, CIRCTE
   
-  ! COM30: general workspace arrays  
-  real :: XI(100), ARG(100), REST(204)  ! Additional variables needed by other modules
-  real :: XCP(100), CPP(304)  ! Arrays for DLAOUT subroutine - CP interpolation points and values
-  integer :: JLIN(3)           ! Line indices for printing
-  character(len=1) :: IPC(100) ! Flow regime indicators
-  real :: VT(100,2)            ! Velocity time history
-
   ! COM33: angle array for each mesh point
-  real :: THETA(100,100)
+  real :: THETA(N_MESH_POINTS,N_MESH_POINTS)
   
   ! COM34: viscous wedge parameters  
   integer :: NWDGE
   real :: REYNLD, WCONST
-  real :: WSLP(100,2)  ! Viscous wedge slopes
+  real :: WSLP(N_MESH_POINTS,2)  ! Viscous wedge slopes
   real :: XSHK(2,3)    ! Shock x-locations
   real :: THAMAX(2,3)  ! Maximum wedge angles  
   real :: AM1(2,3)     ! Mach numbers upstream of shocks
@@ -205,19 +192,13 @@ module common_data
   integer :: NVWPRT(2) ! Number of viscous wedge prints
   integer :: NISHK     ! Number of shocks
   
-  ! File unit numbers for different output files
-  integer, parameter :: UNIT_RESTART = 7        ! Restart file
-  integer, parameter :: UNIT_DLAOUT_INPUT = 5   ! DLAOUT input file
-  integer, parameter :: UNIT_DLAOUT_OUTPUT = 10 ! DLAOUT output file
-  
+  ! File unit numbers for different output files  
   integer, parameter :: UNIT_INPUT = 2          ! Input file
   integer, parameter :: UNIT_OUTPUT = 15        ! tsfoil2.out (Main output file with comprehensive results)
   integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (Summary file with key results)
   integer, parameter :: UNIT_CPXS = 17          ! cpxs.out (Pressure coefficient vs. X-coordinate data)
-  integer, parameter :: UNIT_MMAP = 18          ! mmap.out (Mach number map data)
-  integer, parameter :: UNIT_CNVG = 19          ! cnvg.out (Convergence history file)
-  integer, parameter :: UNIT_MESH = 20          ! mesh.out (Mesh coordinate data)
-  integer, parameter :: UNIT_CPMP = 21          ! cpmp.out (Pressure coefficient map data)
+  integer, parameter :: UNIT_MESH = 20          ! mesh.dat (Mesh coordinate data)
+  integer, parameter :: UNIT_FIELD = 11         ! field.dat (Pressure coefficient and Mach number field data)
 
 contains
 
@@ -225,48 +206,36 @@ contains
   subroutine initialize_common()
     implicit none
 
-    if (allocated(XIN)) deallocate(XIN)
-    if (allocated(YIN)) deallocate(YIN)
-    if (allocated(P)) deallocate(P)
-    if (allocated(X)) deallocate(X)
-    if (allocated(Y)) deallocate(Y)    ! Allocate arrays with original TSFOIL dimensions plus room for extra points
-    allocate(XIN(102))    ! Original XIN(100) + room for 2 extra points in CKMESH
-    allocate(YIN(102))    ! Original YIN(100) + room for 2 extra points in CKMESH
-    allocate(P(102,101))  ! Original P(102,101)
-    allocate(X(102))      ! Original X(100) + room for extra points
-    allocate(Y(102))      ! Original Y(100) + room for extra points
-
-    ! Initialize arrays to zero
-    P = 0.0
+    ! Initialize mesh coordinate arrays
     X = 0.0
     Y = 0.0    
     XIN = 0.0
     YIN = 0.0
 
+    ! Initialize potential array P
+    P = 0.0
+    DUB = 0.0
+    CIRCFF = 0.0
+    CIRCTE = 0.0
+
     ! Default initial values (will be overridden by READIN with IMAXI/JMAXI from input)
     IMIN = 1
-    IMAX = 100    ! Temporary default - will be set to IMAXI in READIN
+    IMAX = N_MESH_POINTS
     JMIN = 1
-    JMAX = 100    ! Temporary default - will be set to JMAXI in READIN
+    JMAX = N_MESH_POINTS
     
     ! Initialize mesh indices to safe defaults (will be recalculated later)
     IUP = 2
     IDOWN = IMAX - 1
     ILE = IMIN + 5  ! Safe default
     ITE = IMAX - 5  ! Safe default
-    JUP = (JMAX + JMIN) / 2 + 1  ! Safe default above center
+    JUP = (JMAX + JMIN) / 2 + 1   ! Safe default above center
     JLOW = (JMAX + JMIN) / 2 - 1  ! Safe default below center
     JTOP = JMAX - 1
     JBOT = JMIN + 1
-    J1 = JBOT + 1
-    J2 = JTOP - 1
-    AMESH = .false.
-    IREF = 0
-    ICUT = 2   ! Updated to match BLOCK DATA
+
     KSTEP = 1
-    ABORT1 = .true.   ! Updated to match BLOCK DATA  
     PHYS = .true.
-    BCFOIL = 3   ! Updated to match BLOCK DATA
     BCTYPE = 1  ! Default to free air boundary condition
     DELTA = 0.115  ! Updated to match BLOCK DATA
     
@@ -309,28 +278,22 @@ contains
     WE(3) = 1.95
     
     ! Grid parameters (from BLOCK DATA)
-    IMAXI = 77
-    JMXF = 56
-    MAXIT = 500
-    NL = 75
-    NU = 100
-    IPRTER = 10
-    JMAXI = 64
-    JMXT = 48
-    
+    IMAXI = 77  ! User-input maximum number of streamwise (X-direction) grid points (match default XIN)
+    JMAXI = N_MESH_POINTS  ! User-input maximum number of spanwise (Y-direction) grid points
+    NU = 100    ! Number of lower surface grid points (match default XU, YU)
+    NL = 75     ! Number of upper surface grid points (match default XL, YL)
+
+    MAXIT = 1000  ! Maximum number of iterations
+    IPRTER = 100  ! Print interval for convergence history
+
     ! Logical flags (from BLOCK DATA)
     PHYS = .true.
-    PSAVE = .false.
     FCR = .true.
     KUTTA = .true.
-    ABORT1 = .true.
-    AMESH = .false.
+    ABORT1 = .false.
     
     ! Boundary condition parameters (from BLOCK DATA)
-    BCFOIL = 3
     BCTYPE = 1
-    PSTART = 1  ! Default to fresh start
-    PRTFLO = 1
     SIMDEF = 3
     
     ! Flap parameters (from BLOCK DATA)
@@ -342,7 +305,6 @@ contains
     REYNLD = 4.0E+06
     WCONST = 4.0
     NWDGE = 0
-    IDLA = 0
 
     ! Initialize boundary condition identifiers
     POR = 0.0
@@ -367,6 +329,9 @@ contains
                    1.625, 1.75, 1.875 /)
     if (size(XIN) > 77) XIN(78:) = 0.0
     
+    JMXF = 56  ! Maximum number of grid points for free-air distribution (YFREE)
+    JMXT = 48  ! Maximum number of grid points for tunnel distribution (YTUN)
+
     ! Initialize YFREE array with default free-air distribution (from BLOCK DATA)
     YFREE(1:56) = (/ -5.2, -4.4, -3.6, -3.0, -2.4, -1.95, -1.6, -1.35, -1.15, -0.95, &
                      -0.80, -0.65, -0.55, -0.45, -0.39, -0.34, -0.30, -0.27, -0.24, -0.21, &
@@ -416,8 +381,7 @@ contains
                   0.578612, 0.605305, 0.623479, 0.642152, 0.657543, 0.671212, 0.690340, 0.708891, 0.726684, 0.746683, &
                   0.768502, 0.784892, 0.801149, 0.819187, 0.838548, 0.858817, 0.879431, 0.903723, 0.926504, 0.943652, &
                   0.958668, 0.973623, 0.986187, 0.996582, 1.000000 /)
-    XL(76:) = 0.0
-    
+
     YL(1:75) = (/ 0.000000, -0.000700, -0.001385, -0.002868, -0.003330, -0.003880, -0.004379, -0.005199, -0.006133, -0.007183, &
                   -0.007933, -0.008676, -0.009776, -0.011204, -0.011815, -0.012861, -0.013983, -0.014962, -0.016175, -0.017636, &
                   -0.019336, -0.021258, -0.023836, -0.025373, -0.028634, -0.032423, -0.034840, -0.037182, -0.039456, -0.041862, &
@@ -426,8 +390,7 @@ contains
                   -0.031104, -0.027333, -0.024661, -0.021854, -0.019517, -0.017429, -0.014527, -0.011771, -0.009228, -0.006537, &
                   -0.003868, -0.002086, -0.000524, 0.000950, 0.002227, 0.003224, 0.003885, 0.004212, 0.004067, 0.003657, &
                   0.003067, 0.002242, 0.001329, 0.000376, 0.000000 /)
-    YL(76:) = 0.0
-    
+
     ! Initialize other arrays to zero (from BLOCK DATA)
     WSLP = 0.0
     ZETA = 0.0
@@ -437,66 +400,53 @@ contains
     POLD = 0.0
     DCIRC = 0.0
     OUTERR = .false.
-    I1 = 1
-    I2 = 2
     IERROR = 0
     JERROR = 0
     ERROR = 0.0
     
     ! Initialize COM32 variables
-    BIGRL = 0.0
-    IRL = 0
-    JRL = 0
-    
     THETA = 0.0
 
   end subroutine initialize_common
 
-  ! Subroutine to check for floating-point exceptions
-  subroutine check_fp_exceptions()
-    use, intrinsic :: ieee_exceptions
-    implicit none
-    
-    logical :: flag_invalid, flag_overflow, flag_divide_by_zero, flag_underflow, flag_inexact
-    
-    ! Get the status of all floating-point exception flags
-    call ieee_get_flag(ieee_invalid, flag_invalid)
-    call ieee_get_flag(ieee_overflow, flag_overflow)
-    call ieee_get_flag(ieee_divide_by_zero, flag_divide_by_zero)
-    call ieee_get_flag(ieee_underflow, flag_underflow)
-    call ieee_get_flag(ieee_inexact, flag_inexact)
-    
-    ! Report any exceptions that occurred
-    if (flag_invalid) then
-      write(*,'(A)') 'WARNING: IEEE_INVALID exception occurred (NaN generated)'
-    end if
-    
-    if (flag_overflow) then
-      write(*,'(A)') 'WARNING: IEEE_OVERFLOW exception occurred'
-    end if
-    
-    if (flag_divide_by_zero) then
-      write(*,'(A)') 'WARNING: IEEE_DIVIDE_BY_ZERO exception occurred'
-    end if
-    
-    if (flag_underflow) then
-      write(*,'(A)') 'WARNING: IEEE_UNDERFLOW exception occurred'
-    end if
-    
-    if (flag_inexact) then
-      write(*,'(A)') 'INFO: IEEE_INEXACT exception occurred (normal for most calculations)'
-    end if
-    
-    ! Halt the program if any critical exceptions occurred
-    if (flag_invalid .or. flag_overflow .or. flag_divide_by_zero) then
-      write(*,'(A)') 'FATAL: Critical floating-point exceptions detected!'
-      write(*,'(A)') 'Program terminating due to floating-point errors.'
-      stop
-    end if
 
-    write(*,'(A)') 'Floating-point exception check completed successfully.'
+  ! Fatal error - write message and stop
+  subroutine INPERR(I_ERROR_CODE)
+    implicit none
+    integer, intent(in) :: I_ERROR_CODE
     
-  end subroutine check_fp_exceptions
+    select case (I_ERROR_CODE)
+    case (1)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'IMAX OR JMAX IS GREATER THAN N_MESH_POINTS, NOT ALLOWED.'
+    case (2)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'X MESH POINTS NOT MONOTONIC INCREASING.'
+    case (3)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'Y MESH POINTS NOT MONOTONIC INCREASING.'
+    case (4)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER NOT IN PERMITTED RANGE. (.5,2.0)'
+    case (5)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'ALPHA NOT IN PERMITTED RANGE. (-9.0, 9.0)'
+    case (6)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
+    case (7)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'AK=0. VALUE OF AK MUST BE INPUT SINCE PHYS=F.'
+    case (8)
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'
+    case default
+      write(UNIT_OUTPUT, '(A)') ' '
+      write(UNIT_OUTPUT, '(5X,A)') 'UNKNOWN ERROR CODE.'
+    end select
+    
+    stop
+  end subroutine INPERR
 
 
 end module common_data

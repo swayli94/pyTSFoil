@@ -10,29 +10,32 @@ contains
   ! Perform one SOR sweep computing residuals and updating P
   ! SYOR COMPUTES NEW P AT ALL MESH POINTS.
   ! CALLED BY - SOLVE.
-  subroutine SYOR()
-    use common_data, only: P, X, Y, IMIN, IMAX, IUP, IDOWN, ILE, ITE
-    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT, J1, J2
-    use common_data, only: AK, GAM1, CVERGE, ERROR, IERROR, JERROR
+  subroutine SYOR(I1, I2, BIGRL, IRL, JRL)
+    use common_data, only: P, X, IUP, IDOWN, ILE, ITE
+    use common_data, only: JMIN, JMAX, JUP, JLOW, JTOP, JBOT
+    use common_data, only: AK, ERROR, IERROR, JERROR
     use common_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1
     use common_data, only: CYYC, CYYD, CYYU, DIAG, RHS, SUB, SUP, IVAL
     use common_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD, FXUBC, FXLBC
-    use common_data, only: PJUMP, FCR, KUTTA, EPS, WI
-    use common_data, only: EMU, POLD, I1, I2, OUTERR, BIGRL, IRL, JRL
+    use common_data, only: PJUMP, FCR, EPS, WI
+    use common_data, only: EMU, POLD, OUTERR
+    use common_data, only: N_MESH_POINTS
     use solver_module, only: BCEND
     implicit none
+    integer, intent(inout) :: I1, I2
+    real, intent(out) :: BIGRL  ! Maximum residual value
+    integer, intent(out) :: IRL, JRL  ! Location indices of maximum residual
+
     integer :: I, J, K, IM2, JA, JB, ISAVE
     real :: EPSX, ARHS, DNOM, denominator
-    real, dimension(100) :: VC, SAVE_VAR
+    real, dimension(N_MESH_POINTS) :: VC, SAVE_VAR
     real, parameter :: TOLERANCE = 1.0E-6   ! Tolerance for division by zero protection (more reasonable value)
     
+    BIGRL = 0.0
+
     IM2 = IUP - 1
     if (AK < 0.0) IM2 = IUP - 2
-    
-    ! Set J1 and J2 exactly as original
-    J1 = JBOT + 1
-    J2 = JTOP - JBOT
-    
+        
     do I = IUP, IDOWN
         EPSX = EPS / ((X(I) - X(I-1))**2)
         
@@ -136,7 +139,7 @@ contains
         SAVE_VAR(JBOT) = SUB(JBOT) * DNOM
         RHS(JBOT) = RHS(JBOT) * DNOM
 
-        do J = J1, JTOP
+        do J = JBOT + 1, JTOP
             denominator = DIAG(J) - SUP(J)*SAVE_VAR(J-1)
             DNOM = 1.0 / denominator
             SAVE_VAR(J) = SUB(J) * DNOM
@@ -145,7 +148,7 @@ contains
         end do
         
         ! Back-substitution with floating-point protection
-        do K = 1, J2
+        do K = 1, JTOP - JBOT
             J = JTOP - K
             RHS(J) = RHS(J) - SAVE_VAR(J) * RHS(J+1)
             if (abs(RHS(J)) < 1.0E-30) RHS(J) = 0.0
@@ -185,21 +188,23 @@ contains
 
   ! Main iteration loop: solver, convergence, and flow updates
   subroutine SOLVE()
-    use common_data, only: MAXIT, ERROR, CVERGE, DVERGE, IPRTER, PRTFLO, ABORT1
-    use common_data, only: IREF, WE, EPS, IMIN, IMAX, JMIN, JMAX, IUP, IDOWN
-    use common_data, only: ILE, ITE, JUP, JLOW, JTOP, JBOT, J1, J2, KSTEP
-    use common_data, only: P, X, Y, AK, ALPHA, DUB, GAM1, RTK
-    use common_data, only: EMU, POLD, DCIRC, OUTERR, I1, I2, IERROR, JERROR
-    use common_data, only: BIGRL, IRL, JRL
-    use common_data, only: THETA, BCTYPE, CIRCFF, FHINV, POR, CIRCTE
-    use common_data, only: NWDGE, WSLP, XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
-    use common_data, only: WCONST, REYNLD, WI, C1
-    use common_data, only: CLFACT, CMFACT, UNIT_OUTPUT, UNIT_CNVG
+    use common_data, only: MAXIT, ERROR, CVERGE, DVERGE, IPRTER, ABORT1
+    use common_data, only: WE, EPS, IMIN, JMIN, JMAX, IUP, IDOWN
+    use common_data, only: JTOP, JBOT, KSTEP
+    use common_data, only: P, Y, AK
+    use common_data, only: EMU, POLD, DCIRC, OUTERR, IERROR, JERROR
+    use common_data, only: THETA, BCTYPE
+    use common_data, only: NWDGE, XSHK, THAMAX, AM1, ZETA, NVWPRT, NISHK
+    use common_data, only: WI, C1
+    use common_data, only: CLFACT, CMFACT, UNIT_OUTPUT
     use math_module, only: LIFT, PITCH, VWEDGE
     use solver_module, only: SETBC
     implicit none
     
-    integer :: ITER, MAXITM, KK, J, I, IK, JK, JINC, N, NN
+    integer :: ITER, MAXITM, KK, J, I, IK, JK, JINC, N, NN, I1, I2
+    integer :: IRL, JRL  ! Location indices of maximum residual
+
+    real :: BIGRL  ! Maximum residual value
     real :: WEP, CL_LOCAL, CM_LOCAL, ERCIRC, THA
     logical :: CONVERGED
     integer, parameter :: NDUB = 25
@@ -212,12 +217,10 @@ contains
     write(UNIT_OUTPUT, '(1H1)')
     
     ! Calculate maximum iterations based on refinement level
-    if (IREF == 2) MAXITM = MAXIT / 4
-    if (IREF == 1) MAXITM = MAXIT / 2
-    if (IREF == 0) MAXITM = MAXIT
+    MAXITM = MAXIT
     
     ! Set relaxation parameter based on refinement level
-    KK = 3 - IREF
+    KK = 3
     WEP = WE(KK)
     WI = 1.0 / WEP
     
@@ -226,8 +229,8 @@ contains
     
     ! Write iteration header
     write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
-    write(UNIT_CNVG, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
-    
+    write(*, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
+
     ! Main iteration loop
     do ITER = 1, MAXITM
 
@@ -259,7 +262,7 @@ contains
         call RECIRC()
         
         ! Perform SOR sweep
-        call SYOR()
+        call SYOR(I1, I2, BIGRL, IRL, JRL)
         
         ! Update circulation for subsonic freestream flow
         if (AK >= 0.0 .and. BCTYPE == 1) then
@@ -295,14 +298,15 @@ contains
             CM_LOCAL = PITCH(CMFACT)
             ERCIRC = abs(DCIRC)
             
-            write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
-            write(UNIT_CNVG, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
-            write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
+            write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
+                  ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
+            write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
+                  ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
 
             ! Output viscous wedge quantities if enabled
             if (NWDGE > 0) then
                 
-              write(UNIT_OUTPUT, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
+                write(UNIT_OUTPUT, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
                 
                 ! Upper surface shocks
                 NN = NVWPRT(1)
@@ -332,10 +336,14 @@ contains
                   end do
                 end if
 
-                if (NISHK == 0) write(UNIT_OUTPUT, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
+                if (ITER == 1 .or. mod(ITER, IPRTER) == 0) then
+                    
+                    if (NISHK == 0) write(UNIT_OUTPUT, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
 
-                write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
+                    write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X, &
+                          &"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
 
+                end if
             end if
         end if
         
@@ -348,7 +356,7 @@ contains
         end if
         
         ! Check for floating-point exceptions during iteration
-        call check_iteration_fp_exceptions(ITER)
+        ! call check_iteration_fp_exceptions(ITER)
         
         ! Check divergence
         if (ERROR >= DVERGE) then
@@ -376,7 +384,7 @@ contains
   ! 2.) Circulation for farfield boundary = CIRCFF
   ! 3.) Jump in P along slit Y=0, X > 1 by linear interpolation between CIRCTE and CIRCFF
   subroutine RECIRC()
-    use common_data, only: P, X, IMIN, IMAX, ITE, JUP, JLOW, CJUP, CJUP1, CJLOW, CJLOW1
+    use common_data, only: P, X, IMAX, ITE, JUP, JLOW, CJUP, CJUP1, CJLOW, CJLOW1
     use common_data, only: PJUMP, CIRCFF, CIRCTE, DCIRC, WCIRC, CLSET, CLFACT, KUTTA
     implicit none
     integer :: I
@@ -413,14 +421,15 @@ contains
   ! For lifting free air flows, doublet strength is set equal to model volume.
   ! For other flows, the nonlinear contribution is added.
   subroutine REDUB()
-    use common_data, only: P, X, Y, IMIN, IMAX, JMIN, JMAX
-    use common_data, only: DUB, GAM1, XDIFF, BCTYPE, CIRCFF, VOL, XI, ARG
+    use common_data, only: P, Y, IMIN, IMAX, JMIN, JMAX, N_MESH_POINTS
+    use common_data, only: DUB, GAM1, XDIFF, BCTYPE, CIRCFF, VOL
     use math_module, only: TRAP
     implicit none
     
     ! Local variables
     integer :: I, J, IEND, NARG
     real :: DBLSUM, SUM, TEMP
+    real :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
     
     ! For lifting free air flows with circulation, set doublet strength equal to model volume
     if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
@@ -467,7 +476,7 @@ contains
   ! Updates far field boundary conditions for subsonic freestream flows.
   ! CALLED BY - SOLVE.
   subroutine RESET()
-    use common_data, only: P, IMIN, IMAX, JMIN, JMAX, JUP, JLOW, KSTEP
+    use common_data, only: P, IMIN, IMAX, JMIN, JMAX, JUP, KSTEP
     use common_data, only: DUP, DDOWN, DTOP, DBOT, VUP, VDOWN, VTOP, VBOT
     use common_data, only: CIRCFF, DUB, BCTYPE
     implicit none
@@ -493,41 +502,5 @@ contains
     end if
 
   end subroutine RESET
-
-!===============================================================================
-! Subroutine to check for floating-point exceptions during iterations
-!===============================================================================
-subroutine check_iteration_fp_exceptions(iter_num)
-  use, intrinsic :: ieee_exceptions
-  implicit none
-  
-  integer, intent(in) :: iter_num
-  logical :: flag_invalid, flag_overflow, flag_divide_by_zero
-  
-  ! Get the status of critical floating-point exception flags
-  call ieee_get_flag(ieee_invalid, flag_invalid)
-  call ieee_get_flag(ieee_overflow, flag_overflow)
-  call ieee_get_flag(ieee_divide_by_zero, flag_divide_by_zero)
-  
-  ! Report and halt if any critical exceptions occurred
-  if (flag_invalid) then
-    write(*,'(A,I0)') 'FATAL: IEEE_INVALID exception (NaN) detected at iteration ', iter_num
-    write(*,'(A)') 'This indicates invalid mathematical operations (e.g., 0/0, sqrt(-1))'
-    stop 2
-  end if
-  
-  if (flag_overflow) then
-    write(*,'(A,I0)') 'FATAL: IEEE_OVERFLOW exception detected at iteration ', iter_num
-    write(*,'(A)') 'This indicates numerical values exceeded representable range'
-    stop 3
-  end if
-  
-  if (flag_divide_by_zero) then
-    write(*,'(A,I0)') 'FATAL: IEEE_DIVIDE_BY_ZERO exception detected at iteration ', iter_num
-    write(*,'(A)') 'This indicates division by zero occurred'
-    stop 4
-  end if
-  
-end subroutine check_iteration_fp_exceptions
 
 end module numerical_solvers

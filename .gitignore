@@ -6,9 +6,6 @@ build/
 *.txt
 *.o
 *.mod
-
-temp*
-plot*
 *.cp
 *.ech
 *.fld
@@ -17,5 +14,6 @@ plot*
 *.out
 *.shk
 *.wal
-
-test*
+*.dat
+*.exe
+*.pyc
