@@ -1,0 +1,16 @@
+*.txt
+*.o
+*.mod
+*.cp
+*.ech
+*.fld
+*.log
+*.map
+*.out
+*.shk
+*.wal
+*.dat
+*.exe
+*.pyc
+*.pyf
+*.so
