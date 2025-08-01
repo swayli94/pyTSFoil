@@ -30,6 +30,12 @@ if __name__ == "__main__":
         env.step(action)
         env.render()
         
+    env.undo_last_step()
+    action = np.array([0.9])
+    env.step(action)
+    env.render()
+    
+    env.save_trajectory(os.path.join(path, 'trajectory.json'))
     env.close()
     
 
