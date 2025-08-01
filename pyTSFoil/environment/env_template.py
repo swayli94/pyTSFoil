@@ -1,27 +1,31 @@
 '''
-Empty gym environment for reinforcement learning.
+Template gym environment for reinforcement learning.
 '''
 import os
-import sys
+from typing import List, Dict, Tuple, Any
 
-path = os.path.dirname(os.path.abspath(__file__))
-if path not in sys.path:
-    sys.path.append(path)
-    
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from pytsfoil import PyTSFoil
+from pyTSFoil.pytsfoil import PyTSFoil
 import matplotlib.pyplot as plt
 
 
-class TSFoilEnv_Empty(gym.Env):
+class TSFoilEnv_Template(gym.Env):
     '''
-    Empty gym environment for reinforcement learning.
+    Template gym environment for reinforcement learning.
+    
+    Special settings:
+    - The action is applied to the airfoil geometry of the reference step.
+    - The reference step is not necessarily the previous step.
+    - Only when the reward is greater than the critical reward, the reference step is updated.
 
-    The action is left empty.
-
-    The observation is the lift to drag ratio.
+    The settings in the template are:
+    - The action is left empty.
+    - The observation is left empty.
+    - The reward is the lift to drag ratio. (default)
+    - The done is the step number is greater than the maximum step number. (default)
+    - The info is the information of the current step. (default)
     '''
     def __init__(self, 
             airfoil_coordinates: np.ndarray,
@@ -29,28 +33,36 @@ class TSFoilEnv_Empty(gym.Env):
             mach_infinity : float = 0.75,
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
+            n_max_step: int = 100,
+            critical_reward: float = 0.0,
             ) -> None:
         
-        super(TSFoilEnv_Empty, self).__init__()
+        super(TSFoilEnv_Template, self).__init__()
+        
+        self.name = 'TSFoilEnv_Template'
+        self.ID = 0
         
         self.dim_action = 1
         self.dim_observation = 1
 
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.dim_action,))
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.dim_action,))
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(self.dim_observation,))
 
-        self.observation = 0.0
+        self.observation = np.zeros(self.dim_observation)
         self.reward = 0.0
+        self.total_reward = 0.0
         self.done = False
         self.info = {}
 
-        self.i_step = 0
-        self.i_max_step = 100
+        self.i_current_step = 0
+        self.i_reference_step = 0
         self.airfoil_coordinates = airfoil_coordinates.copy()
-        
-        # Rendering configuration
+        self.airfoil_coordinates_initial = airfoil_coordinates.copy()
+
         self.render_mode = render_mode
-        self.frame_count = 0
+        
+        self.n_max_step = n_max_step
+        self.critical_reward_to_update_reference_step = critical_reward
         
         if output_dir is None:
             self.output_dir = os.path.dirname(__file__)
@@ -82,47 +94,53 @@ class TSFoilEnv_Empty(gym.Env):
         
         self.pytsfoil.initialize_data()
         
-        # Initialize storage for historical data
-        self._init_history()
+        # Initialize trajectory data storage
+        self._init_trajectory()
         
         # Initialize rendering components
         self._init_render()
 
-    def step(self, action) -> tuple[float, float, bool, dict]:
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, dict]:
         
-        self.i_step += 1
+        self.i_current_step += 1
         
-        self._apply_action(action)
-        self._run_pytsfoil()
+        previous_state = self._get_state_from_reference_step()
+        self._apply_action_to_reference_step(action)
+        self._run_simulation()
         self._get_observation()
         self._get_reward()
         self._get_done()
         self._get_info()
         
-        # Store step data for historical plotting
-        self._store_step_data()
+        # Store trajectory data (previous_state, action, reward, next_state) + all step info
+        self._store_trajectory_data(previous_state, action, self.reward, self.observation)
+        
+        # Update reference step for the next step
+        self._update_reference_step()
         
         return self.observation, self.reward, self.done, self.info
 
     def reset(self) -> np.ndarray:
+        '''
+        Reset the environment.
+        '''
+        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial
         
-        self.i_step = 0
-        self.frame_count = 0
+        self._run_simulation()
         
-        # Clear historical data
-        self._init_history()
-        
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates
-        
-        self._run_pytsfoil()
+        action = np.zeros(self.dim_action)
         self._get_observation()
-        self._get_reward()
-        self._get_info()
-        
-        # Store initial state
-        self._store_step_data()
-        
+        self.reward = 0.0
+        self.total_reward = 0.0
         self.done = False
+        self._get_info()
+
+        self.i_current_step = 0
+        self.i_reference_step = 0
+        
+        # Clear trajectory data
+        self._init_trajectory()
+        self._store_trajectory_data(self.observation, action, self.reward, self.observation)
         
         return self.observation
 
@@ -141,8 +159,6 @@ class TSFoilEnv_Empty(gym.Env):
         
         if self.render_mode in ['save', 'both']:
             self._save_current_frame()
-        
-        self.frame_count += 1
 
     def close(self) -> None:
         '''
@@ -152,7 +168,7 @@ class TSFoilEnv_Empty(gym.Env):
             plt.close(self.fig)
             self.fig = None
 
-    def _run_pytsfoil(self) -> None:
+    def _run_simulation(self) -> None:
         '''
         Run the pytsfoil.
         '''
@@ -168,11 +184,23 @@ class TSFoilEnv_Empty(gym.Env):
         
         self.pytsfoil.print_summary()
 
-    def _apply_action(self, action: np.ndarray) -> None:
+    def _get_state_from_reference_step(self) -> np.ndarray:
         '''
-        Apply the action, update the airfoil coordinates.
+        Get the state from the reference step.
         '''
-        self.airfoil_coordinates[:,1] = self.airfoil_coordinates[:,1] * action[0]
+        return self.trajectory[self.i_reference_step]['next_state'].copy()
+
+    def _apply_action_to_reference_step(self, action: np.ndarray) -> None:
+        '''
+        Apply action to the airfoil of the reference step, update the airfoil coordinates.
+        
+        In this template, the action is scaling the airfoil thickness.
+        The x-coordinate of the reference airfoil is kept unchanged.
+        '''
+        ref_airfoil_coordinates = self.trajectory[self.i_reference_step]['info']['airfoil_coordinates']
+        
+        self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
+        self.airfoil_coordinates[:,1] = ref_airfoil_coordinates[:,1] * action[0]
         
         self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates
 
@@ -199,7 +227,7 @@ class TSFoilEnv_Empty(gym.Env):
         '''
         Get the done.
         '''
-        self.done = self.i_step >= self.i_max_step
+        self.done = self.i_current_step >= self.n_max_step
         return self.done
 
     def _get_info(self) -> dict:
@@ -208,7 +236,8 @@ class TSFoilEnv_Empty(gym.Env):
         '''
         self.info = {
             
-            'i_step': self.i_step,
+            'i_current_step': self.i_current_step,
+            'i_reference_step': self.i_reference_step,
             
             'airfoil_coordinates': self.airfoil_coordinates,
             
@@ -231,11 +260,101 @@ class TSFoilEnv_Empty(gym.Env):
         
         return self.info
 
-    def _init_history(self) -> None:
+    def _update_reference_step(self) -> None:
         '''
-        Initialize storage for historical data.
+        Update the reference step.
         '''
-        self.history = {
+        if self.reward > self.critical_reward_to_update_reference_step:
+            self.i_reference_step = self.i_current_step
+            self.total_reward += self.reward
+
+    def _init_trajectory(self) -> None:
+        '''
+        Initialize trajectory storage for all data.
+        The trajectory is a list of dictionaries containing:
+        - step: the step number
+        - previous_state: the previous state
+        - action: the action
+        - reward: the reward
+        - next_state: the next state
+        - done: the done
+        - info: the info
+        '''
+        # Initialize trajectory storage: List of dictionaries containing 
+        # (previous_state, action, reward, next_state) + all step info
+        self.trajectory: List[Dict[str, Any]] = []
+
+    def _store_trajectory_data(self, previous_state: np.ndarray, action: np.ndarray, 
+                             reward: float, next_state: np.ndarray) -> None:
+        '''
+        Store trajectory data including (previous_state, action, reward, next_state) 
+        and all related information.
+        '''
+        trajectory_entry = {
+            'step': self.i_current_step,
+            'reference_step': self.i_reference_step,
+            'previous_state': previous_state.copy(),
+            'action': action.copy() if hasattr(action, 'copy') else action,
+            'reward': reward,
+            'next_state': next_state.copy(),
+            'done': self.done,
+            'info': self.info.copy() if isinstance(self.info, dict) else self.info
+        }
+        
+        self.trajectory.append(trajectory_entry)
+    
+    def get_trajectory_as_tuples(self) -> List[Tuple[np.ndarray, Any, float, np.ndarray]]:
+        '''
+        Get trajectory data as list of tuples (previous_state, action, reward, next_state).
+        
+        Returns:
+            List of tuples containing (previous_state, action, reward, next_state)
+        '''
+        return [(entry['previous_state'], entry['action'], entry['reward'], entry['next_state']) 
+                for entry in self.trajectory]
+    
+    def save_trajectory(self, filepath: str) -> None:
+        '''
+        Save trajectory data to a file.
+        
+        Args:
+            filepath: Path to save the trajectory data
+        '''
+        import pickle
+        with open(filepath, 'wb') as f:
+            pickle.dump(self.trajectory, f)
+    
+    def load_trajectory(self, filepath: str) -> None:
+        '''
+        Load trajectory data from a file.
+        
+        Args:
+            filepath: Path to load the trajectory data from
+        '''
+        import pickle
+        with open(filepath, 'rb') as f:
+            self.trajectory = pickle.load(f)
+    
+    def get_trajectory_history(self) -> Dict[str, List]:
+        '''
+        Extract history-like data structure from trajectory for compatibility.
+        
+        Returns:
+            Dictionary with historical data extracted from trajectory
+        '''
+        if not self.trajectory:
+            return {
+                'airfoil_coordinates': [],
+                'step_numbers': [],
+                'cl': [],
+                'cd': [],
+                'ld_ratio': [],
+                'xx': [],
+                'mau': [],
+                'mal': [],
+            }
+        
+        history = {
             'airfoil_coordinates': [],
             'step_numbers': [],
             'cl': [],
@@ -245,33 +364,18 @@ class TSFoilEnv_Empty(gym.Env):
             'mau': [],
             'mal': [],
         }
-
-    def _store_step_data(self) -> None:
-        '''
-        Store current step data in history.
-        '''
-        # Store airfoil coordinates
-        self.history['airfoil_coordinates'].append(self.airfoil_coordinates.copy())
         
-        # Store step number
-        self.history['step_numbers'].append(self.i_step)
+        for entry in self.trajectory:
+            history['step_numbers'].append(entry['step'])
+            history['airfoil_coordinates'].append(entry['history_snapshot']['airfoil_coordinates'])
+            history['cl'].append(entry['history_snapshot']['cl'])
+            history['cd'].append(entry['history_snapshot']['cd'])
+            history['ld_ratio'].append(entry['history_snapshot']['ld_ratio'])
+            history['xx'].append(entry['history_snapshot']['xx'])
+            history['mau'].append(entry['history_snapshot']['mau'])
+            history['mal'].append(entry['history_snapshot']['mal'])
         
-        # Store performance metrics
-        if hasattr(self, 'info') and self.info:
-            self.history['cl'].append(self.info.get('cl', 0.0))
-            self.history['cd'].append(self.info.get('cd', 0.0))
-            self.history['ld_ratio'].append(self.reward)
-            
-            # Store Mach distribution data if available
-            if 'xx' in self.info:
-                self.history['xx'].append(self.info['xx'].copy())
-                self.history['mau'].append(self.info['mau'].copy())
-                self.history['mal'].append(self.info['mal'].copy())
-            else:
-                # Store empty arrays if no data available
-                self.history['xx'].append(np.array([]))
-                self.history['mau'].append(np.array([]))
-                self.history['mal'].append(np.array([]))
+        return history
 
     def _init_render(self) -> None:
         '''
@@ -339,7 +443,7 @@ class TSFoilEnv_Empty(gym.Env):
         Print current state information.
         '''
         if hasattr(self, 'info') and self.info:
-            print(f"\n--- Step {self.i_step:3d} ---")
+            print(f"\n--- Step {self.i_current_step:3d} ---")
             print(f"Lift Coeff (CL): {self.info.get('cl', 0.0):.4f}")
             print(f"Drag Coeff (CD): {self.info.get('cd', 0.0):.6f}")
             print(f"L/D Ratio:       {self.reward:.2f}")
@@ -356,27 +460,31 @@ class TSFoilEnv_Empty(gym.Env):
                 if line != self.sonic_line:  # Don't remove the sonic reference line
                     line.remove()
         
-        # Only plot if we have historical data
-        if not hasattr(self, 'history') or not self.history['step_numbers']:
+        # Only plot if we have trajectory data
+        if not hasattr(self, 'trajectory') or not self.trajectory:
             return
         
         # Generate colors for different steps (use colormap for smooth transition)
-        n_steps = len(self.history['step_numbers'])
+        n_steps = len(self.trajectory)
         colors = plt.cm.viridis(np.linspace(0, 1, n_steps))
         
         # Plot 1: Airfoil geometry evolution
-        for i, coords in enumerate(self.history['airfoil_coordinates']):
+        for i, entry in enumerate(self.trajectory):
+            coords = entry['info']['airfoil_coordinates']
             alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))  # Fade older steps, highlight recent ones
-            step_num = self.history['step_numbers'][i]
+            step_num = entry['step']
             label = f'Step {step_num}' if i == n_steps - 1 else None  # Only label the latest
             self.axes[0].plot(coords[:, 0], coords[:, 1], 
                             color=colors[i], alpha=alpha, linewidth=1, label=label)
         
         # Plot 2: Mach number distribution evolution
-        for i, (xx, mau, mal) in enumerate(zip(self.history['xx'], self.history['mau'], self.history['mal'])):
+        for i, entry in enumerate(self.trajectory):
+            xx = entry['info']['xx']
+            mau = entry['info']['mau']
+            mal = entry['info']['mal']
             if len(xx) > 0:  # Only plot if we have data
                 alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))
-                step_num = self.history['step_numbers'][i]
+                step_num = entry['step']
                 label_upper = f'Step {step_num} (upper)' if i == n_steps - 1 else None
                 label_lower = f'Step {step_num} (lower)' if i == n_steps - 1 else None
                 
@@ -386,16 +494,19 @@ class TSFoilEnv_Empty(gym.Env):
                                 linewidth=1, linestyle='-', label=label_lower)
         
         # Plot 3: Performance metrics history
-        if self.history['cl'] and self.history['cd']:
-            steps = self.history['step_numbers']
-            self.axes[2].plot(steps, self.history['cl'], 'b-o', label='CL', markersize=4)
-            self.axes[2].plot(steps, self.history['cd'], 'r-s', label='CD', markersize=4)
+        steps = [entry['step'] for entry in self.trajectory]
+        cl_values = [entry['info']['cl'] for entry in self.trajectory]
+        cd_values = [entry['info']['cd'] for entry in self.trajectory]
+        
+        if cl_values and cd_values:
+            self.axes[2].plot(steps, cl_values, 'b-o', label='CL', markersize=4)
+            self.axes[2].plot(steps, cd_values, 'r-s', label='CD', markersize=4)
             self.axes[2].legend()
         
         # Plot 4: L/D ratio history
-        if self.history['ld_ratio']:
-            steps = self.history['step_numbers']
-            self.axes[3].plot(steps, self.history['ld_ratio'], 'g-^', label='L/D Ratio', markersize=4)
+        ld_values = [entry['info']['ld_ratio'] for entry in self.trajectory]
+        if ld_values:
+            self.axes[3].plot(steps, ld_values, 'g-^', label='L/D Ratio', markersize=4)
             self.axes[3].legend()
         
         # Update legends for geometry and mach plots
@@ -404,7 +515,7 @@ class TSFoilEnv_Empty(gym.Env):
             self.axes[1].legend()
         
         # Update overall title with current step information
-        title = f'pyTSFOIL gym environment - Historical View (Current Step: {self.i_step})'
+        title = f'pyTSFOIL gym environment - Historical View (Current Step: {self.i_current_step})'
         self.fig.suptitle(title, fontsize=16, fontweight='bold')
 
     def _save_current_frame(self) -> None:
@@ -416,32 +527,3 @@ class TSFoilEnv_Empty(gym.Env):
             render_path = os.path.join(self.output_dir, 'tsfoil_gym_render.png')
             self.fig.savefig(render_path, dpi=300, bbox_inches='tight')
 
-
-if __name__ == "__main__":
-    '''
-    Main function to test the environment.
-    '''
-    path = os.path.join('example', 'env_empty')
-    
-    # Create the environment
-    x, y = np.loadtxt(os.path.join(path, 'rae2822.dat'), skiprows=1).T
-    airfoil_coordinates = np.column_stack((x, y))
-    
-    env = TSFoilEnv_Empty(
-            airfoil_coordinates=airfoil_coordinates,
-            output_dir=path,
-            render_mode='save',
-            )
-    
-    # Run the environment
-    env.reset()   
-    env.render()
-    
-    for i in range(2):
-        
-        action = np.array([1.05])
-        env.step(action)
-        env.render()
-        
-    env.close()
-    

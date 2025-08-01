@@ -9,7 +9,6 @@
 *.out
 *.shk
 *.wal
-*.dat
 *.exe
 *.pyc
 *.pyf

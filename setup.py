@@ -11,7 +11,7 @@ setup(name=__name__,
       author_email='swayli94@gmail.com',
       packages=find_packages(),
       package_data={"":['*.f','*.exe']},
-      install_requires=['numpy','scipy','matplotlib', 'pathlib', 'f2py', 'glob', 'subprocess'],
+      install_requires=['numpy','scipy','matplotlib'],
       classifiers=[
             'Programming Language :: Python :: 3'
       ]
