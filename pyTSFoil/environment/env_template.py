@@ -2,16 +2,65 @@
 Template gym environment for reinforcement learning.
 '''
 import os
-from typing import List, Dict, Tuple, Any
 import json
+from typing import List, Dict, Tuple, Any
 
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from pyTSFoil.pytsfoil import PyTSFoil
 import matplotlib.pyplot as plt
 
-from pyTSFoil.environment.basic import NumpyArrayEncoder
+from pyTSFoil.pytsfoil import PyTSFoil
+
+
+def dist_clustcos(nn: int, a0=0.0079, a1=0.96, beta=1.0) -> np.ndarray:
+    '''
+    Point distribution on x-axis [0, 1]. (More points at both ends)
+
+    Parameters
+    ----------
+    nn: int
+        total amount of points
+        
+    a0: float
+        Parameter for distributing points near x=0.
+        Smaller a0, more points near x=0.
+        
+    a1: float
+        Parameter for distributing points near x=1.
+        Larger a1, more points near x=1.
+        
+    beta: float
+        Parameter for distribution points.
+    
+    Examples
+    ---------
+    >>> xx = dist_clustcos(n, a0, a1, beta)
+
+    '''
+    aa = np.power((1-np.cos(a0*np.pi))/2.0, beta)
+    dd = np.power((1-np.cos(a1*np.pi))/2.0, beta) - aa
+    yt = np.linspace(0.0, 1.0, num=nn)
+    a  = np.pi*(a0*(1-yt)+a1*yt)
+    xx = (np.power((1-np.cos(a))/2.0,beta)-aa)/dd
+
+    return xx
+
+
+class NumpyArrayEncoder(json.JSONEncoder):
+    '''
+    Convert ndarray to list and numpy scalars to Python types for json dump
+    '''
+    def default(self, o: Any) -> Any:
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        elif isinstance(o, np.integer):
+            return int(o)
+        elif isinstance(o, np.floating):
+            return float(o)
+        elif isinstance(o, np.bool_):
+            return bool(o)
+        return super().default(o)
 
 
 class TSFoilEnv_Template(gym.Env):
@@ -60,8 +109,14 @@ class TSFoilEnv_Template(gym.Env):
         self.i_current_step = 0
         self.i_reference_step = 0
         self.is_current_step_valid = True
-        self.airfoil_coordinates = airfoil_coordinates.copy()
-        self.airfoil_coordinates_initial = airfoil_coordinates.copy()
+        
+        self.n_airfoil_points = 101 # Number of points in the airfoil surfaces
+        self.x_airfoil_surface = dist_clustcos(self.n_airfoil_points)
+        
+        interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+        
+        self.airfoil_coordinates = interp_coordinates.copy()
+        self.airfoil_coordinates_initial = interp_coordinates.copy()
 
         self.render_mode = render_mode
         
@@ -111,10 +166,10 @@ class TSFoilEnv_Template(gym.Env):
         previous_state = self._get_state_from_reference_step()
         self._apply_action_to_reference_step(action)
         self._run_simulation()
-        self._get_observation()
         self._get_reward_and_validity()
         self._get_done()
         self._get_info()
+        self._get_observation()
         
         # Store trajectory data (previous_state, action, reward, next_state) + all step info
         self._store_trajectory_data(previous_state, action, self.reward, self.observation)
@@ -133,11 +188,11 @@ class TSFoilEnv_Template(gym.Env):
         self._run_simulation()
         
         action = np.zeros(self.dim_action)
-        self._get_observation()
         self.reward = 0.0
         self.total_reward = 0.0
         self.done = False
         self._get_info()
+        self._get_observation()
 
         self.i_current_step = 0
         self.i_reference_step = 0
@@ -172,6 +227,42 @@ class TSFoilEnv_Template(gym.Env):
         if hasattr(self, 'fig') and self.fig is not None:
             plt.close(self.fig)
             self.fig = None
+
+    def _preprocess_airfoil(self, airfoil_coordinates: np.ndarray) -> np.ndarray:
+        '''
+        Preprocess the airfoil coordinates.
+        
+        Interpolate the airfoil upper and lower surfaces to 101 points,
+        and concatenate them to form a new airfoil with 201 points.
+        
+        Parameters
+        ----------
+        airfoil_coordinates: np.ndarray
+            The airfoil coordinates to be preprocessed
+            
+        Returns
+        -------
+        interp_coordinates: np.ndarray
+            The preprocessed airfoil coordinates
+        '''
+        x = airfoil_coordinates[:,0]
+        y = airfoil_coordinates[:,1]
+        
+        le_pos = x.argmin()
+        xu = x[:le_pos+1][::-1]
+        yu = y[:le_pos+1][::-1]
+        xl = x[le_pos:]
+        yl = y[le_pos:]
+
+        # Interpolate the airfoil
+        yu_interp = np.interp(self.x_airfoil_surface, xu, yu)
+        yl_interp = np.interp(self.x_airfoil_surface, xl, yl)
+        
+        interp_coordinates = np.zeros((2*self.n_airfoil_points-1, 2))
+        interp_coordinates[:,0] = np.concatenate((self.x_airfoil_surface[::-1], self.x_airfoil_surface[1:]))
+        interp_coordinates[:,1] = np.concatenate((yu_interp[::-1], yl_interp[1:]))
+
+        return interp_coordinates
 
     def _run_simulation(self) -> None:
         '''
@@ -225,11 +316,11 @@ class TSFoilEnv_Template(gym.Env):
         '''
         cl = self.pytsfoil.data_summary['cl']
         cd = self.pytsfoil.data_summary['cd']
-        cd = max(cd, 0.002)
+        cd = max(cd, 0.001)
         
         cl_old = self.get_data_from_trajectory(self.i_reference_step, 'cl')
         cd_old = self.get_data_from_trajectory(self.i_reference_step, 'cd')
-        cd_old = max(cd_old, 0.002)
+        cd_old = max(cd_old, 0.001)
         
         self.reward = cl / cd - cl_old / cd_old
         
@@ -267,6 +358,7 @@ class TSFoilEnv_Template(gym.Env):
             'mach': self.pytsfoil.data_summary['mach'],
 
             'cl': self.pytsfoil.data_summary['cl'],
+            'cm': self.pytsfoil.data_summary['cm'],
             'cd': self.pytsfoil.data_summary['cd'],
             'cd_int': self.pytsfoil.data_summary['cd_int'],
             'cd_wave': self.pytsfoil.data_summary['cd_wave'],
@@ -293,9 +385,14 @@ class TSFoilEnv_Template(gym.Env):
 
     def undo_last_step(self) -> None:
         '''
-        Undo the last step. Run before `step()` is called.
+        Undo the last step. 
         
-        Note: When the `step()` has not been called, the `i_current_step` is actually the last step.
+        Note: 
+        - Run before `step()` is called.
+        - When the `step()` has not been called, the `i_current_step` is actually the last step.
+        - The action is always applied to the reference step.
+        - The reference step is not updated when the previous step is invalid.
+        - So, usually, there is no need to manually undo the last step.
         '''
         # Check if there's anything to undo
         if self.i_current_step <= 0 or len(self.trajectory) == 0:
@@ -577,11 +674,11 @@ class TSFoilEnv_Template(gym.Env):
         # Plot 3: Performance metrics history
         steps = [entry['info']['i_current_step'] for entry in self.trajectory]
         cl_values = [entry['info']['cl'] for entry in self.trajectory]
-        cd_values = [entry['info']['cd'] for entry in self.trajectory]
+        cd_values = [entry['info']['cd'] * 100 for entry in self.trajectory]
         
         if cl_values and cd_values:
             self.axes[2].plot(steps, cl_values, 'b-o', label='CL', markersize=4)
-            self.axes[2].plot(steps, cd_values, 'r-s', label='CD', markersize=4)
+            self.axes[2].plot(steps, cd_values, 'r-s', label='CD (*100)', markersize=4)
             self.axes[2].legend()
         
         # Plot 4: Reward history

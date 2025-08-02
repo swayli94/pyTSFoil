@@ -2,7 +2,7 @@
 import os
 import numpy as np
 
-from pyTSFoil.environment.env_template import TSFoilEnv_Template
+from pyTSFoil.environment.utils import TSFoilEnv_FigState_GlobalAction
 
 
 if __name__ == "__main__":
@@ -14,31 +14,24 @@ if __name__ == "__main__":
     x, y = np.loadtxt(os.path.join(path, 'rae2822.dat'), skiprows=1).T
     airfoil_coordinates = np.column_stack((x, y))
     
-    env = TSFoilEnv_Template(
+    env = TSFoilEnv_FigState_GlobalAction(
             airfoil_coordinates=airfoil_coordinates,
             output_dir=path,
             render_mode='save',
+            path_save_fig_of_observation=os.path.join(path, 'fig_of_observation.png'),
             )
     
     # Run the environment
     env.reset()   
     env.render()
     
-    for i in range(2):
+    for i in range(5):
         
-        action = np.array([1.02 + 0.02*i])
+        action = env.Action.random_action(scale=1.0)
+        
         env.step(action)
         env.render()
-    
-    '''
-    Note: Usually, there is no need to manually undo the last step.
-    Because the reference step is not updated when the previous step is invalid.
-    '''
-    env.undo_last_step()
-    action = np.array([0.95])
-    env.step(action)
-    env.render()
-    
+        
     env.save_trajectory(os.path.join(path, 'trajectory.json'))
     env.close()
     
