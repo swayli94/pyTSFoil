@@ -1,5 +1,5 @@
 '''
-Module for feature extraction of airfoils.
+Functions for feature extraction of airfoils.
 '''
 
 import copy

@@ -341,12 +341,35 @@ class FigureState():
     
     '''
     def __init__(self) -> None:
-
-        self.state_name = ['Cl', 'Cd_wave', 'Cm']
-        self.dim_state = len(self.state_name)
         
-        self.state_lower_bound = np.array([0.0, 0.0, -0.5])
-        self.state_upper_bound = np.array([1.0, 0.1, 0.0])
+        self.state_dict = {
+            't_max': {'bound': [0.00, 0.20], 'meaning': 'maximum thickness'},
+            'x_t_max': {'bound': [0.2, 0.8], 'meaning': 'x-coordinate of maximum thickness'},
+            'volume': {'bound': [0.0, 0.2], 'meaning': 'volume'},
+            'r_LE': {'bound': [0.0, 0.05], 'meaning': 'leading edge radius'},
+            'a_LE': {'bound': [0.0, 90.0], 'meaning': 'leading edge slope angle (degree)'},
+            'a_TEW': {'bound': [0.0, 90.0], 'meaning': 'trailing edge wedge angle (degree)'},
+            'a_TES': {'bound': [0.0, 90.0], 'meaning': 'trailing edge slope angle (degree)'},
+            't_20p': {'bound': [0.0, 0.10], 'meaning': 'thickness at 20 percent chord'},
+            't_70p': {'bound': [0.0, 0.10], 'meaning': 'thickness at 70 percent chord'},
+            'c_avg': {'bound': [0.0, 0.10], 'meaning': 'average camber'},
+            'x_u_crest': {'bound': [0.2, 0.80], 'meaning': 'x-coordinate of upper crest point'},
+            'y_u_crest': {'bound': [0.0, 0.10], 'meaning': 'y-coordinate of upper crest point'},
+            'x_l_crest': {'bound': [0.2, 0.80], 'meaning': 'x-coordinate of lower crest point'},
+            'y_l_crest': {'bound': [-0.1, 0.0], 'meaning': 'y-coordinate of lower crest point'},
+            'Cl': {'bound': [0.0, 1.0], 'meaning': 'lift coefficient'},
+            'Cd_wave': {'bound': [0.0, 0.05], 'meaning': 'wave drag coefficient'},
+            'Cm': {'bound': [-0.5, 0.5], 'meaning': 'moment coefficient'},
+        }
+
+        # Crest point is the point where the upper/lower surface is tangent to the flow direction.
+        # For simplicity, we consider a zero degree angle of attack,
+        # so the crest point is the point with the maximum abs(y)
+        
+        self.dim_state = len(self.state_dict)
+        
+        self.state_lower_bound = np.array([self.state_dict[key]['bound'][0] for key in self.state_dict.keys()])
+        self.state_upper_bound = np.array([self.state_dict[key]['bound'][1] for key in self.state_dict.keys()])
 
     def calculate_state(self, 
                 x: np.ndarray, yu: np.ndarray, yl: np.ndarray,
@@ -377,7 +400,43 @@ class FigureState():
         figure_base64: str
             base64 encoded PNG image of the wall Mach number distribution
         '''
-        state_array = np.array([Cl, Cd_wave, Cm])
+        
+        state_array = self._calculate_parametric_state(x, yu, yl, Cl, Cd_wave, Cm)
+        
+        figure_base64 = self._calculate_figure_state(x, yu, yl, xxu, xxl, mwu, mwl, save_fig_path)
+    
+        return state_array, figure_base64
+    
+    def _calculate_parametric_state(self, 
+                x: np.ndarray, yu: np.ndarray, yl: np.ndarray,
+                Cl: float, Cd_wave: float, Cm: float) -> np.ndarray:
+        
+        state_array = np.zeros(self.dim_state)
+        
+        geo_features = FoilGeoFeatures(x, yu, yl)
+        
+        state_array[0], state_array[1], _ = geo_features.get_maximum_thickness()
+        state_array[2] = geo_features.get_volume()
+        state_array[3] = geo_features.get_leading_edge_radius()
+        state_array[4] = geo_features.get_leading_edge_slope_angle()
+        state_array[5] = geo_features.get_trailing_edge_wedge_angle()
+        state_array[6] = geo_features.get_trailing_edge_slope_angle()
+        state_array[7] = geo_features.get_thickness_at(0.2)
+        state_array[8] = geo_features.get_thickness_at(0.7)
+        state_array[9] = geo_features.get_average_camber()
+        state_array[10], state_array[11], _ = geo_features.get_upper_crest_point()
+        state_array[12], state_array[13], _ = geo_features.get_lower_crest_point()
+        state_array[14] = Cl
+        state_array[15] = Cd_wave
+        state_array[16] = Cm
+
+        return state_array
+            
+    def _calculate_figure_state(self, 
+                x: np.ndarray, yu: np.ndarray, yl: np.ndarray,
+                xxu: np.ndarray, xxl: np.ndarray,
+                mwu: np.ndarray, mwl: np.ndarray,
+                save_fig_path: str = None) -> str:
         
         # Create figure for LLM consumption
         fig, ax = plt.subplots(1, 2, figsize=(12, 5))
@@ -407,7 +466,7 @@ class FigureState():
         # Set plot properties
         ax[1].set_xlabel('X/c', fontsize=12)
         ax[1].set_ylabel('Wall Mach Number', fontsize=12)
-        ax[1].set_title(f'Wall Mach Number Distribution (Cl={Cl:.3f}, Cd_wave={Cd_wave:.4f})', fontsize=14)
+        ax[1].set_title('Wall Mach Number Distribution', fontsize=14)
         ax[1].grid(True, alpha=0.3)
         ax[1].legend()
         ax[1].set_xlim([-0.1, 1.1])
@@ -429,5 +488,5 @@ class FigureState():
         # Close the figure to free memory
         plt.close(fig)
         
-        return state_array, figure_base64
+        return figure_base64
         

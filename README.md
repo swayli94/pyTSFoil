@@ -4,7 +4,7 @@ A Python interface for TSFOIL2, an inviscid transonic small-disturbance (TSD) so
 
 ## Overview
 
-TSFOIL2 is a proven CFD solver chosen for its rapid solution time, ease of use, and open-source architecture. It solves the transonically-scaled perturbation potential and similarity variables to compute:
+TSFOIL2 is a CFD solver unknown for its rapid solution time, ease of use, and open-source architecture. It solves the transonically-scaled perturbation potential and similarity variables to compute:
 
 - Pressure coefficient distribution (Cp) along airfoil surfaces
 - Lift and drag coefficients through surface integration
@@ -132,6 +132,8 @@ pyTSFoil/
 ├── tsfoil_fortran.*      # Compiled Fortran module
 ├── compile_f2py.py       # Fortran compilation script
 └── environment/          # Gym environments
+    ├── basic.py          # Basic class for environment
+    ├── feature.py        # Feature extraction functions
     ├── env_template.py   # Template environment
     └── utils.py          # Additional environment variants
 

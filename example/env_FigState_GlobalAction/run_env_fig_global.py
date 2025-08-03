@@ -23,15 +23,14 @@ if __name__ == "__main__":
     
     # Run the environment
     env.reset()   
-    env.render()
     
     for i in range(5):
         
         action = env.Action.random_action(scale=1.0)
         
         env.step(action)
-        env.render()
         
+    env.render()
     env.save_trajectory(os.path.join(path, 'trajectory.json'))
     env.close()
     
