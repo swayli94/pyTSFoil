@@ -12,7 +12,7 @@ import sys
 # Add the parent directory to the path so we can import pyTSFoil
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from pyTSFoil.description.basic import (
+from pyTSFoil.environment.prompt import (
     DescriptionActionBumpMod,
     DescriptionActionGlobalMod, 
     DescriptionStateFigure,

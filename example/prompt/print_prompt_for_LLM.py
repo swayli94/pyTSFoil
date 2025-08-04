@@ -9,7 +9,7 @@ Usage:
 '''
 
 from pyTSFoil.environment.basic import BumpModificationAction, FigureState
-from pyTSFoil.description.basic import DescriptionHistory, DescriptionActionBumpMod, DescriptionStateFigure, PromptForLLM
+from pyTSFoil.environment.prompt import DescriptionActionBumpMod, DescriptionStateFigure, PromptForLLM
 import os
 import tiktoken
 

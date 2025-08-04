@@ -26,7 +26,7 @@ Output: Markdown file with step-by-step design history including:
 - Overall progress summary
 '''
 
-from pyTSFoil.description.basic import DescriptionHistory
+from pyTSFoil.environment.prompt import DescriptionHistory
 from pyTSFoil.environment.basic import BumpModificationAction, FigureState
 import os
 
