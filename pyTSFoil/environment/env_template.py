@@ -109,6 +109,7 @@ class TSFoilEnv_Template(gym.Env):
         self.i_current_step = 0
         self.i_reference_step = 0
         self.is_current_step_valid = True
+        self.is_action_valid = True
         
         self.n_airfoil_points = 101 # Number of points in the airfoil surfaces
         self.x_airfoil_surface = dist_clustcos(self.n_airfoil_points)
@@ -122,6 +123,7 @@ class TSFoilEnv_Template(gym.Env):
         
         self.n_max_step = n_max_step
         self.critical_reward_to_update_reference_step = critical_reward
+        self.invalid_action_penalty_reward = -1.0
         
         if output_dir is None:
             self.output_dir = os.path.dirname(__file__)
@@ -299,6 +301,8 @@ class TSFoilEnv_Template(gym.Env):
         self.airfoil_coordinates[:,1] = ref_airfoil_coordinates[:,1] * action[0]
         
         self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates
+        
+        self.is_action_valid = True
 
     def _get_observation(self) -> np.ndarray:
         '''
@@ -330,6 +334,10 @@ class TSFoilEnv_Template(gym.Env):
             self.is_current_step_valid = True
         else:
             self.is_current_step_valid = False
+            
+        if not self.is_action_valid:
+            self.reward = self.invalid_action_penalty_reward
+            self.is_current_step_valid = False
         
         return self.reward
 
@@ -349,6 +357,7 @@ class TSFoilEnv_Template(gym.Env):
             'i_current_step': self.i_current_step,
             'i_reference_step': self.i_reference_step,
             'is_current_step_valid': self.is_current_step_valid,
+            'is_action_valid': self.is_action_valid,
             
             'airfoil_coordinates': self.airfoil_coordinates.copy(),
             

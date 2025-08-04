@@ -9,7 +9,7 @@ from typing import List, Any, Tuple
 import matplotlib.pyplot as plt
 
 from cst_modeling.section import bump_function, cst_foil_fit, cst_foil
-from cst_modeling.foil import FoilGeoFeatures, FoilModification
+from cst_modeling.foil import FoilGeoFeatures, FoilModification, check_validity
 
 
 class Action():
@@ -146,10 +146,10 @@ class BumpModificationAction(Action):
                     keep_airfoil_tmax=False) -> None:
         
         self.action_dict = {
-            'UBL': {'bound': [ 0.0,   1.0],   'min_increment': 0.002,  'meaning': 'upper bump location'},
+            'UBL': {'bound': [ 0.01,  0.99],  'min_increment': 0.002,  'meaning': 'upper bump location'},
             'UBH': {'bound': [-0.005, 0.005], 'min_increment': 0.0005, 'meaning': 'upper bump height'},
             'UBW': {'bound': [ 0.2,   0.8],   'min_increment': 0.01,   'meaning': 'upper bump width'},
-            'LBL': {'bound': [ 0.0,   1.0],   'min_increment': 0.002,  'meaning': 'lower bump location'},
+            'LBL': {'bound': [ 0.01,  0.99],  'min_increment': 0.002,  'meaning': 'lower bump location'},
             'LBH': {'bound': [-0.01,  0.01],  'min_increment': 0.0005, 'meaning': 'lower bump height'},
             'LBW': {'bound': [ 0.2,   0.8],   'min_increment': 0.01,   'meaning': 'lower bump width'},
         }
@@ -185,6 +185,11 @@ class BumpModificationAction(Action):
             
         yu_new, yl_new: ndarray
             new airfoil geometry
+            
+        is_action_valid: bool
+            whether the action is valid. 
+            When the new airfoil is reasonable, is_action_valid is True.
+            If not, the airfoil geometry should not be modified.
         '''
         if self.keep_airfoil_tmax:
             tmax = np.max(yu-yl)
@@ -210,8 +215,10 @@ class BumpModificationAction(Action):
         cst_u, cst_l = cst_foil_fit(x, yu_new, x, yl_new, n_cst=self.n_cst)
         
         _, yu_new, yl_new, _, _ = cst_foil(x.shape[0], cst_u, cst_l, x=x, t=tmax)
+        
+        is_action_valid = check_validity(x, yu_new, yl_new)
 
-        return cst_u, cst_l, yu_new, yl_new
+        return cst_u, cst_l, yu_new, yl_new, is_action_valid
 
 
 class GlobalModificationAction(Action):
@@ -275,6 +282,11 @@ class GlobalModificationAction(Action):
             
         yu_new, yl_new: ndarray
             new airfoil geometry
+            
+        is_action_valid: bool
+            whether the action is valid. 
+            When the new airfoil is reasonable, is_action_valid is True.
+            If not, the airfoil geometry should not be modified.
         '''
         geo_old = FoilGeoFeatures(x, yu, yl)
         modify = FoilModification(x, yu, yl, self.n_cst)
@@ -339,7 +351,9 @@ class GlobalModificationAction(Action):
         
         _, yu_new, yl_new, _, _ = cst_foil(x.shape[0], cst_u, cst_l, x=x)
 
-        return cst_u, cst_l, yu_new, yl_new
+        is_action_valid = check_validity(x, yu_new, yl_new)
+
+        return cst_u, cst_l, yu_new, yl_new, is_action_valid
 
 
 class FigureState():
