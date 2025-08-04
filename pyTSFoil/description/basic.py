@@ -1,8 +1,10 @@
 '''
 Language description of actions
 '''
+import json
 import numpy as np
-from ..environment.basic import BumpModificationAction, GlobalModificationAction, FigureState
+from typing import List, Dict, Any, Union
+from pyTSFoil.environment.basic import BumpModificationAction, GlobalModificationAction, FigureState
 
 
 class DescriptionActionBumpMod():
@@ -394,4 +396,172 @@ No more content after the decision in this format is given.
 If the text indicates no bump is added to the upper or lower surface, then the parameters of the corresponding surface are zero. You should only reply python code in plain text without any other content.
 """
         return description
+
+
+class DescriptionHistory():
+    '''
+    Convert the environment trajectory to a short description.
+    
+    The [state, action, reward, next_state, is_valid] in each step is converted to description.
+    Only the float values in the state and action are converted to description.
+    The figure is not converted to description.
+    '''
+    
+    @staticmethod
+    def convert_to_description(
+            environment_trajectory: Union[List[Dict[str, Any]], str],
+            state_dict: Dict[str, Dict[str, Any]] = None,
+            action_dict: Dict[str, Dict[str, Any]] = None,
+            ) -> str:
+        '''
+        Convert the environment trajectory to a description
+        
+        Parameters
+        ----------
+        environment_trajectory : Union[List[Dict[str, Any]], str]
+            Either a list of trajectory steps, each containing:
+            - previous_state: np.ndarray/list
+            - action: np.ndarray/list  
+            - reward: float
+            - next_state: np.ndarray/list
+            - done: bool
+            - info: dict
+            Or a string path to a JSON file containing such trajectory data
+        state_dict : Dict[str, Dict[str, Any]]
+            The dictionary of the state parameters
+        action_dict : Dict[str, Dict[str, Any]]
+            The dictionary of the action parameters
+            
+        Note
+        ----
+        The state_dict and action_dict are used to get the names of the state and action parameters.
+        If not provided, the default state_dict and action_dict will be used.
+        
+        Returns
+        -------
+        str
+            Human-readable description of the trajectory
+        '''
+        # Handle JSON file path input
+        if isinstance(environment_trajectory, str):
+            try:
+                with open(environment_trajectory, 'r') as f:
+                    trajectory_data = json.load(f)
+            except FileNotFoundError:
+                return f"Error: Trajectory file '{environment_trajectory}' not found."
+            except json.JSONDecodeError:
+                return f"Error: Invalid JSON format in file '{environment_trajectory}'."
+        else:
+            trajectory_data = environment_trajectory
+        
+        if not trajectory_data:
+            return "Empty trajectory - no design steps recorded."
+        
+        state_names = list(state_dict.keys())
+        action_names = list(action_dict.keys())
+
+        # Initialize description components
+        description_parts = []
+        description_parts.append("**Airfoil Design History:**\n")
+
+        for step in trajectory_data:
+            
+            # Extract data from step
+            prev_state = np.array(step.get('previous_state', []))
+            action = np.array(step.get('action', []))
+            reward = step.get('reward', 0.0)
+            next_state = np.array(step.get('next_state', []))
+            i_current_step = int(step['info']['i_current_step'])
+            i_reference_step = int(step['info']['i_reference_step'])
+            is_current_step_valid = bool(step['info']['is_current_step_valid'])
+            
+            # Check if this is the initial state (first step with zero action)
+            is_initial_state = i_current_step == 0
+            
+            if is_initial_state:
+                description_parts.append(f"\n**Initial Airfoil:**")
+                description_parts.append(f"\n- Initial state:")
+            else:
+                description_parts.append(f"\n**Step {i_current_step}:**")
+                description_parts.append(f"\n- Reference step to be modified: {i_reference_step}")
+                description_parts.append(f"\n- Reference state:")
+            
+            # Describe the reference state (key aerodynamic parameters)
+            for i in range(len(state_names)):
+                description_parts.append(f" {state_names[i]}= {prev_state[i]:.4f}")
+                
+            if is_initial_state:
+                description_parts.append("\n")
+                continue
+
+            description_parts.append(f"\n- Action:")
+            for i in range(len(action_names)):
+                description_parts.append(f" {action_names[i]}= {action[i]:.4f}")
+                
+            description_parts.append(f"\n- Next state:")
+            for i in range(len(state_names)):
+                description_parts.append(f" {state_names[i]}= {next_state[i]:.4f}")
+            
+            description_parts.append(f"\n- Reward: {reward:.4f}")
+            description_parts.append(f"\n- Is current step valid: {is_current_step_valid}")
+            description_parts.append("\n")
+
+        return "".join(description_parts)
+    
+
+class PromptForLLM():
+    '''
+    Generate the prompt for LLM.
+    
+    In this class, we consider `DescriptionActionBumpMod` and `DescriptionStateFigure` as the action and state description.
+    
+    The prompt contains description of:
+    - the task
+    - the design knowledge
+    - the state
+    - the action
+    - the history of the trajectory
+    - the instruction for action output
+    '''
+    def __init__(self,
+                description_action: DescriptionActionBumpMod = None,
+                description_state: DescriptionStateFigure = None,
+                ):
+        if description_action is None:
+            description_action = DescriptionActionBumpMod()
+        if description_state is None:
+            description_state = DescriptionStateFigure()
+            
+        self.description_action = description_action
+        self.description_state = description_state
+        
+    def generate_prompt(self,
+                        environment_trajectory: Union[List[Dict[str, Any]], str],
+                        state_dict: Dict[str, Dict[str, Any]] = None,
+                        action_dict: Dict[str, Dict[str, Any]] = None,
+                        ) -> str:
+        '''
+        Get the prompt for LLM.
+        
+        Parameters
+        ----------
+        environment_trajectory : Union[List[Dict[str, Any]], str]
+            The environment trajectory
+        state_dict : Dict[str, Dict[str, Any]]
+            The dictionary of the state parameters
+        action_dict : Dict[str, Dict[str, Any]]
+            The dictionary of the action parameters
+        '''
+        prompt = ""
+        prompt += DescriptionTask.get_general_description()
+        prompt += DescriptionTask.get_design_knowledge()
+        prompt += self.description_state.get_general_description()
+        prompt += self.description_action.get_general_description()
+        prompt += DescriptionHistory.convert_to_description(
+            environment_trajectory,
+            state_dict,
+            action_dict,
+            )
+        prompt += DescriptionTask.instruction_for_bump_action_output()
+        return prompt
 

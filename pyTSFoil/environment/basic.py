@@ -385,7 +385,7 @@ class FigureState():
                 Cl: float, Cd_wave: float, Cm: float,
                 save_fig_path: str = None) -> Tuple[np.ndarray, str]:
         '''
-        Calculate the state variables and create figure for LLM
+        Calculate the state variables and create figure for LLM.
         
         Parameters
         --------------
@@ -403,7 +403,7 @@ class FigureState():
         Returns
         --------------
         state_array: np.ndarray
-            state variables [Cl, Cd_wave, Cm]
+            state variables
         figure_base64: str
             base64 encoded PNG image of the wall Mach number distribution
         '''
@@ -413,6 +413,50 @@ class FigureState():
         figure_base64 = self._calculate_figure_state(x, yu, yl, xxu, xxl, mwu, mwl, save_fig_path)
     
         return state_array, figure_base64
+    
+    def calculate_state_for_RL(self, 
+                x: np.ndarray, yu: np.ndarray, yl: np.ndarray,
+                xxu: np.ndarray, xxl: np.ndarray,
+                mwu: np.ndarray, mwl: np.ndarray,
+                Cl: float, Cd_wave: float, Cm: float,
+                n_interp_points: int = 101) -> Tuple[np.ndarray, np.ndarray]:
+        '''
+        Calculate the state variables for RL.
+        The figure originally used for LLMs is not used for RL.
+        The airfoil geometry and wal Mach number distribution in the figure are interpolated to the same number of points. Then, used as the state for RL.
+        
+        Parameters
+        --------------
+        x, yu, yl: np.ndarray
+            x-coordinates, upper/lower surface coordinates of the airfoil geometry
+        xxu, xxl: np.ndarray
+            x-coordinates of the upper/lower surface mesh
+        mwu, mwl: np.ndarray
+            wall Mach number of the upper/lower surface
+        Cl, Cd_wave, Cm: float
+            lift/wave drag/moment coefficients
+        n_interp_points: int
+            number of interpolation points for the wall Mach number distribution and the airfoil geometry
+            
+        Returns
+        --------------
+        state_array: np.ndarray
+            state variables
+        figure_array: np.ndarray [n_interp_points, 4]
+            figure array, [yu, yl, mwu, mwl]
+        '''
+        state_array = self._calculate_parametric_state(x, yu, yl, Cl, Cd_wave, Cm)
+        
+        x_interp = np.linspace(0, 1, n_interp_points)
+        
+        yu_interp = np.interp(x_interp, x, yu)
+        yl_interp = np.interp(x_interp, x, yl)
+        mwu_interp = np.interp(x_interp, xxu, mwu)
+        mwl_interp = np.interp(x_interp, xxl, mwl)
+        
+        figure_array = np.column_stack((yu_interp, yl_interp, mwu_interp, mwl_interp))
+
+        return state_array, figure_array
     
     def _calculate_parametric_state(self, 
                 x: np.ndarray, yu: np.ndarray, yl: np.ndarray,
@@ -496,4 +540,4 @@ class FigureState():
         plt.close(fig)
         
         return figure_base64
-        
+    
