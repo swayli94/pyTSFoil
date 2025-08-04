@@ -141,18 +141,25 @@ class BumpModificationAction(Action):
         whether keep the maximum airfoil thickness the same during modification
     '''
     def __init__(self,
-                    action_upper_bound=[1.0,  0.005, 0.8, 1.0,  0.01, 0.8], 
-                    action_lower_bound=[0.0, -0.005, 0.2, 0.0, -0.01, 0.2],
                     critical_height_for_no_bump=1E-3,
                     n_cst=10, 
                     keep_airfoil_tmax=False) -> None:
         
-        super().__init__(dim_action=6, 
-                    action_upper_bound=np.array(action_upper_bound), 
-                    action_lower_bound=np.array(action_lower_bound))
+        self.action_dict = {
+            'UBL': {'bound': [ 0.0,   1.0],   'min_increment': 0.002,  'meaning': 'upper bump location'},
+            'UBH': {'bound': [-0.005, 0.005], 'min_increment': 0.0005, 'meaning': 'upper bump height'},
+            'UBW': {'bound': [ 0.2,   0.8],   'min_increment': 0.01,   'meaning': 'upper bump width'},
+            'LBL': {'bound': [ 0.0,   1.0],   'min_increment': 0.002,  'meaning': 'lower bump location'},
+            'LBH': {'bound': [-0.01,  0.01],  'min_increment': 0.0005, 'meaning': 'lower bump height'},
+            'LBW': {'bound': [ 0.2,   0.8],   'min_increment': 0.01,   'meaning': 'lower bump width'},
+        }
+        
+        super().__init__(dim_action=len(self.action_dict), 
+                    action_upper_bound=np.array([self.action_dict[key]['bound'][1] for key in self.action_dict.keys()]), 
+                    action_lower_bound=np.array([self.action_dict[key]['bound'][0] for key in self.action_dict.keys()]))
 
-        self.action_name = ['upper_bump_location', 'upper_bump_height', 'upper_bump_width', 
-                            'lower_bump_location', 'lower_bump_height', 'lower_bump_width']
+        self.action_name = list(self.action_dict.keys())
+        
         self.n_cst = n_cst
         self.keep_airfoil_tmax = keep_airfoil_tmax
         
@@ -218,8 +225,8 @@ class GlobalModificationAction(Action):
             'dTHK': {'bound': 0.002, 'min_increment': 0.0002, 'meaning': 'airfoil THickness'},
             'dCAM': {'bound': 0.002, 'min_increment': 0.0002, 'meaning': 'airfoil CAMber'},
             'dMTL': {'bound': 0.050, 'min_increment':   0.01, 'meaning': 'Maximum airfoil Thickness Location'},
-            'dCF6': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'average Camber of Front 60%% of the airfoil'},
-            'dCR4': {'bound': 0.001, 'min_increment': 0.0005, 'meaning': 'average Camber of Rear 40%% of the airfoil'},
+            'dCF6': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'average Camber of Front 60 percent of the airfoil'},
+            'dCR4': {'bound': 0.001, 'min_increment': 0.0005, 'meaning': 'average Camber of Rear 40 percent of the airfoil'},
             'dLER': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'Leading Edge Radius'},
             'dLES': {'bound': 0.500, 'min_increment':    0.1, 'meaning': 'Leading Edge Slope angle (degree)'},
             'dTEW': {'bound': 0.500, 'min_increment':    0.1, 'meaning': 'Trailing Edge Wedge angle (degree)'},
