@@ -5,17 +5,12 @@ Proximal Policy Optimization (PPO) algorithm for airfoil design
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from torch.distributions import Normal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Tuple, Dict, Optional
-import os
-import json
+from typing import Tuple, Optional
 from collections import deque
 
-from pyTSFoil.environment.env_template import TSFoilEnv_Template
-from pyTSFoil.environment.basic import Action, FigureState
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 
 
@@ -212,8 +207,8 @@ class PPO_FigState_BumpAction():
                  device: str = 'auto'):
         
         self.env = env
-        self.action_class = env.Action
-        self.state_class = env.State
+        self.action_class = env.action_class
+        self.state_class = env.state_class
         
         # Hyperparameters
         self.lr = lr
@@ -266,7 +261,7 @@ class PPO_FigState_BumpAction():
         print(f"  - State array dim: {self.dim_state} (FigureState parametric features)")
         print(f"  - Figure array dim: [{n_interp_points}, 4] (yu, yl, mwu, mwl)")
         print(f"  - Action array dim: {self.dim_action} (BumpModificationAction)")
-        print(f"  - Action bounds: {env.Action.action_lower_bound} to {env.Action.action_upper_bound}")
+        print(f"  - Action bounds: {env.action_class.action_lower_bound} to {env.action_class.action_upper_bound}")
         print(f"  - Device: {self.device}")
 
     def reset_storage(self) -> None:
@@ -309,38 +304,40 @@ class PPO_FigState_BumpAction():
         episode_length = 0
         
         for step in range(n_steps):
-            # Convert to tensors
-            state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
-            figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(self.device)
             
+            # Convert the current state to tensors
+            current_state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
+            current_figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(self.device)
+            
+            # Get action, value, log_prob of the current state
             with torch.no_grad():
                 action, log_prob, _, value = self.actor_critic.get_action_and_value(
-                    state_array_tensor, figure_array_tensor
+                    current_state_array_tensor, current_figure_array_tensor
                 )
             
-            # Convert action to numpy and apply action scaling
+            # Recover action from [-1, 1] to actual action values
             action_np = action.squeeze().cpu().numpy()
-            
-            # Scale action from [-1, 1] to action bounds using BumpModificationAction
             action_unscaled = self.action_class.recover_action(action_np)
             
-            print(f"step {step:04d} | action_unscaled: {action_unscaled}")
-            
-            # Take environment step with scaled action
-            next_obs, reward, done, info = self.env.step(action_unscaled)
-            state_array, figure_array = self._get_state_from_env()
-            
-            # Store transition (using concatenated state for storage)
-            self.state_arrays.append(state_array)
-            self.figure_arrays.append(figure_array)
-            self.actions.append(action_np)  # Store normalized action
-            self.rewards.append(reward)
+            # Store transition BEFORE taking the step (state that generated the action)
+            self.state_arrays.append(state_array.copy())      # Store CURRENT state
+            self.figure_arrays.append(figure_array.copy())    # Store CURRENT state
+            self.actions.append(action_np)                     # Store action from CURRENT state
             self.values.append(value.squeeze().cpu().numpy())
             self.log_probs.append(log_prob.cpu().numpy())
+                        
+            # Take environment step with unscaled action
+            next_obs, reward, done, info = self.env.step(action_unscaled)
+            self.rewards.append(reward)
             self.dones.append(done)
+            
+            # Get the next state for next iteration
+            state_array, figure_array = self._get_state_from_env()
             
             episode_reward += reward
             episode_length += 1
+            
+            print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
             
             if done:
                 # Episode finished
@@ -521,7 +518,8 @@ class PPO_FigState_BumpAction():
         }
     
     def train(self, total_time_steps: int, log_interval: int = 10, save_interval: int = 100,
-              save_path: str = 'ppo_model.pt', plot_training: bool = True) -> None:
+              save_path: str = 'ppo_model.pt', plot_training: bool = True,
+              plot_path: str = 'training_progress.png') -> None:
         '''
         Train the PPO agent
         
@@ -576,12 +574,12 @@ class PPO_FigState_BumpAction():
             if update_count % save_interval == 0:
                 self.save_model(save_path)
                 if plot_training:
-                    self.plot_training_progress()
+                    self.plot_training_progress(save_path=plot_path)
         
         print("Training completed!")
         self.save_model(save_path)
         if plot_training:
-            self.plot_training_progress()
+            self.plot_training_progress(save_path=plot_path)
 
     def evaluate(self, n_episodes: int = 10, render: bool = False) -> dict:
         '''

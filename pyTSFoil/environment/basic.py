@@ -54,6 +54,16 @@ class Action():
         for i in range(self.dim_action):
             self.action_upper_bound[i] = max(self.action_upper_bound[i], self.action_lower_bound[i]+EPSILON)
 
+    def _update_action_bounds(self, action_dict: dict, EPSILON: float=1E-20) -> None:
+        '''
+        Update the action bounds based on the action dictionary
+        '''
+        self.action_upper_bound = np.array([self.action_dict[key]['bound'][1] for key in self.action_dict.keys()])
+        self.action_lower_bound = np.array([self.action_dict[key]['bound'][0] for key in self.action_dict.keys()])
+        
+        for i in range(self.dim_action):
+            self.action_upper_bound[i] = max(self.action_upper_bound[i], self.action_lower_bound[i]+EPSILON)
+
     def scale_action(self, action_array: np.ndarray, clip: bool=True) -> np.ndarray:
         '''
         Scale action to [-1,1]

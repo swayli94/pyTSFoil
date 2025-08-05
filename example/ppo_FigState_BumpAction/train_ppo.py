@@ -13,7 +13,7 @@ from model.ppo import PPO_FigState_BumpAction
 path = os.path.dirname(os.path.abspath(__file__))
 print('path: ', path)
 
-np.set_printoptions(formatter={'float': '{:.4f}'.format})
+np.set_printoptions(formatter={'float': '{:8.4f}'.format})
 
 def main():
     '''Main training loop'''
@@ -22,11 +22,27 @@ def main():
     x, y = np.loadtxt(os.path.join(path, 'rae2822.dat'), skiprows=1).T
     airfoil_coordinates = np.column_stack((x, y))
     
+    # Custom action class
+    action_class = BumpModificationAction()
+    
+    action_class.action_dict['UBL']['bound'] = [0.01, 0.8]
+    action_class.action_dict['UBH']['bound'] = [-0.002, 0.002]
+    action_class.action_dict['UBH']['min_increment'] = 0.001
+    action_class.action_dict['UBW']['bound'] = [0.4, 0.8]
+    
+    action_class.action_dict['LBL']['bound'] = [0.01, 0.8]
+    action_class.action_dict['LBH']['bound'] = [-0.002, 0.002]
+    action_class.action_dict['LBH']['min_increment'] = 0.001
+    action_class.action_dict['LBW']['bound'] = [0.4, 0.8]
+    
+    action_class._update_action_bounds(action_class.action_dict)
+
     # Create environment
     env = TSFoilEnv_FigState_BumpAction(
         airfoil_coordinates=airfoil_coordinates,
         output_dir=path,
-        render_mode='both',  # or 'display' or 'both'
+        render_mode='both',  # or 'display' or 'both',
+        action_class=action_class
     )
     
     # Create specialized PPO agent
@@ -53,13 +69,14 @@ def main():
         total_time_steps=100,  # Small number for testing
         log_interval=5,
         save_interval=50,
-        save_path=os.path.join(path, 'ppo_figstate_bump_model.pt'),
-        plot_training=True
+        save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
+        plot_training=True,
+        plot_path=os.path.join(path, 'training_progress.png')
     )
     
     # Evaluate the trained agent
     print("\nEvaluating trained agent...")
-    eval_results = ppo_agent.evaluate(n_episodes=5, render=True)
+    eval_results = ppo_agent.evaluate(n_episodes=1, render=True)
     
     print("\nEvaluation Results:")
     print(f"Mean Reward: {eval_results['mean_reward']:.4f} ± {eval_results['std_reward']:.4f}")
@@ -80,7 +97,7 @@ def main():
     # Get action from policy
     action_scaled = ppo_agent.get_action(state_array, figure_array, deterministic=True)
     print(f"Action (scaled): {action_scaled}")
-    print(f"Action names: {env.Action.action_name}")
+    print(f"Action names: {env.action_class.action_name}")
     
     # Step environment with action
     next_obs, reward, done, info = env.step(action_scaled)

@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     for i in range(5):
         
-        action = env.Action.random_action(scale=1.0)
+        action = env.action_class.random_action(scale=1.0)
         
         env.step(action)
         

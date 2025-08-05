@@ -30,19 +30,19 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             render_mode=render_mode,
         )
 
-        self.State = FigureState()
-        self.Action = GlobalModificationAction()
+        self.state_class = FigureState()
+        self.action_class = GlobalModificationAction()
 
-        self.dim_action = self.Action.dim_action
-        self.dim_observation = self.State.dim_state
+        self.dim_action = self.action_class.dim_action
+        self.dim_observation = self.state_class.dim_state
 
         self.action_space = spaces.Box(
-            low=self.Action.action_lower_bound.astype(np.float32), 
-            high=self.Action.action_upper_bound.astype(np.float32), 
+            low=self.action_class.action_lower_bound.astype(np.float32), 
+            high=self.action_class.action_upper_bound.astype(np.float32), 
             shape=(self.dim_action,), dtype=np.float32)
         self.observation_space = spaces.Box(
-            low=self.State.state_lower_bound.astype(np.float32), 
-            high=self.State.state_upper_bound.astype(np.float32), 
+            low=self.state_class.state_lower_bound.astype(np.float32), 
+            high=self.state_class.state_upper_bound.astype(np.float32), 
             shape=(self.dim_observation,), dtype=np.float32)
         
         self.observation = np.zeros(self.dim_observation)
@@ -64,7 +64,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
         yu = ref_airfoil_coordinates[:,1][:self.n_airfoil_points][::-1]
         yl = ref_airfoil_coordinates[:,1][self.n_airfoil_points-1:]
 
-        _, _, yu_new, yl_new, self.is_action_valid = self.Action.apply_action(action, self.x_airfoil_surface, yu, yl)
+        _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
         
         if not self.is_action_valid:
             return
@@ -78,7 +78,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
         '''
         Get the observation.
         '''
-        state_array, figure_base64 = self.State.calculate_state(
+        state_array, figure_base64 = self.state_class.calculate_state(
             x=self.x_airfoil_surface,
             yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
             yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
@@ -108,6 +108,8 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
             path_save_fig_of_observation: str = None,
+            state_class: FigureState = None,
+            action_class: BumpModificationAction = None,
             ) -> None:
         
         super().__init__(
@@ -118,19 +120,19 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             render_mode=render_mode,
         )
         
-        self.State = FigureState()
-        self.Action = BumpModificationAction()
+        self.state_class = state_class if state_class is not None else FigureState()
+        self.action_class = action_class if action_class is not None else BumpModificationAction()
         
-        self.dim_action = self.Action.dim_action
-        self.dim_observation = self.State.dim_state
+        self.dim_action = self.action_class.dim_action
+        self.dim_observation = self.state_class.dim_state
         
         self.action_space = spaces.Box(
-            low=self.Action.action_lower_bound.astype(np.float32), 
-            high=self.Action.action_upper_bound.astype(np.float32), 
+            low=self.action_class.action_lower_bound.astype(np.float32), 
+            high=self.action_class.action_upper_bound.astype(np.float32), 
             shape=(self.dim_action,), dtype=np.float32)
         self.observation_space = spaces.Box(
-            low=self.State.state_lower_bound.astype(np.float32), 
-            high=self.State.state_upper_bound.astype(np.float32), 
+            low=self.state_class.state_lower_bound.astype(np.float32), 
+            high=self.state_class.state_upper_bound.astype(np.float32), 
             shape=(self.dim_observation,), dtype=np.float32)
         
         self.observation = np.zeros(self.dim_observation)
@@ -147,7 +149,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
         yu = ref_airfoil_coordinates[:,1][:self.n_airfoil_points][::-1]
         yl = ref_airfoil_coordinates[:,1][self.n_airfoil_points-1:]
 
-        _, _, yu_new, yl_new, self.is_action_valid = self.Action.apply_action(action, self.x_airfoil_surface, yu, yl)
+        _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
         
         if not self.is_action_valid:
             return
@@ -161,7 +163,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
         '''
         Get the observation.
         '''
-        state_array, figure_base64 = self.State.calculate_state(
+        state_array, figure_base64 = self.state_class.calculate_state(
             x=self.x_airfoil_surface,
             yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
             yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
@@ -183,7 +185,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
         '''
         Get the observation for RL.
         '''
-        state_array, figure_array = self.State.calculate_state_for_RL(
+        state_array, figure_array = self.state_class.calculate_state_for_RL(
             x=self.x_airfoil_surface,
             yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
             yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],

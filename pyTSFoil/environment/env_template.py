@@ -84,8 +84,8 @@ class TSFoilEnv_Template(gym.Env):
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             output_dir : str|None = None,
-            render_mode: str = 'both',  # 'display', 'save', 'both'
-            n_max_step: int = 100,
+            render_mode: str = 'both',  # 'display', 'save', 'both', 'none'
+            n_max_step: int = 10,
             critical_reward: float = 0.0,
             ) -> None:
         
@@ -189,20 +189,22 @@ class TSFoilEnv_Template(gym.Env):
         
         self._run_simulation()
         
+        self.i_current_step = 0
+        self.i_reference_step = 0
+        self.is_current_step_valid = True
+        self.is_action_valid = True
+        
         action = np.zeros(self.dim_action)
         self.reward = 0.0
         self.total_reward = 0.0
         self.done = False
         self._get_info()
         self._get_observation()
-
-        self.i_current_step = 0
-        self.i_reference_step = 0
-        self.is_current_step_valid = True
         
         # Clear trajectory data
         self._init_trajectory()
         self._store_trajectory_data(self.observation, action, self.reward, self.observation)
+        self._init_render()
         
         return self.observation
 
@@ -564,6 +566,11 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Initialize rendering components.
         '''
+        # Close the existing figure
+        if hasattr(self, 'fig') and self.fig is not None:
+            plt.close(self.fig)
+            self.fig = None
+        
         # Set up matplotlib for interactive mode if displaying
         if self.render_mode in ['display', 'both']:
             plt.ion()  # Turn on interactive mode
@@ -629,7 +636,7 @@ class TSFoilEnv_Template(gym.Env):
             print(f"\n--- Step {self.i_current_step:3d} ---")
             print(f"Lift Coeff (CL): {self.info.get('cl', 0.0):.4f}")
             print(f"Drag Coeff (CD): {self.info.get('cd', 0.0):.6f}")
-            print(f"L/D Ratio:       {self.reward:.2f}")
+            print(f"Reward:          {self.reward:.2f}")
             print(f"Done:            {self.done}")
 
     def _update_plots(self) -> None:
