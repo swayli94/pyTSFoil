@@ -8,7 +8,7 @@ import torch.optim as optim
 from torch.distributions import Normal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from collections import deque
 
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
