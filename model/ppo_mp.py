@@ -8,112 +8,163 @@ import numpy as np
 from typing import List, Tuple, Optional, Callable
 
 import multiprocessing as mp
-import queue
 import time
+from typing import Dict, Any
 
 from model.ppo import PPO_FigState_BumpAction
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 
 
-def env_worker(env_fn, env_id, action_queue, result_queue, n_interp_points):
+def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Worker function for running environment in separate process
+    Worker function to collect rollout data from a single environment.
+    Each worker runs independently and collects a portion of the total rollout.
     
     Parameters:
     -----------
-    env_fn: callable
-        Function that creates and returns the environment
-    env_id: int
-        Unique identifier for this environment worker
-    action_queue: mp.Queue
-        Queue to receive actions from main process
-    result_queue: mp.Queue  
-        Queue to send results back to main process
-    n_interp_points: int
-        Number of interpolation points for figure array
+    params: Dict[str, Any]
+        Dictionary containing:
+        - 'env_fn': Function that creates environment instance
+        - 'worker_id': Unique identifier for this worker
+        - 'n_steps': Number of steps this worker should collect
+        - 'n_interp_points': Number of interpolation points for figure array
+        - 'actor_critic_state': State dict of the actor-critic model
+        - 'device': Device to run model on
+        - 'action_class': Action class for converting actions
+        - 'dim_state': State space dimension
+        - 'dim_action': Action space dimension
+        - 'dim_latent': Latent space dimension
+        - 'dim_hidden': Hidden layer dimension
+        
+    Returns:
+    --------
+    Dict[str, Any]: Rollout data collected by this worker
     """
     try:
+        import torch
+        import numpy as np
+        
+        # Extract parameters
+        env_fn = params['env_fn']
+        worker_id = params['worker_id'] 
+        n_steps = params['n_steps']
+        n_interp_points = params['n_interp_points']
+        actor_critic_state = params['actor_critic_state']
+        device = params['device']
+        action_class = params['action_class']
+        
+        # print(f"Worker {worker_id}: Starting rollout collection for {n_steps} steps")
+        
         # Create environment in this process
         env = env_fn()
+        
+        # Create and load actor-critic model
+        # Import here to avoid issues with multiprocessing
+        from model.ppo import ActorCritic
+        
+        # Use passed dimensions instead of inferring them
+        actor_critic = ActorCritic(
+            dim_state=params['dim_state'],
+            dim_action=params['dim_action'],
+            dim_latent=params.get('dim_latent', 64),
+            dim_hidden=params.get('dim_hidden', 256),
+            n_interp_points=n_interp_points
+        ).to(device)
+        
+        actor_critic.load_state_dict(actor_critic_state)
+        actor_critic.eval()
         
         # Reset environment and get initial state
         env.reset()
         state_array, figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
         
-        # Send initial state
-        result_queue.put({
-            'env_id': env_id,
-            'type': 'state',
-            'state_array': state_array,
-            'figure_array': figure_array,
-            'episode_reward': 0,
-            'episode_length': 0
-        })
+        # Storage for rollout data
+        state_arrays = []
+        figure_arrays = []
+        actions = []
+        rewards = []
+        values = []
+        log_probs = []
+        dones = []
+        episode_rewards = []
+        episode_lengths = []
         
         episode_reward = 0
         episode_length = 0
+        steps_collected = 0
         
-        while True:
-            try:
-                # Wait for action from main process
-                action_data = action_queue.get(timeout=10.0)
+        while steps_collected < n_steps:
+            # Convert to tensors
+            state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(device)
+            figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(device)
+            
+            # Get action from policy
+            with torch.no_grad():
+                action, log_prob, _, value = actor_critic.get_action_and_value(
+                    state_array_tensor, figure_array_tensor
+                )
+            
+            # Convert action
+            action_np = action.squeeze().cpu().numpy()
+            action_unscaled = action_class.recover_action(action_np)
+            
+            # Store transition data
+            state_arrays.append(state_array.copy())
+            figure_arrays.append(figure_array.copy())
+            actions.append(action_np)
+            values.append(value.squeeze().cpu().numpy())
+            log_probs.append(log_prob.cpu().numpy())
+            
+            # Take environment step
+            next_obs, reward, done, info = env.step(action_unscaled)
+            episode_reward += reward
+            episode_length += 1
+            
+            # Store step results
+            rewards.append(reward)
+            dones.append(done)
+            
+            # Get next state
+            state_array, figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
+            
+            steps_collected += 1
+            
+            if done:
+                # Episode finished
+                episode_rewards.append(episode_reward)
+                episode_lengths.append(episode_length)
                 
-                if action_data is None:  # Shutdown signal
-                    break
-                    
-                if action_data['env_id'] != env_id:
-                    continue  # Not for this environment
-                
-                action = action_data['action']
-                
-                # Take environment step
-                next_obs, reward, done, info = env.step(action)
-                episode_reward += reward
-                episode_length += 1
-                
-                # Get next state
-                next_state_array, next_figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
-                
-                # Send step result
-                result_queue.put({
-                    'env_id': env_id,
-                    'type': 'step',
-                    'reward': reward,
-                    'done': done,
-                    'info': info,
-                    'state_array': next_state_array,
-                    'figure_array': next_figure_array,
-                    'episode_reward': episode_reward,
-                    'episode_length': episode_length
-                })
-                
-                if done:
-                    # Episode finished, reset
-                    env.reset()
-                    reset_state_array, reset_figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
-                    episode_reward = 0
-                    episode_length = 0
-                    
-                    # Send reset state
-                    result_queue.put({
-                        'env_id': env_id,
-                        'type': 'reset',
-                        'state_array': reset_state_array,
-                        'figure_array': reset_figure_array,
-                        'episode_reward': episode_reward,
-                        'episode_length': episode_length
-                    })
-                    
-            except queue.Empty:
-                # Timeout waiting for action, continue
-                continue
-                
+                # Reset for next episode
+                env.reset()
+                state_array, figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
+                episode_reward = 0
+                episode_length = 0
+        
+        # print(f"Worker {worker_id}: Completed {steps_collected} steps")
+        
+        return {
+            'worker_id': worker_id,
+            'success': True,
+            'state_arrays': np.array(state_arrays),
+            'figure_arrays': np.array(figure_arrays), 
+            'actions': np.array(actions),
+            'rewards': np.array(rewards),
+            'values': np.array(values),
+            'log_probs': np.array(log_probs),
+            'dones': np.array(dones),
+            'episode_rewards': episode_rewards,
+            'episode_lengths': episode_lengths,
+            'final_state_array': state_array,
+            'final_figure_array': figure_array
+        }
+        
     except Exception as e:
-        result_queue.put({
-            'env_id': env_id,
-            'type': 'error',
+        print(f"Worker {worker_id} error: {str(e)}")
+        return {
+            'worker_id': worker_id,
+            'success': False,
             'error': str(e)
-        })
+        }
 
 
 class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
@@ -125,11 +176,9 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
     - FigureState for state representation (parametric + visual)
     - BumpModificationAction for airfoil modifications
     
-    The 'MultiEnv' version of PPO_FigState_BumpAction is designed to
-    generate multiple episodes in parallel (in `collect_rollouts`).
-    Each episode is run in a separate environment, and the rollouts
-    are collected in a single batch. Each environment is run in a 
-    separate process, because the environment is not thread-safe.
+    The 'MultiEnv' version uses multiprocessing.Pool to collect rollouts
+    in parallel from multiple environment instances. This approach is 
+    simpler and more reliable than the queue-based approach.
     '''
 
     def __init__(self, 
@@ -167,83 +216,11 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         self.env_fns = env_fns
         self.n_envs = len(env_fns)
         
-        # Multiprocessing setup
-        self.processes = []
-        self.action_queues = []
-        self.result_queues = []
-        self.env_states = {}
-        
-        # Start worker processes
-        self._start_workers()
-        
         print(f"PPO_FigState_BumpAction_MultiEnv initialized with {self.n_envs} parallel environments")
-
-    def _start_workers(self):
-        '''Start worker processes for each environment'''
-        for env_id in range(self.n_envs):
-            # Create queues for communication
-            action_queue = mp.Queue()
-            result_queue = mp.Queue()
-            
-            # Create and start process
-            process = mp.Process(
-                target=env_worker,
-                args=(self.env_fns[env_id], env_id, action_queue, result_queue, self.n_interp_points)
-            )
-            process.start()
-            
-            self.processes.append(process)
-            self.action_queues.append(action_queue)
-            self.result_queues.append(result_queue)
-        
-        # Wait for initial states from all environments
-        print("Waiting for initial states from all environments...")
-        for env_id in range(self.n_envs):
-            while True:
-                try:
-                    result = self.result_queues[env_id].get(timeout=5.0)
-                    if result['type'] == 'state':
-                        self.env_states[env_id] = {
-                            'state_array': result['state_array'],
-                            'figure_array': result['figure_array'],
-                            'episode_reward': result['episode_reward'],
-                            'episode_length': result['episode_length']
-                        }
-                        break
-                    elif result['type'] == 'error':
-                        raise RuntimeError(f"Environment {env_id} error: {result['error']}")
-                except queue.Empty:
-                    raise RuntimeError(f"Environment {env_id} failed to respond")
-        
-        print("All environments initialized successfully")
-
-    def _stop_workers(self):
-        '''Stop all worker processes'''
-        # Send shutdown signal to all workers
-        for action_queue in self.action_queues:
-            action_queue.put(None)
-        
-        # Wait for all processes to finish
-        for process in self.processes:
-            process.join(timeout=5.0)
-            if process.is_alive():
-                process.terminate()
-                process.join()
-        
-        # Clear resources
-        self.processes.clear()
-        self.action_queues.clear()
-        self.result_queues.clear()
-        self.env_states.clear()
-
-    def __del__(self):
-        '''Cleanup when object is destroyed'''
-        if hasattr(self, 'processes') and self.processes:
-            self._stop_workers()
 
     def collect_rollouts(self, n_steps: Optional[int] = None) -> dict:
         '''
-        Collect rollouts from multiple environments in parallel using multiprocessing
+        Collect rollouts from multiple environments in parallel using multiprocessing.Pool
         
         Parameters:
         -----------
@@ -260,112 +237,88 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             
         self.reset_storage()
         
-        steps_collected = 0
-        active_envs = set(range(self.n_envs))  # Track which environments are active
+        # Calculate steps per worker (distribute steps across environments)
+        total_steps_planned = n_steps * self.n_envs
         
-        while steps_collected < n_steps and active_envs:
-            # Collect actions for all active environments
-            env_actions = {}
+        print(f"Collecting {total_steps_planned} steps ({n_steps} per environment) using {self.n_envs} workers")
+        
+        # Prepare parameters for each worker
+        worker_params = []
+        for worker_id in range(self.n_envs):
+            params = {
+                'env_fn': self.env_fns[worker_id],
+                'worker_id': worker_id,
+                'n_steps': n_steps,
+                'n_interp_points': self.n_interp_points,
+                'actor_critic_state': self.actor_critic.state_dict(),
+                'device': 'cpu',  # Use CPU for workers to avoid GPU conflicts
+                'action_class': self.action_class,
+                'dim_latent': self.dim_latent,
+                'dim_hidden': self.dim_hidden,
+                # Pass model dimensions directly to avoid reconstructing in each worker
+                'dim_state': self.dim_state,
+                'dim_action': self.dim_action
+            }
+            worker_params.append(params)
+        
+        # Run rollout collection in parallel using Pool
+        start_time = time.time()
+        
+        with mp.Pool(processes=self.n_envs) as pool:
+            worker_results = pool.map(collect_rollout_worker, worker_params)
+        
+        elapsed_time = time.time() - start_time
+
+        # Process results from workers
+        successful_results = [r for r in worker_results if r['success']]
+        failed_results = [r for r in worker_results if not r['success']]
+        
+        if failed_results:
+            print(f"Warning: {len(failed_results)} workers failed:")
+            for result in failed_results:
+                print(f"  Worker {result['worker_id']}: {result['error']}")
+        
+        if not successful_results:
+            raise RuntimeError("All workers failed to collect rollouts")
+
+        # Combine data from all successful workers
+        combined_state_arrays = []
+        combined_figure_arrays = []
+        combined_actions = []
+        combined_rewards = []
+        combined_values = []
+        combined_log_probs = []
+        combined_dones = []
+        
+        for result in successful_results:
+            combined_state_arrays.append(result['state_arrays'])
+            combined_figure_arrays.append(result['figure_arrays'])
+            combined_actions.append(result['actions'])
+            combined_rewards.append(result['rewards'])
+            combined_values.append(result['values'])
+            combined_log_probs.append(result['log_probs'])
+            combined_dones.append(result['dones'])
             
-            for env_id in active_envs:
-                # Get current state for this environment
-                state_array = self.env_states[env_id]['state_array']
-                figure_array = self.env_states[env_id]['figure_array']
-                
-                # Convert to tensors
-                state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
-                figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(self.device)
-                
-                # Get action from policy
-                with torch.no_grad():
-                    action, log_prob, _, value = self.actor_critic.get_action_and_value(
-                        state_array_tensor, figure_array_tensor
-                    )
-                
-                # Store action info for this environment
-                action_np = action.squeeze().cpu().numpy()
-                action_unscaled = self.action_class.recover_action(action_np)
-                
-                env_actions[env_id] = {
-                    'action_np': action_np,
-                    'action_unscaled': action_unscaled,
-                    'log_prob': log_prob.cpu().numpy(),
-                    'value': value.squeeze().cpu().numpy()
-                }
-                
-                # Store transition data (state that generated the action)
-                self.state_arrays.append(state_array.copy())
-                self.figure_arrays.append(figure_array.copy())
-                self.actions.append(action_np)
-                self.values.append(env_actions[env_id]['value'])
-                self.log_probs.append(env_actions[env_id]['log_prob'])
-            
-            # Send actions to all environments
-            for env_id in active_envs:
-                self.action_queues[env_id].put({
-                    'env_id': env_id,
-                    'action': env_actions[env_id]['action_unscaled']
-                })
-            
-            # Collect results from all environments
-            for env_id in active_envs.copy():  # Use copy to safely modify during iteration
-                try:
-                    result = self.result_queues[env_id].get(timeout=10.0)
-                    
-                    if result['type'] == 'step':
-                        # Store step results
-                        self.rewards.append(result['reward'])
-                        self.dones.append(result['done'])
-                        
-                        # Update environment state
-                        self.env_states[env_id] = {
-                            'state_array': result['state_array'],
-                            'figure_array': result['figure_array'],
-                            'episode_reward': result['episode_reward'],
-                            'episode_length': result['episode_length']
-                        }
-                        
-                        steps_collected += 1
-                        
-                        print(f"step {steps_collected:02d} (env {env_id}) | "
-                              f"action: {env_actions[env_id]['action_unscaled']} | "
-                              f"reward: {result['reward']:.2e}")
-                        
-                        if result['done']:
-                            # Episode finished
-                            self.training_stats['episode_rewards'].append(result['episode_reward'])
-                            self.training_stats['episode_lengths'].append(result['episode_length'])
-                            
-                            # Wait for reset state
-                            reset_result = self.result_queues[env_id].get(timeout=5.0)
-                            if reset_result['type'] == 'reset':
-                                self.env_states[env_id] = {
-                                    'state_array': reset_result['state_array'],
-                                    'figure_array': reset_result['figure_array'],
-                                    'episode_reward': reset_result['episode_reward'],
-                                    'episode_length': reset_result['episode_length']
-                                }
-                    
-                    elif result['type'] == 'error':
-                        print(f"Environment {env_id} error: {result['error']}")
-                        active_envs.remove(env_id)
-                        
-                except queue.Empty:
-                    print(f"Environment {env_id} timeout")
-                    active_envs.remove(env_id)
-                except Exception as e:
-                    print(f"Environment {env_id} exception: {e}")
-                    active_envs.remove(env_id)
+            # Update training stats
+            self.training_stats['episode_rewards'].extend(result['episode_rewards'])
+            self.training_stats['episode_lengths'].extend(result['episode_lengths'])
         
-        if not active_envs:
-            raise RuntimeError("All environments failed")
+        # Concatenate all arrays
+        self.state_arrays = np.concatenate(combined_state_arrays, axis=0)
+        self.figure_arrays = np.concatenate(combined_figure_arrays, axis=0)
+        self.actions = np.concatenate(combined_actions, axis=0)
+        self.rewards = np.concatenate(combined_rewards, axis=0)
+        self.values = np.concatenate(combined_values, axis=0)
+        self.log_probs = np.concatenate(combined_log_probs, axis=0)
+        self.dones = np.concatenate(combined_dones, axis=0)
         
-        # Use the first available environment's current state for bootstrapping GAE
-        bootstrap_env_id = next(iter(active_envs))
-        bootstrap_state = self.env_states[bootstrap_env_id]
+        print(f"Combined rollout data ({len(self.state_arrays)} steps) from {len(successful_results)}/{self.n_envs} workers in {elapsed_time:.2f}s")
         
-        bootstrap_state_tensor = torch.FloatTensor(bootstrap_state['state_array']).unsqueeze(0).to(self.device)
-        bootstrap_figure_tensor = torch.FloatTensor(bootstrap_state['figure_array']).unsqueeze(0).to(self.device)
+        # Use final state from first successful worker for bootstrapping GAE
+        final_result = successful_results[0]
+        bootstrap_state_tensor = torch.FloatTensor(final_result['final_state_array']).unsqueeze(0).to(self.device)
+        bootstrap_figure_tensor = torch.FloatTensor(final_result['final_figure_array']).unsqueeze(0).to(self.device)
+        
         self.compute_gae(bootstrap_state_tensor, bootstrap_figure_tensor)
         
         # Prepare rollout data
@@ -386,8 +339,8 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
     def _get_state_from_env(self, env_idx: int = 0) -> Tuple[np.ndarray, np.ndarray]:
         '''
         Get state from a specific environment for RL training
-        This method is not used in the multiprocessing version as states are 
-        communicated through queues, but kept for compatibility.
+        This method creates a temporary environment to get state for compatibility
+        with the parent class, but is not used in the multiprocessing rollout collection.
         
         Parameters:
         -----------
@@ -401,25 +354,12 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         figure_array: np.ndarray [n_interp_points, 4]  
             airfoil geometry and Mach data [yu, yl, mwu, mwl]
         '''
-        if env_idx in self.env_states:
-            return self.env_states[env_idx]['state_array'], self.env_states[env_idx]['figure_array']
+        # Create temporary environment to get state
+        if env_idx < len(self.env_fns):
+            temp_env = self.env_fns[env_idx]()
+            temp_env.reset()
+            state_array, figure_array = temp_env._get_observation_for_RL(n_interp_points=self.n_interp_points)
+            return state_array, figure_array
         else:
-            raise RuntimeError(f"Environment {env_idx} state not available")
-
-    def train(self, total_time_steps: int, log_interval: int = 10, save_interval: int = 100,
-              save_path: str = 'ppo_model.pt', plot_training: bool = True,
-              plot_path: str = 'training_progress.png') -> None:
-        '''
-        Train the PPO agent with proper multiprocessing cleanup
-        '''
-        try:
-            # Call parent train method
-            super().train(total_time_steps, log_interval, save_interval, save_path, plot_training, plot_path)
-        finally:
-            # Ensure workers are stopped even if training fails
-            self._stop_workers()
-
-    def shutdown(self):
-        '''Explicitly shutdown all worker processes'''
-        self._stop_workers()
+            raise RuntimeError(f"Environment index {env_idx} out of range")
 

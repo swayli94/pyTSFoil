@@ -212,6 +212,9 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Render the environment.
         '''
+        if self.render_mode in ['none']:
+            return
+        
         # Update the plots
         self._update_plots()
         
@@ -566,6 +569,9 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Initialize rendering components.
         '''
+        if self.render_mode in ['none']:
+            return
+        
         # Close the existing figure
         if hasattr(self, 'fig') and self.fig is not None:
             plt.close(self.fig)

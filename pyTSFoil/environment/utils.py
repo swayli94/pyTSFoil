@@ -20,6 +20,8 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
             path_save_fig_of_observation: str = None,
+            n_max_step: int = 10,
+            critical_reward: float = 0.0,
             ) -> None:
 
         super().__init__(
@@ -28,6 +30,8 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             mach_infinity=mach_infinity,
             output_dir=output_dir,
             render_mode=render_mode,
+            n_max_step=n_max_step,
+            critical_reward=critical_reward,
         )
 
         self.state_class = FigureState()
@@ -110,6 +114,8 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             path_save_fig_of_observation: str = None,
             state_class: FigureState = None,
             action_class: BumpModificationAction = None,
+            n_max_step: int = 10,
+            critical_reward: float = 0.0,
             ) -> None:
         
         super().__init__(
@@ -118,6 +124,8 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             mach_infinity=mach_infinity,
             output_dir=output_dir,
             render_mode=render_mode,
+            n_max_step=n_max_step,
+            critical_reward=critical_reward,
         )
         
         self.state_class = state_class if state_class is not None else FigureState()

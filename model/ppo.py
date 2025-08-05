@@ -232,6 +232,8 @@ class PPO_FigState_BumpAction():
         # Network setup
         self.dim_state = env.observation_space.shape[0]
         self.dim_action = env.action_space.shape[0]
+        self.dim_latent = dim_latent
+        self.dim_hidden = dim_hidden
         
         self.actor_critic = ActorCritic(
             dim_state=self.dim_state,
@@ -554,6 +556,7 @@ class PPO_FigState_BumpAction():
             time_steps_so_far += len(rollout_data['state_arrays'])
             
             # Update policy
+            print(f"Updating policy... ({update_count})")
             update_info = self.update_policy(rollout_data)
             update_count += 1
             
