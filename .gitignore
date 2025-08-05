@@ -13,3 +13,5 @@
 *.pyc
 *.pyf
 *.so
+
+temp*

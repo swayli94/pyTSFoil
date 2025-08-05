@@ -301,10 +301,7 @@ class PPO_FigState_BumpAction():
         
         self.env.reset()
         state_array, figure_array = self._get_state_from_env()
-        
-        episode_reward = 0
-        episode_length = 0
-        
+
         for step in range(n_steps):
             
             # Convert the current state to tensors
@@ -333,24 +330,26 @@ class PPO_FigState_BumpAction():
             self.rewards.append(reward)
             self.dones.append(done)
             
+            # Roll-back treatment
+            # If the current step is invalid, use the value of the previous step
+            flag_roll_back = info.get('is_current_step_valid', False)
+            if flag_roll_back and len(self.values) > 1:
+                self.values[-1] = self.values[-2]
+            
             # Get the next state for next iteration
             state_array, figure_array = self._get_state_from_env()
-            
-            episode_reward += reward
-            episode_length += 1
-            
+
             print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
             
             if done:
-                # Episode finished
-                self.training_stats['episode_rewards'].append(episode_reward)
-                self.training_stats['episode_lengths'].append(episode_length)
-                
-                # Reset environment and get new state
-                self.env.reset()
-                state_array, figure_array = self._get_state_from_env()
-                episode_reward = 0
-                episode_length = 0
+                break
+        
+        # Episode finished
+        episode_length = self.env.get_trajectory_length()
+        episode_reward = self.env.total_reward
+        
+        self.training_stats['episode_rewards'].append(episode_reward)
+        self.training_stats['episode_lengths'].append(episode_length)
         
         # Compute advantages and returns using final state
         state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
@@ -612,8 +611,6 @@ class PPO_FigState_BumpAction():
             self.env.reset()
             state_array, figure_array = self._get_state_from_env()
             
-            episode_reward = 0
-            episode_length = 0
             done = False
             
             while not done:
@@ -631,19 +628,20 @@ class PPO_FigState_BumpAction():
                 obs, reward, done, info = self.env.step(action_scaled)
                 state_array, figure_array = self._get_state_from_env()
                 episode_reward += reward
-                episode_length += 1
                 
-                if render:
-                    self.env.render()
+            if render:
+                self.env.render()
             
             # Store episode statistics
+            episode_reward = self.env.total_reward
+            episode_length = self.env.get_trajectory_length()
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
             
             # Store final aerodynamic performance
             final_cl_values.append(info.get('cl', 0.0))
             final_cd_values.append(info.get('cd', 0.001))
-            final_ld_ratios.append(info.get('cl', 0.0) / max(info.get('cd', 0.001), 0.001))
+            final_ld_ratios.append(info.get('cl', 0.0) / max(info.get('cd', 0.0001), 0.0001))
             
             print(f"Episode {episode+1:3d}: Reward = {episode_reward:8.2f}, "
                   f"Length = {episode_length:4d}, CL = {final_cl_values[-1]:.4f}, "

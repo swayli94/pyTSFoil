@@ -89,8 +89,6 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         episode_rewards = []
         episode_lengths = []
         
-        episode_reward = 0
-        episode_length = 0
         steps_collected = 0
         
         while steps_collected < n_steps:
@@ -117,8 +115,6 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
             
             # Take environment step
             next_obs, reward, done, info = env.step(action_unscaled)
-            episode_reward += reward
-            episode_length += 1
             
             # Store step results
             rewards.append(reward)
@@ -130,17 +126,11 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
             steps_collected += 1
             
             if done:
-                # Episode finished
-                episode_rewards.append(episode_reward)
-                episode_lengths.append(episode_length)
+                break
                 
-                # Reset for next episode
-                env.reset()
-                state_array, figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
-                episode_reward = 0
-                episode_length = 0
-        
-        # print(f"Worker {worker_id}: Completed {steps_collected} steps")
+        # Episode finished
+        episode_rewards.append(env.total_reward)
+        episode_lengths.append(env.get_trajectory_length())
         
         return {
             'worker_id': worker_id,

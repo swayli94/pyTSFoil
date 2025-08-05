@@ -123,7 +123,7 @@ class TSFoilEnv_Template(gym.Env):
         
         self.n_max_step = n_max_step
         self.critical_reward_to_update_reference_step = critical_reward
-        self.invalid_action_penalty_reward = -1.0
+        self.invalid_action_penalty_reward = -100.0
         
         if output_dir is None:
             self.output_dir = os.path.dirname(__file__)
@@ -160,6 +160,8 @@ class TSFoilEnv_Template(gym.Env):
         
         # Initialize rendering components
         self._init_render()
+        
+        self.render_fig_fname = 'tsfoil_gym_render.png'
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, dict]:
         
@@ -563,6 +565,12 @@ class TSFoilEnv_Template(gym.Env):
                     if field in entry['info'] and isinstance(entry['info'][field], list):
                         entry['info'][field] = np.array(entry['info'][field])
     
+    def get_trajectory_length(self) -> int:
+        '''
+        Get the length of the trajectory (number of valid steps).
+        '''
+        return sum(1 for entry in self.trajectory if entry['info']['is_current_step_valid'])
+    
     #* Render related functions
     
     def _init_render(self) -> None:
@@ -726,6 +734,6 @@ class TSFoilEnv_Template(gym.Env):
         '''
         if self.render_mode in ['save', 'both']:
             # Save current state render
-            render_path = os.path.join(self.output_dir, 'tsfoil_gym_render.png')
+            render_path = os.path.join(self.output_dir, self.render_fig_fname)
             self.fig.savefig(render_path, dpi=300, bbox_inches='tight')
 
