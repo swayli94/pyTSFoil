@@ -205,28 +205,26 @@ class BumpModificationAction(Action):
             tmax = np.max(yu-yl)
         else:
             tmax = None
+            
+        is_action_noticeable = False
 
         if abs(action_array[1]) > self.critical_height_for_no_bump:
-        
+            is_action_noticeable = True
             yu_new = yu + bump_function(x, xc=action_array[0], h=action_array[1], s=action_array[2], kind='H')
-            
         else:
-            
             yu_new = yu
         
         if abs(action_array[4]) > self.critical_height_for_no_bump:
-            
+            is_action_noticeable = True
             yl_new = yl + bump_function(x, xc=action_array[3], h=action_array[4], s=action_array[5], kind='H')
-            
         else:
-            
             yl_new = yl
 
         cst_u, cst_l = cst_foil_fit(x, yu_new, x, yl_new, n_cst=self.n_cst)
         
         _, yu_new, yl_new, _, _ = cst_foil(x.shape[0], cst_u, cst_l, x=x, t=tmax)
         
-        is_action_valid = check_validity(x, yu_new, yl_new)
+        is_action_valid = check_validity(x, yu_new, yl_new) and is_action_noticeable
 
         return cst_u, cst_l, yu_new, yl_new, is_action_valid
 

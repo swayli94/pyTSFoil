@@ -26,7 +26,7 @@ from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
 
-def create_env_with_id(worker_id=None, render_mode='none', n_max_step=10, critical_reward=0.0):
+def create_env_with_id(worker_id=None, render_mode='none', n_max_step=5, critical_reward=-10.0):
     '''
     Factory function to create a new environment instance with unique worker ID
     
@@ -48,13 +48,13 @@ def create_env_with_id(worker_id=None, render_mode='none', n_max_step=10, critic
     action_class = BumpModificationAction()
     
     action_class.action_dict['UBL']['bound'] = [0.05, 0.8]
-    action_class.action_dict['UBH']['bound'] = [-0.001, 0.001]
-    action_class.action_dict['UBH']['min_increment'] = 0.0005
+    action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
+    action_class.action_dict['UBH']['min_increment'] = 0.001
     action_class.action_dict['UBW']['bound'] = [0.4, 0.8]
     
     action_class.action_dict['LBL']['bound'] = [0.05, 0.8]
-    action_class.action_dict['LBH']['bound'] = [-0.001, 0.001]
-    action_class.action_dict['LBH']['min_increment'] = 0.0005
+    action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
+    action_class.action_dict['LBH']['min_increment'] = 0.001
     action_class.action_dict['LBW']['bound'] = [0.4, 0.8]
     
     action_class._update_action_bounds(action_class.action_dict)
@@ -84,7 +84,7 @@ class EnvFactory:
     def __call__(self):
         return create_env_with_id(self.worker_id)
 
-def evaluate_trained_agent(ppo_agent, n_eval_episodes=3):
+def evaluate_trained_agent(ppo_agent, n_eval_episodes=3, fig_name='tsfoil_gym_render_eval'):
     '''
     Evaluate the trained PPO agent using a separate environment with rendering enabled
     
@@ -101,8 +101,6 @@ def evaluate_trained_agent(ppo_agent, n_eval_episodes=3):
     eval_env = create_env_with_id(
         worker_id=None,  # No worker ID for evaluation (uses main output directory)
         render_mode='both',  # Enable rendering for evaluation
-        n_max_step=10,  # Same as training environments
-        critical_reward=0.0
     )
     
     episode_rewards = []
@@ -138,7 +136,7 @@ def evaluate_trained_agent(ppo_agent, n_eval_episodes=3):
                 episode_rewards.append(episode_reward)
                 episode_lengths.append(episode_length)
                 
-                eval_env.render_fig_fname = f'tsfoil_gym_render_eval_{episode}.png'
+                eval_env.render_fig_fname = f'{fig_name}_{episode}.png'
                 eval_env.render()
                 
                 print(f"  Episode finished: Total reward = {episode_reward:.4f}, Length = {episode_length}")
@@ -183,48 +181,41 @@ def main(device='auto'):
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.1,           # More conservative clipping
-        value_loss_coef=0.5,        # Reduced to balance learning
+        value_loss_coef=0.1,        # Reduced to balance learning
         entropy_coef=0.01,          # Less exploration
         max_grad_norm=0.5,
-        n_epochs=10,
+        n_epochs=20, 
         batch_size=500,             # Larger batches for stability
-        n_steps=10,
-        dim_latent=128,             # Larger network capacity
+        n_steps=5,
+        dim_latent=32,              # Larger network capacity
         dim_hidden=512,             # Larger network capacity
         n_interp_points=101,
         device=device
     )
     
     # Train the agent
-    print("Starting training...")
     try:
         ppo_agent.train(
-            total_time_steps=20000,  # Increased for new reliable implementation
+            total_time_steps=50000,  # Increased for new reliable implementation
             log_interval=1,
-            save_interval=1,
+            save_interval=10,
             save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png')
         )
-        print("Training completed successfully!")
     except Exception as e:
         print(f"Training failed with error: {e}")
         raise
     
     # Evaluate the trained agent using the new evaluation function
-    evaluation_results = evaluate_trained_agent(ppo_agent, n_eval_episodes=3)
+    evaluate_trained_agent(ppo_agent, n_eval_episodes=3)
     
     # Clean up CUDA tensors and force garbage collection
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
     
-    print("\nTraining and evaluation completed!")
-    print("Note: Multiprocessing cleanup is automatic with the new pool-based implementation")
-    print("Temporary worker directories created for parallel execution can be cleaned up if needed")
-    
     # Optional: Clean up worker directories
-    # cleanup_choice = input("\nClean up temporary worker directories? (y/n): ").lower().strip()
     cleanup_choice = 'y'
     if cleanup_choice in ['y', 'yes']:
         import shutil

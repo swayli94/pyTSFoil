@@ -43,7 +43,8 @@ class ActorCritic(nn.Module):
                     dim_action: int, 
                     dim_latent: int = 64,
                     dim_hidden: int = 256,
-                    n_interp_points: int = 100):
+                    n_interp_points: int = 100,
+                    initial_std: float = 0.1):
         
         super(ActorCritic, self).__init__()
         
@@ -52,6 +53,7 @@ class ActorCritic(nn.Module):
         self.dim_latent = dim_latent
         self.dim_hidden = dim_hidden
         self.n_interp_points = n_interp_points
+        self.initial_std = initial_std
         
         # Encode state_array [dim_state] into latent space
         self.state_encoder = nn.Sequential(
@@ -93,7 +95,7 @@ class ActorCritic(nn.Module):
         )
         
         # Actor std (learnable std deviation)
-        self.actor_log_std = nn.Parameter(torch.zeros(dim_action))
+        self.actor_log_std = nn.Parameter(torch.ones(dim_action) * np.log(initial_std))
         
         # Critic head (value network)
         self.critic = nn.Sequential(
@@ -256,6 +258,12 @@ class PPO_FigState_BumpAction():
             'learning_rates': []
         }
         
+        # Per-update episode statistics for plotting
+        self.episode_rewards_per_update = []
+        self.episode_lengths_per_update = []
+        self.current_update_rewards = []
+        self.current_update_lengths = []
+        
         # Storage for rollouts
         self.reset_storage()
         
@@ -350,6 +358,10 @@ class PPO_FigState_BumpAction():
         
         self.training_stats['episode_rewards'].append(episode_reward)
         self.training_stats['episode_lengths'].append(episode_length)
+        
+        # Also collect for current update statistics
+        self.current_update_rewards.append(episode_reward)
+        self.current_update_lengths.append(episode_length)
         
         # Compute advantages and returns using final state
         state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
@@ -548,29 +560,36 @@ class PPO_FigState_BumpAction():
         
         while time_steps_so_far < total_time_steps:
             
-            print(f"Collecting rollouts... ({time_steps_so_far} / {total_time_steps})")
+            print(f"Step {time_steps_so_far} / {total_time_steps} | Update {update_count}")
             
             # Collect rollouts
             rollout_data = self.collect_rollouts()
             time_steps_so_far += len(rollout_data['state_arrays'])
             
             # Update policy
-            print(f"Updating policy... ({update_count})")
             update_info = self.update_policy(rollout_data)
             update_count += 1
+            
+            # Save episode statistics for this update period
+            self.episode_rewards_per_update.append(self.current_update_rewards.copy())
+            self.episode_lengths_per_update.append(self.current_update_lengths.copy())
+            # Reset for next update
+            self.current_update_rewards.clear()
+            self.current_update_lengths.clear()
             
             # Logging
             if update_count % log_interval == 0:
                 avg_reward = np.mean(self.training_stats['episode_rewards']) if self.training_stats['episode_rewards'] else 0
                 avg_length = np.mean(self.training_stats['episode_lengths']) if self.training_stats['episode_lengths'] else 0
                 
-                print(f"Update {update_count:4d} | "
-                      f"Timesteps {time_steps_so_far:7d} | "
-                      f"Avg Reward {avg_reward:8.2f} | "
-                      f"Avg Length {avg_length:6.1f} | "
+                print(f"  Update {update_count:3d} | "
+                      f"Timesteps {time_steps_so_far:5d} | "
+                      f"Avg Reward {avg_reward:.2f} | "
+                      f"Avg Length {avg_length:.1f} | "
                       f"Policy Loss {update_info['policy_loss']:.4f} | "
                       f"Value Loss {update_info['value_loss']:.4f} | "
-                      f"Entropy {update_info['entropy']:.4f}")
+                      f"Entropy {update_info['entropy']:.1f} -> std {np.mean(np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())):.4f} | "
+                      f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
             
             # Save model
             if update_count % save_interval == 0:
@@ -583,7 +602,7 @@ class PPO_FigState_BumpAction():
         if plot_training:
             self.plot_training_progress(save_path=plot_path)
 
-    def evaluate(self, n_episodes: int = 10, render: bool = False) -> dict:
+    def evaluate(self, n_episodes: int = 10, n_steps: int = 10, render: bool = False) -> dict:
         '''
         Evaluate the trained policy on FigureState environment
         
@@ -591,6 +610,8 @@ class PPO_FigState_BumpAction():
         -----------
         n_episodes: int
             Number of episodes to evaluate
+        n_steps: int
+            Number of steps to evaluate
         render: bool
             Whether to render the episodes
             
@@ -607,27 +628,27 @@ class PPO_FigState_BumpAction():
         final_cd_values = []
         final_ld_ratios = []
         
+        if n_episodes == 1:
+            deterministic = True
+        else:
+            deterministic = False
+        
         for episode in range(n_episodes):
+            
             self.env.reset()
             state_array, figure_array = self._get_state_from_env()
             
             done = False
             
-            while not done:
-                # Convert to tensors
-                state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(self.device)
-                figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(self.device)
+            for step in range(n_steps):
+
+                action_unscaled = self.get_action(state_array, figure_array, deterministic=deterministic)
                 
-                with torch.no_grad():
-                    action_mean, _, _ = self.actor_critic(state_array_tensor, figure_array_tensor)
-                    action = action_mean.squeeze().cpu().numpy()
-                
-                # Scale action using BumpModificationAction
-                action_scaled = self.action_class.recover_action(action)
-                
-                obs, reward, done, info = self.env.step(action_scaled)
+                obs, reward, done, info = self.env.step(action_unscaled)
                 state_array, figure_array = self._get_state_from_env()
-                episode_reward += reward
+                
+                if done:
+                    break
                 
             if render:
                 self.env.render()
@@ -643,7 +664,7 @@ class PPO_FigState_BumpAction():
             final_cd_values.append(info.get('cd', 0.001))
             final_ld_ratios.append(info.get('cl', 0.0) / max(info.get('cd', 0.0001), 0.0001))
             
-            print(f"Episode {episode+1:3d}: Reward = {episode_reward:8.2f}, "
+            print(f"  Episode {episode+1:3d}: Total Reward = {episode_reward:8.2f}, "
                   f"Length = {episode_length:4d}, CL = {final_cl_values[-1]:.4f}, "
                   f"CD = {final_cd_values[-1]:.6f}, L/D = {final_ld_ratios[-1]:.2f}")
         
@@ -675,6 +696,8 @@ class PPO_FigState_BumpAction():
             'actor_critic_state_dict': self.actor_critic.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'training_stats': dict(self.training_stats),
+            'episode_rewards_per_update': self.episode_rewards_per_update,
+            'episode_lengths_per_update': self.episode_lengths_per_update,
             'hyperparameters': {
                 'lr': self.lr,
                 'gamma': self.gamma,
@@ -690,7 +713,6 @@ class PPO_FigState_BumpAction():
                 'dim_action': self.dim_action
             }
         }, path)
-        print(f"Model saved to {path}")
     
     def load_model(self, path: str):
         '''Load a saved model'''
@@ -698,6 +720,13 @@ class PPO_FigState_BumpAction():
         self.actor_critic.load_state_dict(checkpoint['actor_critic_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.training_stats.update(checkpoint['training_stats'])
+        
+        # Load per-update statistics if available (for backward compatibility)
+        if 'episode_rewards_per_update' in checkpoint:
+            self.episode_rewards_per_update = checkpoint['episode_rewards_per_update']
+        if 'episode_lengths_per_update' in checkpoint:
+            self.episode_lengths_per_update = checkpoint['episode_lengths_per_update']
+            
         print(f"Model loaded from {path}")
     
     def plot_training_progress(self, save_path: str = 'training_progress.png'):
@@ -705,19 +734,39 @@ class PPO_FigState_BumpAction():
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         fig.suptitle('PPO Training Progress', fontsize=16)
         
-        # Episode rewards
-        if self.training_stats['episode_rewards']:
-            axes[0, 0].plot(self.training_stats['episode_rewards'])
-            axes[0, 0].set_title('Episode Rewards')
-            axes[0, 0].set_xlabel('Episode')
+        # Episode reward statistics per update
+        if hasattr(self, 'episode_rewards_per_update') and self.episode_rewards_per_update:
+            updates = list(range(len(self.episode_rewards_per_update)))
+            mean_rewards = [np.mean(rewards) if rewards else 0 for rewards in self.episode_rewards_per_update]
+            min_rewards = [np.min(rewards) if rewards else 0 for rewards in self.episode_rewards_per_update]
+            max_rewards = [np.max(rewards) if rewards else 0 for rewards in self.episode_rewards_per_update]
+            
+            axes[0, 0].plot(updates, mean_rewards, 'b-', label='Mean', linewidth=2)
+            axes[0, 0].bar(updates, 
+                          np.array(max_rewards) - np.array(min_rewards),
+                          bottom=min_rewards,
+                          alpha=0.3, color='blue', label='Min-Max Range')
+            axes[0, 0].set_title('Episode Reward Statistics')
+            axes[0, 0].set_xlabel('Update')
             axes[0, 0].set_ylabel('Reward')
+            axes[0, 0].legend()
         
-        # Episode lengths
-        if self.training_stats['episode_lengths']:
-            axes[0, 1].plot(self.training_stats['episode_lengths'])
-            axes[0, 1].set_title('Episode Lengths')
-            axes[0, 1].set_xlabel('Episode')
+        # Episode length statistics per update
+        if hasattr(self, 'episode_lengths_per_update') and self.episode_lengths_per_update:
+            updates = list(range(len(self.episode_lengths_per_update)))
+            mean_lengths = [np.mean(lengths) if lengths else 0 for lengths in self.episode_lengths_per_update]
+            min_lengths = [np.min(lengths) if lengths else 0 for lengths in self.episode_lengths_per_update]
+            max_lengths = [np.max(lengths) if lengths else 0 for lengths in self.episode_lengths_per_update]
+            
+            axes[0, 1].plot(updates, mean_lengths, 'g-', label='Mean', linewidth=2)
+            axes[0, 1].bar(updates,
+                          np.array(max_lengths) - np.array(min_lengths),
+                          bottom=min_lengths,
+                          alpha=0.3, color='green', label='Min-Max Range')
+            axes[0, 1].set_title('Episode Length Statistics')
+            axes[0, 1].set_xlabel('Update')
             axes[0, 1].set_ylabel('Length')
+            axes[0, 1].legend()
         
         # Policy loss
         if self.training_stats['policy_losses']:
@@ -749,8 +798,7 @@ class PPO_FigState_BumpAction():
         
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f"Training progress plot saved to {save_path}")
+        plt.close()
     
     def get_action(self, state_array: np.ndarray, figure_array: np.ndarray, 
                    deterministic: bool = False) -> np.ndarray:
@@ -768,8 +816,8 @@ class PPO_FigState_BumpAction():
             
         Returns:
         --------
-        action_scaled: np.ndarray [dim_action]    
-            Scaled action ready for environment (not normalized)
+        action_unscaled: np.ndarray [dim_action]    
+            Unscaled action ready for environment
         '''
         self.actor_critic.eval()
         
@@ -783,16 +831,15 @@ class PPO_FigState_BumpAction():
                 action = action_mean.squeeze().cpu().numpy()
             else:
                 action, _, _, _ = self.actor_critic.get_action_and_value(
-                    state_array_tensor, figure_array_tensor
-                )
+                    state_array_tensor, figure_array_tensor)
                 action = action.squeeze().cpu().numpy()
         
         self.actor_critic.train()
         
         # Scale action from [-1, 1] to actual action bounds
-        action_scaled = self.action_class.recover_action(np.clip(action, -1.0, 1.0))
+        action_unscaled = self.action_class.recover_action(np.clip(action, -1.0, 1.0))
         
-        return action_scaled
+        return action_unscaled
 
     def _get_state_from_env(self) -> Tuple[np.ndarray, np.ndarray]:
         '''

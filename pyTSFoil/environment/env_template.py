@@ -94,6 +94,9 @@ class TSFoilEnv_Template(gym.Env):
         self.name = 'TSFoilEnv_Template'
         self.ID = 0
         
+        self.angle_of_attack = angle_of_attack
+        self.mach_infinity = mach_infinity
+        
         self.dim_action = 1
         self.dim_observation = 1
 
@@ -123,7 +126,7 @@ class TSFoilEnv_Template(gym.Env):
         
         self.n_max_step = n_max_step
         self.critical_reward_to_update_reference_step = critical_reward
-        self.invalid_action_penalty_reward = -100.0
+        self.invalid_action_penalty_reward = -10.0
         
         if output_dir is None:
             self.output_dir = os.path.dirname(__file__)
@@ -187,8 +190,33 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Reset the environment.
         '''
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial
+        self.pytsfoil.clear_memory()
         
+        self.pytsfoil = PyTSFoil(
+            airfoil_coordinates=self.airfoil_coordinates_initial,
+            work_dir=None,
+            output_dir=self.output_dir
+        )
+
+        self.pytsfoil.set_config(
+            ALPHA=self.angle_of_attack,
+            EMACH=self.mach_infinity,
+            MAXIT=9999,
+            NWDGE=0,
+            n_point_x=200,
+            n_point_y=80,
+            n_point_airfoil=100,
+            EPS=0.2,
+            CVERGE=1e-6,
+            flag_output_solve=False,
+            flag_output_summary=False,
+            flag_output_shock=False,
+            flag_output_field=False,
+            flag_print_info=False,
+        )
+        
+        self.pytsfoil.initialize_data()
+
         self._run_simulation()
         
         self.i_current_step = 0
@@ -327,13 +355,13 @@ class TSFoilEnv_Template(gym.Env):
         '''
         cl = self.pytsfoil.data_summary['cl']
         cd = self.pytsfoil.data_summary['cd']
-        cd = max(cd, 0.001)
+        cd = max(cd, 0.0001)
         
         cl_old = self.get_data_from_trajectory(self.i_reference_step, 'cl')
         cd_old = self.get_data_from_trajectory(self.i_reference_step, 'cd')
-        cd_old = max(cd_old, 0.001)
+        cd_old = max(cd_old, 0.0001)
         
-        self.reward = cl / cd - cl_old / cd_old
+        self.reward = (cd_old - cd) * 10000 + (cl - cl_old) * 200
         
         #* Check if the current step is valid
         if self.reward > self.critical_reward_to_update_reference_step:

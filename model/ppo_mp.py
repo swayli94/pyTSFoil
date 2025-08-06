@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from typing import List, Tuple, Optional, Callable
 
+import copy
 import multiprocessing as mp
 import time
 from typing import Dict, Any
@@ -89,9 +90,8 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         episode_rewards = []
         episode_lengths = []
         
-        steps_collected = 0
-        
-        while steps_collected < n_steps:
+        for step in range(n_steps):
+            
             # Convert to tensors
             state_array_tensor = torch.FloatTensor(state_array).unsqueeze(0).to(device)
             figure_array_tensor = torch.FloatTensor(figure_array).unsqueeze(0).to(device)
@@ -120,16 +120,23 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
             rewards.append(reward)
             dones.append(done)
             
+            # Roll-back treatment
+            # If the current step is invalid, use the value of the previous step
+            flag_roll_back = info.get('is_current_step_valid', False)
+            if flag_roll_back and len(values) > 1:
+                values[-1] = values[-2]
+            
             # Get next state
             state_array, figure_array = env._get_observation_for_RL(n_interp_points=n_interp_points)
             
-            steps_collected += 1
+            # np.set_printoptions(formatter={'float': '{:8.4f}'.format})
+            # print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
             
             if done:
                 break
                 
         # Episode finished
-        episode_rewards.append(env.total_reward)
+        episode_rewards.append(np.sum(rewards))
         episode_lengths.append(env.get_trajectory_length())
         
         return {
@@ -197,7 +204,10 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             Each function should return a TSFoilEnv_FigState_BumpAction instance
         '''
         # Create a temporary environment to get dimensions
-        temp_env = env_fns[0]()
+        temp_env = copy.deepcopy(env_fns[0]())
+        temp_env.render_mode = 'save'
+        temp_env.render_fig_fname = 'tsfoil_gym_render_eval.png'
+        
         super().__init__(temp_env, lr, gamma, gae_lambda, clip_epsilon, 
                             value_loss_coef, entropy_coef, max_grad_norm, 
                             n_epochs, batch_size, n_steps, 
@@ -206,8 +216,6 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         self.env_fns = env_fns
         self.n_envs = len(env_fns)
         
-        print(f"PPO_FigState_BumpAction_MultiEnv initialized with {self.n_envs} parallel environments")
-
     def collect_rollouts(self, n_steps: Optional[int] = None) -> dict:
         '''
         Collect rollouts from multiple environments in parallel using multiprocessing.Pool
@@ -229,9 +237,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         
         # Calculate steps per worker (distribute steps across environments)
         total_steps_planned = n_steps * self.n_envs
-        
-        print(f"Collecting {total_steps_planned} steps ({n_steps} per environment) using {self.n_envs} workers")
-        
+
         # Prepare parameters for each worker
         worker_params = []
         for worker_id in range(self.n_envs):
@@ -292,6 +298,10 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             # Update training stats
             self.training_stats['episode_rewards'].extend(result['episode_rewards'])
             self.training_stats['episode_lengths'].extend(result['episode_lengths'])
+            
+            # Also collect for current update statistics  
+            self.current_update_rewards.extend(result['episode_rewards'])
+            self.current_update_lengths.extend(result['episode_lengths'])
         
         # Concatenate all arrays
         self.state_arrays = np.concatenate(combined_state_arrays, axis=0)
@@ -302,7 +312,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         self.log_probs = np.concatenate(combined_log_probs, axis=0)
         self.dones = np.concatenate(combined_dones, axis=0)
         
-        print(f"Combined rollout data ({len(self.state_arrays)} steps) from {len(successful_results)}/{self.n_envs} workers in {elapsed_time:.2f}s")
+        print(f"  Collect rollout data ({len(self.state_arrays)} steps) from {len(successful_results)}/{self.n_envs} workers in {elapsed_time:.2f}s")
         
         # Use final state from first successful worker for bootstrapping GAE
         final_result = successful_results[0]
@@ -353,3 +363,8 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         else:
             raise RuntimeError(f"Environment index {env_idx} out of range")
 
+    def plot_training_progress(self, save_path: str = 'training_progress.png', eval_path: str = 'eval_progress.png'):
+        '''Plot training progress'''
+        super().plot_training_progress(save_path=save_path)
+
+        self.evaluate(n_episodes=1, n_steps=10, render=True)
