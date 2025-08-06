@@ -97,7 +97,8 @@ class TSFoilEnv_Template(gym.Env):
         
         self.angle_of_attack = angle_of_attack
         self.mach_infinity = mach_infinity
-        self.cl_target = cl_target
+        self.cl_target_input = cl_target
+        self.cl_target = None
         
         self.dim_action = 1
         self.dim_observation = 1
@@ -189,9 +190,11 @@ class TSFoilEnv_Template(gym.Env):
         self._get_info()
         self._get_observation()
         
-        if self.cl_target is not None:
+        if self.cl_target_input is None:
             self.cl_target = self.pytsfoil.data_summary['cl']
-        
+        else:
+            self.cl_target = self.cl_target_input
+            
         # Clear trajectory data
         self._init_trajectory()
         self._store_trajectory_data(self.observation, action, self.reward, self.observation)
@@ -323,14 +326,11 @@ class TSFoilEnv_Template(gym.Env):
         '''
         cl = self.pytsfoil.data_summary['cl']
         cd = self.pytsfoil.data_summary['cd']
-        cd = max(cd, 0.0001)
         
-        cl_old = self.get_data_from_trajectory(self.i_reference_step, 'cl')
         cd_old = self.get_data_from_trajectory(self.i_reference_step, 'cd')
-        cd_old = max(cd_old, 0.0001)
         
         if self.cl_target is not None:
-            self.reward = (cd_old - cd) * 10000 + (cl - self.cl_target) * 200
+            self.reward = (cd_old - cd) * 10000 + min(cl - self.cl_target, 0.0) * 100
         else:
             self.reward = (cd_old - cd) * 10000
         

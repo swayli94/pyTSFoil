@@ -12,7 +12,7 @@ import multiprocessing as mp
 import time
 from typing import Dict, Any
 
-from model.ppo import PPO_FigState_BumpAction
+from model.ppo import PPO_FigState_BumpAction, ActorCritic
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 
 
@@ -58,10 +58,6 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         
         # Create environment in this process
         env = env_fn()
-        
-        # Create and load actor-critic model
-        # Import here to avoid issues with multiprocessing
-        from model.ppo import ActorCritic
         
         # Use passed dimensions instead of inferring them
         actor_critic = ActorCritic(
@@ -180,6 +176,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
 
     def __init__(self, 
                  env_fns: List[callable],
+                 env_eval: TSFoilEnv_FigState_BumpAction|None = None,
                  lr: float = 3e-4,
                  gamma: float = 0.99,
                  gae_lambda: float = 0.95,
@@ -204,11 +201,11 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             Each function should return a TSFoilEnv_FigState_BumpAction instance
         '''
         # Create a temporary environment to get dimensions
-        temp_env = copy.deepcopy(env_fns[0]())
-        temp_env.render_mode = 'save'
-        temp_env.render_fig_fname = 'tsfoil_gym_render_eval.png'
-        
-        super().__init__(temp_env, lr, gamma, gae_lambda, clip_epsilon, 
+        if env_eval is None:
+            env_eval = copy.deepcopy(env_fns[0]())
+            env_eval.render_mode = 'none'
+
+        super().__init__(env_eval, lr, gamma, gae_lambda, clip_epsilon, 
                             value_loss_coef, entropy_coef, max_grad_norm, 
                             n_epochs, batch_size, n_steps, 
                             dim_latent, dim_hidden, n_interp_points, device)
@@ -235,9 +232,6 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             
         self.reset_storage()
         
-        # Calculate steps per worker (distribute steps across environments)
-        total_steps_planned = n_steps * self.n_envs
-
         # Prepare parameters for each worker
         worker_params = []
         for worker_id in range(self.n_envs):
@@ -335,33 +329,6 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         }
         
         return rollout_data
-    
-    def _get_state_from_env(self, env_idx: int = 0) -> Tuple[np.ndarray, np.ndarray]:
-        '''
-        Get state from a specific environment for RL training
-        This method creates a temporary environment to get state for compatibility
-        with the parent class, but is not used in the multiprocessing rollout collection.
-        
-        Parameters:
-        -----------
-        env_idx: int
-            Index of the environment to get state from
-        
-        Returns:
-        --------
-        state_array: np.ndarray [dim_state]
-            parametric state features
-        figure_array: np.ndarray [n_interp_points, 4]  
-            airfoil geometry and Mach data [yu, yl, mwu, mwl]
-        '''
-        # Create temporary environment to get state
-        if env_idx < len(self.env_fns):
-            temp_env = self.env_fns[env_idx]()
-            temp_env.reset()
-            state_array, figure_array = temp_env._get_observation_for_RL(n_interp_points=self.n_interp_points)
-            return state_array, figure_array
-        else:
-            raise RuntimeError(f"Environment index {env_idx} out of range")
 
     def plot_training_progress(self, save_path: str = 'training_progress.png', eval_path: str = 'eval_progress.png'):
         '''Plot training progress'''

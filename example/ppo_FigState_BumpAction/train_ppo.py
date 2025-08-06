@@ -84,27 +84,6 @@ def main():
     print(f"Mean CL: {eval_results['mean_cl']:.4f} ± {eval_results['std_cl']:.4f}")
     print(f"Mean CD: {eval_results['mean_cd']:.6f} ± {eval_results['std_cd']:.6f}")
     print(f"Mean L/D: {eval_results['mean_ld_ratio']:.2f} ± {eval_results['std_ld_ratio']:.2f}")
-    
-    # Example of using the trained policy directly
-    print("\nExample direct policy usage:")
-    obs = env.reset()
-    state_array, figure_array = ppo_agent._get_state_from_env()
-    
-    print(f"State array shape: {state_array.shape}")
-    print(f"Figure array shape: {figure_array.shape}")
-    print(f"State features: {state_array[:5]}...")  # First 5 features
-    
-    # Get action from policy
-    action_scaled = ppo_agent.get_action(state_array, figure_array, deterministic=True)
-    print(f"Action (scaled): {action_scaled}")
-    print(f"Action names: {env.action_class.action_name}")
-    
-    # Step environment with action
-    next_obs, reward, done, info = env.step(action_scaled)
-    print(f"Reward: {reward:.4f}")
-    print(f"CL: {info.get('cl', 0.0):.4f}, CD: {info.get('cd', 0.0):.6f}")
-    
-    env.close()
 
 if __name__ == "__main__":
     main()

@@ -308,7 +308,7 @@ class PPO_FigState_BumpAction():
         self.reset_storage()
         
         self.env.reset()
-        state_array, figure_array = self._get_state_from_env()
+        state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
 
         for step in range(n_steps):
             
@@ -345,7 +345,7 @@ class PPO_FigState_BumpAction():
                 self.values[-1] = self.values[-2]
             
             # Get the next state for next iteration
-            state_array, figure_array = self._get_state_from_env()
+            state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
 
             print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
             
@@ -620,32 +620,26 @@ class PPO_FigState_BumpAction():
         results: dict
             Evaluation results including episode rewards and airfoil performance
         '''
-        self.actor_critic.eval()
-        
         episode_rewards = []
         episode_lengths = []
         final_cl_values = []
         final_cd_values = []
         final_ld_ratios = []
-        
-        if n_episodes == 1:
-            deterministic = True
-        else:
-            deterministic = False
-        
+               
         for episode in range(n_episodes):
             
             self.env.reset()
-            state_array, figure_array = self._get_state_from_env()
+            state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
             
             done = False
+            deterministic = episode == 0
             
             for step in range(n_steps):
 
                 action_unscaled = self.get_action(state_array, figure_array, deterministic=deterministic)
                 
                 obs, reward, done, info = self.env.step(action_unscaled)
-                state_array, figure_array = self._get_state_from_env()
+                state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
                 
                 if done:
                     break
@@ -667,9 +661,7 @@ class PPO_FigState_BumpAction():
             print(f"  Episode {episode+1:3d}: Total Reward = {episode_reward:8.2f}, "
                   f"Length = {episode_length:4d}, CL = {final_cl_values[-1]:.4f}, "
                   f"CD = {final_cd_values[-1]:.6f}, L/D = {final_ld_ratios[-1]:.2f}")
-        
-        self.actor_critic.train()
-        
+                
         results = {
             'mean_reward': np.mean(episode_rewards),
             'std_reward': np.std(episode_rewards), 
@@ -840,17 +832,3 @@ class PPO_FigState_BumpAction():
         action_unscaled = self.action_class.recover_action(np.clip(action, -1.0, 1.0))
         
         return action_unscaled
-
-    def _get_state_from_env(self) -> Tuple[np.ndarray, np.ndarray]:
-        '''
-        Get state from environment for RL training
-        
-        Returns:
-        --------
-        state_array: np.ndarray [dim_state]
-            parametric state features
-        figure_array: np.ndarray [n_interp_points, 4]  
-            airfoil geometry and Mach data [yu, yl, mwu, mwl]
-        '''
-        return self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
-

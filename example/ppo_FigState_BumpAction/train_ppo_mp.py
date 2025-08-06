@@ -84,84 +84,6 @@ class EnvFactory:
     def __call__(self):
         return create_env_with_id(self.worker_id)
 
-def evaluate_trained_agent(ppo_agent, n_eval_episodes=3, fig_name='tsfoil_gym_render_eval'):
-    '''
-    Evaluate the trained PPO agent using a separate environment with rendering enabled
-    
-    Args:
-        ppo_agent: Trained PPO agent
-        n_eval_episodes: Number of evaluation episodes to run
-        
-    Returns:
-        dict: Evaluation results containing mean rewards, lengths, CL, and CD values
-    '''
-    print("\nEvaluating trained agent...")
-    
-    # Create evaluation environment with rendering enabled using the factory function
-    eval_env = create_env_with_id(
-        worker_id=None,  # No worker ID for evaluation (uses main output directory)
-        render_mode='both',  # Enable rendering for evaluation
-    )
-    
-    episode_rewards = []
-    episode_lengths = []
-    final_cl_values = []
-    final_cd_values = []
-    
-    for episode in range(n_eval_episodes):
-        eval_env.reset()
-        state_array, figure_array = eval_env._get_observation_for_RL(n_interp_points=ppo_agent.n_interp_points)
-        
-        episode_reward = 0
-        episode_length = 0
-        done = False
-        
-        print(f"\nEpisode {episode + 1}:")
-        while not done:
-            # Get action from trained policy
-            action_scaled = ppo_agent.get_action(state_array, figure_array, deterministic=True)
-            
-            # Step environment
-            obs, reward, done, info = eval_env.step(action_scaled)
-            state_array, figure_array = eval_env._get_observation_for_RL(n_interp_points=ppo_agent.n_interp_points)
-            
-            episode_reward += reward
-            episode_length += 1
-            
-            print(f"  Step {episode_length}: Action = {action_scaled}, Reward = {reward:.4f}")
-            
-            if done:
-                final_cl_values.append(info.get('cl', 0.0))
-                final_cd_values.append(info.get('cd', 0.001))
-                episode_rewards.append(episode_reward)
-                episode_lengths.append(episode_length)
-                
-                eval_env.render_fig_fname = f'{fig_name}_{episode}.png'
-                eval_env.render()
-                
-                print(f"  Episode finished: Total reward = {episode_reward:.4f}, Length = {episode_length}")
-                print(f"  Final CL = {final_cl_values[-1]:.4f}, CD = {final_cd_values[-1]:.6f}")
-    
-    # Print evaluation results
-    print("\nEvaluation Results:")
-    print(f"Mean Reward: {np.mean(episode_rewards):.4f} ± {np.std(episode_rewards):.4f}")
-    print(f"Mean Length: {np.mean(episode_lengths):.2f} ± {np.std(episode_lengths):.2f}")
-    print(f"Mean CL: {np.mean(final_cl_values):.4f} ± {np.std(final_cl_values):.4f}")
-    print(f"Mean CD: {np.mean(final_cd_values):.6f} ± {np.std(final_cd_values):.6f}")
-        
-    eval_env.close()
-    
-    # Return evaluation results
-    return {
-        'episode_rewards': episode_rewards,
-        'episode_lengths': episode_lengths,
-        'final_cl_values': final_cl_values,
-        'final_cd_values': final_cd_values,
-        'mean_reward': np.mean(episode_rewards),
-        'mean_length': np.mean(episode_lengths),
-        'mean_cl': np.mean(final_cl_values),
-        'mean_cd': np.mean(final_cd_values)
-    }
 
 def main(device='auto'):
     '''Main training loop using refactored multiprocessing implementation'''
@@ -172,23 +94,29 @@ def main(device='auto'):
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
     
+    eval_env = create_env_with_id(
+        worker_id=None,  # No worker ID for evaluation (uses main output directory)
+        render_mode='save',  # Enable rendering for evaluation
+    )
+    
     print(f"Creating PPO agent with {n_envs} parallel environments...")
     
     # Create specialized PPO agent with multiple environments
     ppo_agent = PPO_FigState_BumpAction_MultiEnv(
         env_fns=env_fns,
+        env_eval=eval_env,
         lr=1e-5,
         gamma=0.99,
         gae_lambda=0.95,
-        clip_epsilon=0.1,           # More conservative clipping
-        value_loss_coef=0.1,        # Reduced to balance learning
-        entropy_coef=0.01,          # Less exploration
+        clip_epsilon=0.1,
+        value_loss_coef=0.1,
+        entropy_coef=0.1,
         max_grad_norm=0.5,
         n_epochs=20, 
-        batch_size=500,             # Larger batches for stability
+        batch_size=500,
         n_steps=5,
-        dim_latent=32,              # Larger network capacity
-        dim_hidden=512,             # Larger network capacity
+        dim_latent=32,
+        dim_hidden=512,
         n_interp_points=101,
         device=device
     )
@@ -206,9 +134,6 @@ def main(device='auto'):
     except Exception as e:
         print(f"Training failed with error: {e}")
         raise
-    
-    # Evaluate the trained agent using the new evaluation function
-    evaluate_trained_agent(ppo_agent, n_eval_episodes=3)
     
     # Clean up CUDA tensors and force garbage collection
     if torch.cuda.is_available():

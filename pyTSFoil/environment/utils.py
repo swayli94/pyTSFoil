@@ -17,6 +17,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             airfoil_coordinates: np.ndarray,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
+            cl_target : float|None = None,
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
             path_save_fig_of_observation: str = None,
@@ -28,6 +29,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
+            cl_target=cl_target,
             output_dir=output_dir,
             render_mode=render_mode,
             n_max_step=n_max_step,
@@ -109,6 +111,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             airfoil_coordinates: np.ndarray,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
+            cl_target : float|None = None,
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
             path_save_fig_of_observation: str = None,
@@ -122,6 +125,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
+            cl_target=cl_target,
             output_dir=output_dir,
             render_mode=render_mode,
             n_max_step=n_max_step,
@@ -159,13 +163,13 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
 
         _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
         
-        if not self.is_action_valid:
-            return
-        
         self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
         self.airfoil_coordinates[:,1] = np.concatenate((yu_new[::-1], yl_new[1:]))
         
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates
+        if not self.is_action_valid:
+            self.pytsfoil.airfoil['coordinates'] = ref_airfoil_coordinates.copy()
+        else:
+            self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates.copy()
         
     def _get_observation(self) -> Tuple[np.ndarray, str]:
         '''
