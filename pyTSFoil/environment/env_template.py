@@ -83,6 +83,7 @@ class TSFoilEnv_Template(gym.Env):
             airfoil_coordinates: np.ndarray,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
+            cl_target : float|None = None,
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both', 'none'
             n_max_step: int = 10,
@@ -96,6 +97,7 @@ class TSFoilEnv_Template(gym.Env):
         
         self.angle_of_attack = angle_of_attack
         self.mach_infinity = mach_infinity
+        self.cl_target = cl_target
         
         self.dim_action = 1
         self.dim_observation = 1
@@ -139,25 +141,6 @@ class TSFoilEnv_Template(gym.Env):
             output_dir=self.output_dir
         )
         
-        self.pytsfoil.set_config(
-            ALPHA=angle_of_attack,
-            EMACH=mach_infinity,
-            MAXIT=9999,
-            NWDGE=0,
-            n_point_x=200,
-            n_point_y=80,
-            n_point_airfoil=100,
-            EPS=0.2,
-            CVERGE=1e-6,
-            flag_output_solve=False,
-            flag_output_summary=False,
-            flag_output_shock=False,
-            flag_output_field=False,
-            flag_print_info=False,
-        )
-        
-        self.pytsfoil.initialize_data()
-        
         # Initialize trajectory data storage
         self._init_trajectory()
         
@@ -190,35 +173,10 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Reset the environment.
         '''
-        self.pytsfoil.clear_memory()
+        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial.copy()
         
-        self.pytsfoil = PyTSFoil(
-            airfoil_coordinates=self.airfoil_coordinates_initial,
-            work_dir=None,
-            output_dir=self.output_dir
-        )
-
-        self.pytsfoil.set_config(
-            ALPHA=self.angle_of_attack,
-            EMACH=self.mach_infinity,
-            MAXIT=9999,
-            NWDGE=0,
-            n_point_x=200,
-            n_point_y=80,
-            n_point_airfoil=100,
-            EPS=0.2,
-            CVERGE=1e-6,
-            flag_output_solve=False,
-            flag_output_summary=False,
-            flag_output_shock=False,
-            flag_output_field=False,
-            flag_print_info=False,
-        )
-        
-        self.pytsfoil.initialize_data()
-
         self._run_simulation()
-        
+
         self.i_current_step = 0
         self.i_reference_step = 0
         self.is_current_step_valid = True
@@ -230,6 +188,9 @@ class TSFoilEnv_Template(gym.Env):
         self.done = False
         self._get_info()
         self._get_observation()
+        
+        if self.cl_target is not None:
+            self.cl_target = self.pytsfoil.data_summary['cl']
         
         # Clear trajectory data
         self._init_trajectory()
@@ -303,19 +264,26 @@ class TSFoilEnv_Template(gym.Env):
 
     def _run_simulation(self) -> None:
         '''
-        Run the pytsfoil.
+        Run the pytsfoil, the airfoil coordinates are defined outside.
         '''
-        self.pytsfoil.set_airfoil()
+        self.pytsfoil.set_config(
+            ALPHA=self.angle_of_attack,
+            EMACH=self.mach_infinity,
+            MAXIT=9999,
+            NWDGE=0,
+            n_point_x=200,
+            n_point_y=80,
+            n_point_airfoil=100,
+            EPS=0.2,
+            CVERGE=1e-6,
+            flag_output_solve=False,
+            flag_output_summary=False,
+            flag_output_shock=False,
+            flag_output_field=False,
+            flag_print_info=False,
+        )
         
-        self.pytsfoil.set_mesh()
-        
-        self.pytsfoil.compute_mesh_indices()
-
-        self.pytsfoil.run_fortran_solver()
-        
-        self.pytsfoil.compute_data_summary()
-        
-        self.pytsfoil.print_summary()
+        self.pytsfoil.run()
 
     def _get_state_from_reference_step(self) -> np.ndarray:
         '''
@@ -361,7 +329,10 @@ class TSFoilEnv_Template(gym.Env):
         cd_old = self.get_data_from_trajectory(self.i_reference_step, 'cd')
         cd_old = max(cd_old, 0.0001)
         
-        self.reward = (cd_old - cd) * 10000 + (cl - cl_old) * 200
+        if self.cl_target is not None:
+            self.reward = (cd_old - cd) * 10000 + (cl - self.cl_target) * 200
+        else:
+            self.reward = (cd_old - cd) * 10000
         
         #* Check if the current step is valid
         if self.reward > self.critical_reward_to_update_reference_step:

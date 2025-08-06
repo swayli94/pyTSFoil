@@ -15,7 +15,7 @@ contains
   subroutine open_output_file()
     use common_data, only: UNIT_OUTPUT
     implicit none
-    logical :: unit_opened
+    logical :: unit_opened=.false.
     
     ! Check if the unit is already opened
     inquire(unit=UNIT_OUTPUT, opened=unit_opened)
@@ -29,7 +29,7 @@ contains
   subroutine open_summary_file()
     use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY
     implicit none
-    logical :: unit_opened
+    logical :: unit_opened=.false.
     
     ! Check if the unit is already opened
     inquire(unit=UNIT_SUMMARY, opened=unit_opened)
@@ -44,7 +44,7 @@ contains
   subroutine close_output_files()
     use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY
     implicit none
-    logical :: unit_opened
+    logical :: unit_opened=.false.
 
     ! Check and close UNIT_OUTPUT if opened
     inquire(unit=UNIT_OUTPUT, opened=unit_opened)

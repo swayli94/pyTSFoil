@@ -141,6 +141,69 @@ contains
         IMAXI = 77  ! User-input maximum number of streamwise (X-direction) grid points (match default XIN)
         JMAXI = N_MESH_POINTS  ! User-input maximum number of spanwise (Y-direction) grid points
 
+        ! ------------------------------------------------
+        ! Initialize all common data
+        ! ------------------------------------------------
+        
+        EMACH = 0.75
+        ALPHA = 0.0
+        CLSET = 0.0
+    
+        BCTYPE = 1
+    
+        NU = 0
+        NL = 0
+        XL = 0.0
+        XU = 0.0
+        YL = 0.0
+        YU = 0.0
+        DELTA = 0.0
+    
+        IMAXI = 0
+        JMAXI = 0
+        XIN = 0.0
+        YIN = 0.0
+        
+        PHYS = .true.
+        KUTTA = .true.
+        FCR = .true.
+    
+        NWDGE = 0
+        SIMDEF = 3
+    
+        AK = 0.0
+        RIGF = 0.0
+        POR = 0.0
+    
+        REYNLD = 4.0E6
+        WCONST = 4.0
+    
+        WCIRC = 1.0
+        IPRTER = 100
+        MAXIT = 1000
+    
+        EPS = 0.2
+        WE = [1.8, 1.9, 1.95]
+        CVERGE = 0.00001
+        DVERGE = 10.0
+        F = 0.0
+        H = 0.0
+    
+        IFLAP = 0
+        DELFLP = 0.0
+        FLPLOC = 0.77
+
+        X = 0.0
+        Y = 0.0
+        XDIFF = 0.0
+        YDIFF = 0.0
+    
+        VOL = 0.0
+        NFOIL = 0
+        CAMBER = 0.0
+        THICK = 0.0
+        XFOIL = 0.0
+
     end subroutine initialize_common
 
     ! Fatal error - write message and stop

@@ -63,6 +63,93 @@ module solver_data
     real :: WSLP(N_MESH_POINTS,2)   ! Viscous wedge slopes
     real :: RTKPOR = 0.0
 
+contains
+
+    subroutine initialize_solver_data()
+        implicit none
+
+        P = 0.0
+        THETA = 0.0
+        CIRCFF = 0.0
+        FHINV = 0.0
+        SONVEL = 0.0
+        DUB = 0.0
+    
+        VFACT = 1.0
+        YFACT = 1.0
+    
+        CYYC = 0.0
+        CYYD = 0.0
+        CYYU = 0.0
+        CYYBLC = 0.0
+        CYYBLD = 0.0
+        CYYBLU = 0.0
+        CYYBUC = 0.0
+        CYYBUD = 0.0
+        CYYBUU = 0.0
+    
+        CXC = 0.0
+        CXL = 0.0
+        CXR = 0.0
+        CXXC = 0.0
+        CXXL = 0.0
+        CXXR = 0.0
+        C1 = 0.0
+    
+        DIAG = 0.0
+        RHS = 0.0
+    
+        DTOP = 0.0
+        DBOT = 0.0
+        DUP = 0.0
+        DDOWN = 0.0
+        VTOP = 0.0
+        VBOT = 0.0
+        VUP = 0.0
+        VDOWN = 0.0
+    
+        FXLBC = 0.0
+        FXUBC = 0.0
+    
+        PJUMP = 0.0
+    
+        POLD = 0.0
+        EMU = 0.0
+        WI = 1.05
+        CIRCTE = 0.0
+    
+        CJUP = 0.0
+        CJUP1 = 0.0
+        CJLOW = 0.0
+        CJLOW1 = 0.0
+        
+        CDFACT = 0.0
+        CLFACT = 0.0
+        CMFACT = 0.0
+        CPFACT = 0.0
+        CPSTAR = 0.0
+    
+        ABORT1 = .false.
+    
+        ALPHA0 = 0.0
+        ALPHA1 = 0.0
+        ALPHA2 = 0.0
+        OMEGA0 = 0.0
+        OMEGA1 = 0.0
+        OMEGA2 = 0.0
+        JET = 0.0
+        B_COEF = 0.0
+        BETA0 = 0.0
+        BETA1 = 0.0
+        BETA2 = 0.0
+        PSI0 = 0.0
+        PSI1 = 0.0
+        PSI2 = 0.0
+        WSLP = 0.0
+        RTKPOR = 0.0
+        
+    end subroutine initialize_solver_data
+
 end module solver_data
 
 

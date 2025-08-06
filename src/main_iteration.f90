@@ -27,10 +27,10 @@ contains
         integer, intent(out) :: IERROR, JERROR  ! Location indices of maximum error
         real, intent(out) :: ERROR              ! Maximum error
 
-        integer :: I, J, K, IM2, JA, JB, ISAVE
-        real :: EPSX, ARHS, DNOM, denominator
-        real :: VC(N_MESH_POINTS), SAVE_VAR(N_MESH_POINTS)
-        real :: SUB(N_MESH_POINTS), SUP(N_MESH_POINTS)
+        integer :: I=0, J=0, K=0, IM2=0, JA=0, JB=0, ISAVE=0
+        real :: EPSX=0.0, ARHS=0.0, DNOM=0.0, denominator=0.0
+        real :: VC(N_MESH_POINTS)=0.0, SAVE_VAR(N_MESH_POINTS)=0.0
+        real :: SUB(N_MESH_POINTS)=0.0, SUP(N_MESH_POINTS)=0.0
 
         BIGRL = 0.0
 
@@ -197,7 +197,7 @@ contains
         use solver_functions, only: VWEDGE, SETBC
         implicit none
         
-        integer :: ITER, MAXITM, KK, J, I, IK, JK, JINC, N, I1, I2
+        integer :: ITER=0, MAXITM=0, KK=0, J=0, I=0, IK=0, JK=0, JINC=0, N=0, I1=0, I2=0
         integer :: IRL = 0, JRL = 0         ! Location indices of maximum residual
         integer :: IERROR = 0, JERROR = 0   ! Location indices of maximum error
         integer, parameter :: NDUB = 25     ! Number of iterations between updating doublet strength
@@ -205,13 +205,13 @@ contains
         real :: ERROR = 0.0  ! Maximum error
         real :: DCIRC = 0.0  ! circulation change
         real :: BIGRL = 0.0  ! Maximum residual value
-        real :: WEP, CL_LOCAL, CM_LOCAL, ERCIRC, THA
-        real :: AM1(2,3)     ! Mach numbers upstream of shocks
-        real :: XSHK(2,3)    ! Shock x-locations
-        real :: THAMAX(2,3)  ! Maximum wedge angles
-        real :: ZETA(2,3)    ! Wedge length scales
-        integer :: NVWPRT(2) ! Number of shocks on upper and lower surfaces
-        integer :: NISHK    ! Number of shocks
+        real :: WEP=0.0, CL_LOCAL=0.0, CM_LOCAL=0.0, ERCIRC=0.0, THA=0.0
+        real :: AM1(2,3)=0.0     ! Mach numbers upstream of shocks
+        real :: XSHK(2,3)=0.0    ! Shock x-locations
+        real :: THAMAX(2,3)=0.0  ! Maximum wedge angles
+        real :: ZETA(2,3)=0.0    ! Wedge length scales
+        integer :: NVWPRT(2)=0 ! Number of shocks on upper and lower surfaces
+        integer :: NISHK=0    ! Number of shocks
 
         logical :: CONVERGED = .false.  ! convergence flag
         logical :: OUTERR = .false.     ! outer iteration error
@@ -404,8 +404,8 @@ contains
         implicit none
         real, intent(out) :: DCIRC  ! circulation change
         
-        integer :: I
-        real :: CTEOLD, PUP, PLOW, CIRCO, FACTOR
+        integer :: I=0
+        real :: CTEOLD=0.0, PUP=0.0, PLOW=0.0, CIRCO=0.0, FACTOR=0.0
 
         ! Compute jump in potential at trailing edge
         CTEOLD = CIRCTE
@@ -445,9 +445,9 @@ contains
         implicit none
         
         ! Local variables
-        integer :: I, J, IEND, NARG
-        real :: DBLSUM, SUM, TEMP
-        real :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
+        integer :: I=0, J=0, IEND=0, NARG=0
+        real :: DBLSUM=0.0, SUM=0.0, TEMP=0.0
+        real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
         
         ! For lifting free air flows with circulation, set doublet strength equal to model volume
         if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
@@ -498,7 +498,7 @@ contains
         use solver_data, only: P, CIRCFF, DUB, KSTEP
         use solver_data, only: DUP, DDOWN, DTOP, DBOT, VUP, VDOWN, VTOP, VBOT
         implicit none
-        integer :: J, I, K
+        integer :: J=0, I=0, K=0
 
         ! Set boundary conditions at upstream and downstream ends
         K = JMIN - KSTEP

@@ -211,6 +211,7 @@ class PyTSFoil(object):
         '''
         # Initialize common data
         tsf.common_data.initialize_common()
+        tsf.solver_data.initialize_solver_data()
 
         # Check parameters
         if self.config['EMACH'] < 0.5 or self.config['EMACH'] > 2.0:

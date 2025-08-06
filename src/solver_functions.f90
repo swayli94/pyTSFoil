@@ -28,9 +28,9 @@ contains
         use common_data, only: INPERR, UNIT_OUTPUT, FLAG_OUTPUT_SOLVE
         use solver_data, only: CPSTAR, CPFACT, CLFACT, CDFACT, CMFACT, YFACT, VFACT, SONVEL
         implicit none
-        real :: EMACH2, BETA, DELRT1, DELRT2
-        real :: YFACIV, EMROOT
-        integer :: J
+        real :: EMACH2=0.0, BETA=0.0, DELRT1=0.0, DELRT2=0.0
+        real :: YFACIV=0.0, EMROOT=0.0
+        integer :: J=0
         
         if (.not. PHYS) then
             ! PHYS = .FALSE.  NO SCALING
@@ -137,7 +137,7 @@ contains
         implicit none
         integer, intent(in) :: IJUMP
         integer, parameter :: KSTEP = 1 ! Step size for circulation-jump boundary update
-        integer :: I, IF1, N, NFOIL, INT, JINT
+        integer :: I=0, IF1=0, N=0, NFOIL=0, INT=0, JINT=0
 
         ! Set limits on I and J indices
         if (IJUMP <= 0) then
@@ -187,9 +187,9 @@ contains
         implicit none
         integer, intent(in) :: IVAL
         
-        integer :: I, II
-        real :: DFACL, DFACU, RFACL, RFACU, PJMIN, PJMAX, TERM, RTK
-        logical :: apply_dirichlet, apply_neumann
+        integer :: I=0, II=0
+        real :: DFACL=0.0, DFACU=0.0, RFACL=0.0, RFACU=0.0, PJMIN=0.0, PJMAX=0.0, TERM=0.0, RTK=0.0
+        logical :: apply_dirichlet=.false., apply_neumann=.false.
         
         I = IVAL
         apply_dirichlet = .false.
@@ -317,11 +317,11 @@ contains
         use solver_data, only: ALPHA0, ALPHA1, ALPHA2, BETA0, BETA1, BETA2
         use solver_base, only: ANGLE
         implicit none
-        integer :: I, J
-        real :: YT, YB, XU_BC, XD_BC, YT2, YB2, XU2, XD2, COEF1, COEF2
-        real :: XP, XP2, YJ, YJ2, Q, ARG0, ARG1, ARG2
-        real :: EXARG0, EXARG1, EXARG2, TERM
-        real :: RTK
+        integer :: I=0, J=0
+        real :: YT=0.0, YB=0.0, XU_BC=0.0, XD_BC=0.0, YT2=0.0, YB2=0.0, XU2=0.0, XD2=0.0, COEF1=0.0, COEF2=0.0
+        real :: XP=0.0, XP2=0.0, YJ=0.0, YJ2=0.0, Q=0.0, ARG0=0.0, ARG1=0.0, ARG2=0.0
+        real :: EXARG0=0.0, EXARG1=0.0, EXARG2=0.0, TERM=0.0
+        real :: RTK=0.0
 
         ! Test for supersonic or subsonic freestream
         if (AK <= 0.0) then
@@ -520,7 +520,7 @@ contains
         real, intent(in) :: U         ! Local velocity
         real, intent(in) :: DELTA     ! Maximum thickness of airfoil
         real :: result_emach
-        real :: AK1, ARG, DELRT2
+        real :: AK1=0.0, ARG=0.0, DELRT2=0.0
         
         ! Compute similarity parameter based on local velocity
         AK1 = AK - GAM1*U
@@ -566,8 +566,8 @@ contains
         integer , intent(out) :: NVWPRT(2)  ! Number of shocks on upper and lower surfaces
         integer , intent(out) :: NISHK      ! Number of shocks
 
-        integer :: I, J, N, M, ISK, ISK3, ISK1, ISTART, JMP
-        real :: SIGN, U, V1, AM1SQ, REYX, CF, DSTAR1, DXS, AETA, XEND
+        integer :: I=0, J=0, N=0, M=0, ISK=0, ISK3=0, ISK1=0, ISTART=0, JMP=0
+        real :: SIGN=0.0, U=0.0, V1=0.0, AM1SQ=0.0, REYX=0.0, CF=0.0, DSTAR1=0.0, DXS=0.0, AETA=0.0, XEND=0.0
 
         ! intialization
         AM1 = 0.0
@@ -693,7 +693,8 @@ contains
         real, intent(in) :: AM2, G
         integer, intent(in) :: NW
         real :: wedge_angle ! Wedge angle
-        real :: AM3, AM4, AM7, RM, RS, S2TM, S2TS, TM, TS, TTM, TTS, TDM, TDS
+        real :: AM3=0.0, AM4=0.0, AM7=0.0, RM=0.0, RS=0.0
+        real :: S2TM=0.0, S2TS=0.0, TM=0.0, TS=0.0, TTM=0.0, TTS=0.0, TDM=0.0, TDS=0.0
         
         if (NW == 1) then
             ! Murman wedge
@@ -724,9 +725,9 @@ contains
         use solver_data, only: RTKPOR
         use solver_data, only: ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2
         implicit none
-        real :: ERROR_LOCAL, TEMP, Q, DALPHA
-        integer :: I
-        logical :: converged
+        real :: ERROR_LOCAL=0.00001, TEMP=0.0, Q=0.0, DALPHA=0.0
+        integer :: I=0
+        logical :: converged=.false.
         integer :: MAX_ITERATIONS = 100
         
         ERROR_LOCAL = 0.00001
@@ -799,9 +800,9 @@ contains
         use solver_data, only: PSI0, PSI1, PSI2, RTKPOR
         use solver_data, only: BETA0, BETA1, BETA2
         implicit none
-        real :: ERROR_LOCAL, TEMP, Q, DBETA
-        integer :: I
-        logical :: converged
+        real :: ERROR_LOCAL=0.00001, TEMP=0.0, Q=0.0, DBETA=0.0
+        integer :: I=0
+        logical :: converged=.false.
         integer :: MAX_ITERATIONS = 100
         
         ERROR_LOCAL = 0.00001

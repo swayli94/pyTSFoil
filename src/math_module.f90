@@ -14,8 +14,8 @@ contains
         real, intent(in) :: X_arr(N), Y_arr(N)
         real, intent(out) :: R
         integer, intent(out) :: IER
-        integer :: I, NM1, NM2, N1
-        real :: S1, S2, S3, S4, P
+        integer :: I=0, NM1=0, NM2=0, N1=0
+        real :: S1=0.0, S2=0.0, S3=0.0, S4=0.0, P=0.0
 
         R = 0.0
         
@@ -118,8 +118,8 @@ contains
         integer, intent(in) :: N
         real, intent(in) :: X_arr(N), Y_arr(N)
         real, intent(out) :: SUM
-        integer :: I_loop, NM1
-        real :: Z, W
+        integer :: I_loop=0, NM1=0
+        real :: Z=0.0, W=0.0
         
         SUM = 0.0
         NM1 = N - 1

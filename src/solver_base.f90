@@ -20,7 +20,7 @@ contains
         implicit none
         integer, intent(in) :: I, J
         real :: result_px
-        real :: PJI
+        real :: PJI=0.0
         
         ! Test to locate end points
         if (I == IMIN) then
@@ -47,8 +47,8 @@ contains
         implicit none
         integer, intent(in) :: I, J
         real :: result_py
-        real :: PJI, VMINUS, VPLUS
-        integer :: IC
+        real :: PJI=0.0, VMINUS=0.0, VPLUS=0.0
+        integer :: IC=0
         
         ! Test for end points or points near airfoil slit
         if (J == JMIN) then
@@ -117,8 +117,8 @@ contains
         use solver_data, only: CYYD, CYYU, CYYC, CYYBUD, CYYBUC, CYYBUU, CYYBLC, CYYBLD, CYYBLU
         use solver_data, only: C1
         implicit none
-        integer :: I, J, ISTART, IEND, JSTART, JEND
-        real :: DXL, DXR, DXC, DYD, DYU, DYC, DX, DYU_MIN, C2, Q
+        integer :: I=0, J=0, ISTART=0, IEND=0, JSTART=0, JEND=0
+        real :: DXL=0.0, DXR=0.0, DXC=0.0, DYD=0.0, DYU=0.0, DYC=0.0, DX=0.0, DYU_MIN=0.0, C2=0.0, Q=0.0
 
         ! Coefficients for (P)X and (P)XX at IMIN
         CXXL(IMIN) = 0.0
@@ -223,8 +223,8 @@ contains
         use solver_data, only: THETA, XSING
         implicit none
         integer :: I, J
-        real :: XX, YY, R, ATN, Q, R2PI
-        real :: RTK
+        real :: XX=0.0, YY=0.0, R=0.0, ATN=0.0, Q=0.0, R2PI=0.0
+        real :: RTK=0.0
         
         R2PI = 1.0 / TWOPI
         RTK = sqrt(abs(AK))
@@ -253,9 +253,9 @@ contains
         implicit none
         real, intent(in) :: CDFACT_in
         real :: result_drag
-        real :: PXUP, PXLOW, SUM
-        real :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
-        integer :: K, I
+        real :: PXUP=0.0, PXLOW=0.0, SUM=0.0
+        real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
+        integer :: K=0, I=0
         
         K = 1
         ARG(1) = 0.0
@@ -283,7 +283,7 @@ contains
         implicit none
         real, intent(in) :: CLFACT_in
         real :: result_lift
-        real :: PTOP, PBOT
+        real :: PTOP=0.0, PBOT=0.0
         
         PTOP = CJUP*P(JUP,ITE) - CJUP1*P(JUP+1,ITE)
         PBOT = CJLOW*P(JLOW,ITE) - CJLOW1*P(JLOW-1,ITE)
@@ -299,9 +299,9 @@ contains
         implicit none
         real, intent(in) :: CMFACT_in
         real :: result_pitch
-        real :: XM, PTOP, PBOT, SUM
-        real :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
-        integer :: K, I_loop
+        real :: XM=0.0, PTOP=0.0, PBOT=0.0, SUM=0.0
+        real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
+        integer :: K=0, I_loop=0
         
         ! Set XM to quarter chord
         XM = 0.25
@@ -338,12 +338,12 @@ contains
         real, intent(in) :: DELTA   ! Maximum thickness of airfoil
         
         ! Local variables
-        integer :: IU, ID, JT, JB, ISTOP, IBOW, ISK, JSTART, J, JJ, JSK, ISKOLD
-        integer :: ILIM, IB, I, L, NSHOCK, LPRT1, LPRT2, ISTART
-        real :: GAM123, U, V, UU, UL, SUM, CDSK, CDWAVE, CDC, CD
-        real :: CDUP, CDTOP, CDBOT, CDDOWN, CDBODY
-        real :: XU_LOC, XD_LOC, YT_LOC, YB_LOC, ULE
-        real :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
+        integer :: IU=0, ID=0, JT=0, JB=0, ISTOP=0, IBOW=0, ISK=0, JSTART=0, J=0, JJ=0, JSK=0, ISKOLD=0
+        integer :: ILIM=0, IB=0, I=0, L=0, NSHOCK=0, LPRT1=0, LPRT2=0, ISTART=0
+        real :: GAM123=0.0, U=0.0, V=0.0, UU=0.0, UL=0.0, SUM=0.0, CDSK=0.0, CDWAVE=0.0, CDC=0.0, CD=0.0
+        real :: CDUP=0.0, CDTOP=0.0, CDBOT=0.0, CDDOWN=0.0, CDBODY=0.0
+        real :: XU_LOC=0.0, XD_LOC=0.0, YT_LOC=0.0, YB_LOC=0.0, ULE=0.0
+        real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
         
         GAM123 = GAM1 * 2.0 / 3.0
         ISKOLD = 0
@@ -654,7 +654,7 @@ contains
         integer, intent(in) :: ISTART, IEND, J
         real, intent(in) :: SONVEL
         integer, intent(out) :: ISK
-        real :: U1, U2
+        real :: U1=0.0, U2=0.0
         
         ISK = ISTART - 1
         U2 = PX(ISK, J)
@@ -681,8 +681,8 @@ contains
         integer, intent(in) :: ISKOLD, J
         real, intent(in) :: SONVEL
         integer, intent(out) :: ISKNEW
-        integer :: I2
-        real :: U1, U2
+        integer :: I2=0
+        real :: U1=0.0, U2=0.0
         
         I2 = ISKOLD + 2
         ISKNEW = ISKOLD - 3
@@ -712,8 +712,8 @@ contains
         real, intent(in) :: CDSK
         real, intent(in) :: YFACT
         real, intent(in) :: DELTA   ! Maximum thickness of airfoil
-        real :: CDYCOF, POYCOF, YY, CDY, POY
-        integer :: K
+        real :: CDYCOF=0.0, POYCOF=0.0, YY=0.0, CDY=0.0, POY=0.0
+        integer :: K=0
     
         CDYCOF = -CDFACT * GAM1 / (6.0 * YFACT)
         POYCOF = DELTA**2 * GAM1 * (GAM1 - 1.0) / 12.0
