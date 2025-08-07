@@ -83,7 +83,7 @@ class EnvFactory:
         return create_env_with_id(self.worker_id)
 
 
-def main(device='auto'):
+def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
@@ -120,6 +120,11 @@ def main(device='auto'):
         max_processes=50
     )
     
+    save_path = os.path.join(path, 'ppo_fig_bump_model.pt')
+    
+    if resume and os.path.exists(save_path):
+        ppo_agent.load_model(save_path)
+    
     # Train the agent
     try:
         ppo_agent.train(
@@ -127,7 +132,7 @@ def main(device='auto'):
             log_interval=1,
             save_interval=10,
             eval_interval=10,
-            save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
+            save_path=save_path,
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png'),
             use_entropy_decay=True

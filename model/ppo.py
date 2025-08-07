@@ -799,17 +799,29 @@ class PPO_FigState_BumpAction():
         
         # Policy loss
         if self.training_stats['policy_losses']:
-            axes[0, 2].plot(self.training_stats['policy_losses'])
-            axes[0, 2].set_title('Policy Loss')
+            # Remove outliers from policy losses
+            filtered_policy_losses, valid_indices = self._remove_outliers(
+                self.training_stats['policy_losses'], method='iqr', iqr_factor=1.5
+            )
+            
+            axes[0, 2].plot(valid_indices, filtered_policy_losses, 'b-', alpha=0.8)
+            axes[0, 2].set_title(f'Policy Loss')
             axes[0, 2].set_xlabel('Update')
             axes[0, 2].set_ylabel('Loss')
+            axes[0, 2].grid(True, alpha=0.3)
         
         # Value loss
         if self.training_stats['value_losses']:
-            axes[1, 0].plot(self.training_stats['value_losses'])
-            axes[1, 0].set_title('Value Loss')
+            # Remove outliers from value losses
+            filtered_value_losses, valid_indices = self._remove_outliers(
+                self.training_stats['value_losses'], method='iqr', iqr_factor=1.5
+            )
+            
+            axes[1, 0].plot(valid_indices, filtered_value_losses, 'r-', alpha=0.8)
+            axes[1, 0].set_title(f'Value Loss')
             axes[1, 0].set_xlabel('Update')
             axes[1, 0].set_ylabel('Loss')
+            axes[1, 0].grid(True, alpha=0.3)
         
         # Entropy
         if self.training_stats['entropies']:
@@ -832,6 +844,57 @@ class PPO_FigState_BumpAction():
     def plot_eval_results(self):
         '''Plot evaluation progress'''
         self.evaluate(n_episodes=1, n_steps=10, render=True)
+    
+    def _remove_outliers(self, data: List[float], method: str = 'iqr', 
+                        iqr_factor: float = 1.5, std_factor: float = 2.5) -> Tuple[List[float], List[int]]:
+        '''
+        Remove outliers from data using statistical methods
+        
+        Parameters:
+        -----------
+        data: List[float]
+            Input data to filter
+        method: str
+            Method to use: 'iqr' (Interquartile Range) or 'std' (Standard Deviation)
+        iqr_factor: float
+            Factor for IQR method (typical: 1.5 for outliers, 3.0 for extreme outliers)
+        std_factor: float
+            Factor for std method (typical: 2.0-3.0)
+            
+        Returns:
+        --------
+        filtered_data: List[float]
+            Data with outliers removed
+        valid_indices: List[int]
+            Indices of non-outlier points
+        '''
+        if not data or len(data) < 4:  # Need minimum data points
+            return data, list(range(len(data)))
+            
+        data_array = np.array(data)
+        
+        if method == 'iqr':
+            Q1 = np.percentile(data_array, 25)
+            Q3 = np.percentile(data_array, 75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - iqr_factor * IQR
+            upper_bound = Q3 + iqr_factor * IQR
+            
+        elif method == 'std':
+            mean = np.mean(data_array)
+            std = np.std(data_array)
+            lower_bound = mean - std_factor * std
+            upper_bound = mean + std_factor * std
+            
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        
+        # Find valid indices (non-outliers)
+        valid_mask = (data_array >= lower_bound) & (data_array <= upper_bound)
+        valid_indices = np.where(valid_mask)[0].tolist()
+        filtered_data = data_array[valid_mask].tolist()
+        
+        return filtered_data, valid_indices
     
     def get_action(self, state_array: np.ndarray, figure_array: np.ndarray, 
                    deterministic: bool = False) -> np.ndarray:
