@@ -745,7 +745,7 @@ class PPO_FigState_BumpAction():
     
     def load_model(self, path: str):
         '''Load a saved model'''
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.actor_critic.load_state_dict(checkpoint['actor_critic_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.training_stats.update(checkpoint['training_stats'])

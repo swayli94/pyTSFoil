@@ -103,7 +103,7 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_FigState_BumpAction_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-5,
+        lr=1e-6,  # Initial lr = 1e-5, resume lr = 1e-6
         gamma=0.99,
         gae_lambda=0.98,
         clip_epsilon=0.2,
@@ -170,5 +170,5 @@ if __name__ == "__main__":
     GPU_ID = 0
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
     
-    main(device=device)
+    main(device=device, resume=True)
     
