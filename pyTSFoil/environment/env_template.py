@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pyTSFoil.pytsfoil import PyTSFoil
+from pyTSFoil.environment.basic import Reward
 
 
 def dist_clustcos(nn: int, a0=0.0079, a1=0.96, beta=1.0) -> np.ndarray:
@@ -87,7 +88,7 @@ class TSFoilEnv_Template(gym.Env):
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both', 'none'
             n_max_step: int = 10,
-            critical_reward: float = 0.0,
+            reward_class: Reward|None = None,
             ) -> None:
         
         super(TSFoilEnv_Template, self).__init__()
@@ -99,6 +100,11 @@ class TSFoilEnv_Template(gym.Env):
         self.mach_infinity = mach_infinity
         self.cl_target_input = cl_target
         self.cl_target = None
+        
+        if reward_class is None:
+            self.reward_class = Reward()
+        else:
+            self.reward_class = reward_class
         
         self.dim_action = 1
         self.dim_observation = 1
@@ -128,8 +134,6 @@ class TSFoilEnv_Template(gym.Env):
         self.render_mode = render_mode
         
         self.n_max_step = n_max_step
-        self.critical_reward_to_update_reference_step = critical_reward
-        self.invalid_action_penalty_reward = -10.0
         
         if output_dir is None:
             self.output_dir = os.path.dirname(__file__)
@@ -330,20 +334,17 @@ class TSFoilEnv_Template(gym.Env):
         
         cd_old = self.get_data_from_trajectory(self.i_reference_step, 'cd')
         
-        if self.cl_target is not None:
-            self.reward = (cd_old - cd) * 10000 + min(cl - self.cl_target, 0.0) * 100
-        else:
-            self.reward = (cd_old - cd) * 10000
+        self.reward = self.reward_class.calculate_reward(cl, cd, cd_old, self.cl_target)
         
         #* Check if the current step is valid
-        if self.reward > self.critical_reward_to_update_reference_step:
+        if self.reward > self.reward_class.critical_reward_to_update_reference_step:
             self.total_reward += self.reward
             self.is_current_step_valid = True
         else:
             self.is_current_step_valid = False
             
         if not self.is_action_valid:
-            self.reward = self.invalid_action_penalty_reward
+            self.reward = self.reward_class.invalid_action_penalty_reward
             self.is_current_step_valid = False
         
         return self.reward

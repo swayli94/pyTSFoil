@@ -21,12 +21,12 @@ mp.set_start_method('spawn', force=True)
 
 # Import the classes
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
-from pyTSFoil.environment.basic import BumpModificationAction, FigureState
+from pyTSFoil.environment.basic import BumpModificationAction
 from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
 
-def create_env_with_id(worker_id=None, render_mode='none', n_max_step=5, critical_reward=-10.0):
+def create_env_with_id(worker_id=None, render_mode='none', n_max_step=10):
     '''
     Factory function to create a new environment instance with unique worker ID
     
@@ -38,7 +38,6 @@ def create_env_with_id(worker_id=None, render_mode='none', n_max_step=5, critica
         worker_id: Unique worker ID for creating separate output directories
         render_mode: Rendering mode ('none', 'both', etc.)
         n_max_step: Maximum number of steps per episode
-        critical_reward: Critical reward threshold
     '''
     # Create sample airfoil
     x, y = np.loadtxt(os.path.join(path, 'rae2822.dat'), skiprows=1).T
@@ -47,15 +46,15 @@ def create_env_with_id(worker_id=None, render_mode='none', n_max_step=5, critica
     # Custom action class
     action_class = BumpModificationAction()
     
-    action_class.action_dict['UBL']['bound'] = [0.05, 0.8]
+    action_class.action_dict['UBL']['bound'] = [0.05, 0.9]
     action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['UBH']['min_increment'] = 0.001
-    action_class.action_dict['UBW']['bound'] = [0.4, 0.8]
+    action_class.action_dict['UBW']['bound'] = [0.6, 1.0]
     
-    action_class.action_dict['LBL']['bound'] = [0.05, 0.8]
+    action_class.action_dict['LBL']['bound'] = [0.05, 0.9]
     action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['LBH']['min_increment'] = 0.001
-    action_class.action_dict['LBW']['bound'] = [0.4, 0.8]
+    action_class.action_dict['LBW']['bound'] = [0.6, 1.0]
     
     action_class._update_action_bounds(action_class.action_dict)
 
@@ -72,8 +71,7 @@ def create_env_with_id(worker_id=None, render_mode='none', n_max_step=5, critica
         output_dir=worker_output_dir,
         render_mode=render_mode,
         action_class=action_class,
-        n_max_step=n_max_step,
-        critical_reward=critical_reward,
+        n_max_step=n_max_step
     )
 
 # Picklable environment factory functions for each worker
@@ -89,7 +87,7 @@ def main(device='auto'):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 50
+    n_envs = 100
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -107,30 +105,32 @@ def main(device='auto'):
         env_eval=eval_env,
         lr=1e-5,
         gamma=0.99,
-        gae_lambda=0.95,
-        clip_epsilon=0.1,
-        value_loss_coef=0.1,
+        gae_lambda=0.98,
+        clip_epsilon=0.2,
+        value_loss_coef=0.5,
         entropy_coef=0.1,
         max_grad_norm=0.5,
-        n_epochs=20, 
-        batch_size=500,
-        n_steps=5,
-        dim_latent=32,
+        n_epochs=10,
+        batch_size=2000,
+        n_steps=10,
+        dim_latent=64,
         dim_hidden=512,
         n_interp_points=101,
-        device=device
+        device=device,
+        max_processes=50
     )
     
     # Train the agent
     try:
         ppo_agent.train(
-            total_time_steps=50000,  # Increased for new reliable implementation
+            total_time_steps=int(1e6),  # Increased for new reliable implementation
             log_interval=1,
             save_interval=10,
             eval_interval=10,
             save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
             plot_training=True,
-            plot_path=os.path.join(path, 'training_progress.png')
+            plot_path=os.path.join(path, 'training_progress.png'),
+            use_entropy_decay=True
         )
     except Exception as e:
         print(f"Training failed with error: {e}")

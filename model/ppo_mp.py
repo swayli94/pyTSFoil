@@ -190,7 +190,8 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
                  dim_latent: int = 64,
                  dim_hidden: int = 256,
                  n_interp_points: int = 101,
-                 device: str = 'auto'):
+                 device: str = 'auto',
+                 max_processes: Optional[int] = None):
         '''
         Initialize the PPO_FigState_BumpAction_MultiEnv class
         
@@ -199,6 +200,10 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         env_fns: List[callable]
             List of functions that create environment instances
             Each function should return a TSFoilEnv_FigState_BumpAction instance
+        max_processes: Optional[int]
+            Maximum number of processes to use for parallel rollout collection.
+            If None, uses the number of environments (len(env_fns)).
+            If specified, will use min(max_processes, len(env_fns), cpu_count()).
         '''
         # Create a temporary environment to get dimensions
         if env_eval is None:
@@ -212,6 +217,15 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
 
         self.env_fns = env_fns
         self.n_envs = len(env_fns)
+        
+        # Set maximum number of processes to use
+        if max_processes is None:
+            self.max_processes = self.n_envs
+        else:
+            self.max_processes = min(max_processes, self.n_envs)
+            
+        # Actual number of processes to use for multiprocessing
+        self.n_processes = min(self.max_processes, mp.cpu_count())
         
     def collect_rollouts(self, n_steps: Optional[int] = None) -> dict:
         '''
@@ -254,7 +268,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         # Run rollout collection in parallel using Pool
         start_time = time.time()
         
-        with mp.Pool(processes=self.n_envs) as pool:
+        with mp.Pool(processes=self.n_processes) as pool:
             worker_results = pool.map(collect_rollout_worker, worker_params)
         
         elapsed_time = time.time() - start_time
@@ -306,7 +320,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         self.log_probs = np.concatenate(combined_log_probs, axis=0)
         self.dones = np.concatenate(combined_dones, axis=0)
         
-        print(f"  Collect rollout data ({len(self.state_arrays)} steps) from {len(successful_results)}/{self.n_envs} workers in {elapsed_time:.2f}s")
+        print(f"  Collect rollout data ({len(self.state_arrays)} steps) from {len(successful_results)}/{self.n_envs} environments using {self.n_processes} processes in {elapsed_time:.2f}s")
         
         # Use final state from first successful worker for bootstrapping GAE
         final_result = successful_results[0]

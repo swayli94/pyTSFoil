@@ -219,6 +219,7 @@ class PPO_FigState_BumpAction():
         self.clip_epsilon = clip_epsilon
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
+        self.initial_entropy_coef = entropy_coef  # Store initial value for decay
         self.max_grad_norm = max_grad_norm
         self.n_epochs = n_epochs
         self.batch_size = batch_size
@@ -383,6 +384,32 @@ class PPO_FigState_BumpAction():
         
         return rollout_data
     
+    def decay_entropy_coef(self, update_count: int, total_updates: int, 
+                          decay_type: str = 'linear', min_entropy_coef: float = 0.001) -> None:
+        '''
+        Decay entropy coefficient during training to reduce exploration over time
+        
+        Parameters:
+        -----------
+        update_count: int
+            Current update number
+        total_updates: int  
+            Total number of updates planned
+        decay_type: str
+            Type of decay ('linear', 'exponential')
+        min_entropy_coef: float
+            Minimum entropy coefficient value
+        '''
+        if decay_type == 'linear':
+            decay_factor = max(0, 1 - update_count / total_updates)
+        elif decay_type == 'exponential':
+            decay_factor = 0.99 ** update_count
+        else:
+            decay_factor = 1.0
+            
+        self.entropy_coef = max(min_entropy_coef, 
+                               self.initial_entropy_coef * decay_factor)
+    
     def compute_gae(self, next_state_array: torch.Tensor, next_figure_array: torch.Tensor) -> None:
         '''
         Compute Generalized Advantage Estimation (GAE)
@@ -533,7 +560,8 @@ class PPO_FigState_BumpAction():
     def train(self, total_time_steps: int, 
               log_interval: int = 10, save_interval: int = 100, eval_interval: int = 100,
               save_path: str = 'ppo_model.pt', plot_training: bool = True,
-              plot_path: str = 'training_progress.png') -> None:
+              plot_path: str = 'training_progress.png',
+              use_entropy_decay: bool = False, entropy_decay_type: str = 'linear') -> None:
         '''
         Train the PPO agent
         
@@ -558,6 +586,7 @@ class PPO_FigState_BumpAction():
 
         time_steps_so_far = 0
         update_count = 0
+        estimated_total_updates = total_time_steps // self.n_steps + 1
         
         while time_steps_so_far < total_time_steps:
             
@@ -570,6 +599,10 @@ class PPO_FigState_BumpAction():
             # Update policy
             update_info = self.update_policy(rollout_data)
             update_count += 1
+            
+            # Apply entropy decay if enabled
+            if use_entropy_decay:
+                self.decay_entropy_coef(update_count, estimated_total_updates, entropy_decay_type)
             
             # Save episode statistics for this update period
             self.episode_rewards_per_update.append(self.current_update_rewards.copy())
@@ -589,7 +622,7 @@ class PPO_FigState_BumpAction():
                       f"Avg Length {avg_length:.1f} | "
                       f"Policy Loss {update_info['policy_loss']:.4f} | "
                       f"Value Loss {update_info['value_loss']:.4f} | "
-                      f"Entropy {update_info['entropy']:.1f} -> std {np.mean(np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())):.4f} | "
+                      f"Entropy {update_info['entropy']:.1f} (coef={self.entropy_coef:.4f}) -> std {np.mean(np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())):.4f} | "
                       f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
             
                 if plot_training:
@@ -840,3 +873,68 @@ class PPO_FigState_BumpAction():
         action_unscaled = self.action_class.recover_action(np.clip(action, -1.0, 1.0))
         
         return action_unscaled
+    
+    def diagnose_entropy_behavior(self) -> dict:
+        '''
+        Diagnose entropy behavior to understand if the current trend is problematic
+        
+        Returns:
+        --------
+        diagnosis: dict
+            Dictionary with entropy analysis and recommendations
+        '''
+        if len(self.training_stats['entropies']) < 10:
+            return {'status': 'insufficient_data', 'message': 'Need more training updates to analyze'}
+        
+        entropies = np.array(self.training_stats['entropies'])
+        recent_entropies = entropies[-10:]  # Last 10 updates
+        
+        # Check if entropy is increasing, decreasing, or stable
+        trend_slope = np.polyfit(range(len(recent_entropies)), recent_entropies, 1)[0]
+        
+        # Get current action standard deviations
+        current_std = np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())
+        mean_std = np.mean(current_std)
+        
+        # Get current entropy coefficient
+        current_entropy_coef = self.entropy_coef
+        
+        diagnosis = {
+            'entropy_trend_slope': trend_slope,
+            'mean_recent_entropy': np.mean(recent_entropies),
+            'current_action_std': current_std,
+            'mean_action_std': mean_std,
+            'entropy_coefficient': current_entropy_coef,
+            'status': 'unknown',
+            'recommendations': []
+        }
+        
+        # Analyze the behavior
+        if trend_slope > 0.1:  # Strongly increasing
+            if mean_std > 1.0:  # Very high exploration
+                diagnosis['status'] = 'problematic_high_entropy'
+                diagnosis['recommendations'].extend([
+                    f"Reduce entropy_coef from {current_entropy_coef:.4f} to {current_entropy_coef*0.5:.4f}",
+                    "Consider using entropy decay: use_entropy_decay=True",
+                    "Check if learning rate is too high causing instability"
+                ])
+            else:
+                diagnosis['status'] = 'exploration_phase'
+                diagnosis['recommendations'].append("Normal exploration behavior, monitor for convergence")
+                
+        elif trend_slope < -0.1:  # Strongly decreasing
+            diagnosis['status'] = 'converging'
+            diagnosis['recommendations'].append("Good: entropy decreasing, policy converging")
+            
+        else:  # Stable
+            if mean_std > 0.8:
+                diagnosis['status'] = 'high_stable_entropy'
+                diagnosis['recommendations'].extend([
+                    "High but stable entropy - may need entropy decay",
+                    f"Consider reducing entropy_coef from {current_entropy_coef:.4f}"
+                ])
+            else:
+                diagnosis['status'] = 'healthy'
+                diagnosis['recommendations'].append("Healthy entropy behavior")
+        
+        return diagnosis

@@ -153,7 +153,7 @@ class BumpModificationAction(Action):
     def __init__(self,
                     critical_height_for_no_bump=1E-3,
                     n_cst=10, 
-                    keep_airfoil_tmax=False) -> None:
+                    keep_airfoil_tmax=True) -> None:
         
         self.action_dict = {
             'UBL': {'bound': [ 0.01,  0.99],  'min_increment': 0.002,  'meaning': 'upper bump location'},
@@ -563,3 +563,27 @@ class FigureState():
         
         return figure_base64
     
+
+class Reward():
+    '''
+    Calculate the reward. Its value is suggested to be in a reasonable range, [-1,1].
+    '''
+    
+    def __init__(self):
+        
+        self.critical_reward_to_update_reference_step = -0.1
+        self.invalid_action_penalty_reward = -0.3
+    
+    def calculate_reward(self, cl: float, cd: float, cd_old: float, cl_target: float|None) -> float:
+        '''
+        Calculate the reward based on the information of the environment.
+        '''        
+        if cl_target is not None:
+            cl_penalty = min(cl - cl_target, 0.0) * 1
+        else:
+            cl_penalty = 0.0
+                        
+        reward = (cd_old - cd) * 100 + cl_penalty
+            
+        return reward
+

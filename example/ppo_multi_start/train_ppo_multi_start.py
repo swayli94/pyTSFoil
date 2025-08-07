@@ -107,7 +107,7 @@ class AirfoilDatabase():
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 
-                        n_max_step=5, critical_reward=-10.0,
+                        n_max_step=5,
                         show_airfoil=False):
     '''
     Factory function to create a new environment instance with unique worker ID
@@ -120,7 +120,6 @@ def create_env_with_id(worker_id=None, render_mode='none',
         worker_id: Unique worker ID for creating separate output directories
         render_mode: Rendering mode ('none', 'both', etc.)
         n_max_step: Maximum number of steps per episode
-        critical_reward: Critical reward threshold
     '''
     # Create sample airfoil
     database = AirfoilDatabase(fname_database=os.path.join(path, 'reference-airfoils-cst.dat'))
@@ -177,8 +176,7 @@ def create_env_with_id(worker_id=None, render_mode='none',
         output_dir=worker_output_dir,
         render_mode=render_mode,
         action_class=action_class,
-        n_max_step=n_max_step,
-        critical_reward=critical_reward,
+        n_max_step=n_max_step
     )
 
 
@@ -218,7 +216,7 @@ def main(device='auto'):
         gae_lambda=0.95,
         clip_epsilon=0.95,
         value_loss_coef=0.1,
-        entropy_coef=0.1,
+        entropy_coef=0.01,
         max_grad_norm=0.5,
         n_epochs=20, 
         batch_size=500,
@@ -238,7 +236,8 @@ def main(device='auto'):
             eval_interval=10,
             save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
             plot_training=True,
-            plot_path=os.path.join(path, 'training_progress.png')
+            plot_path=os.path.join(path, 'training_progress.png'),
+            use_entropy_decay=True
         )
     except Exception as e:
         print(f"Training failed with error: {e}")
