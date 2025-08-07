@@ -127,6 +127,7 @@ def main(device='auto'):
             total_time_steps=50000,  # Increased for new reliable implementation
             log_interval=1,
             save_interval=10,
+            eval_interval=10,
             save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png')
@@ -153,6 +154,7 @@ def main(device='auto'):
                 except Exception as e:
                     print(f"Could not clean up {worker_dir}: {e}")
         print("Worker directory cleanup completed!")
+
 
 if __name__ == "__main__":
     

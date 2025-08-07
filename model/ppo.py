@@ -63,7 +63,7 @@ class ActorCritic(nn.Module):
             nn.ReLU()
         )
         
-        # Encode figure_array [n_interp_points, 4] into latent space (with CNN)
+        # Encode figure_array (yu, yl, mwu, mwl) [n_interp_points, 4] into latent space (with CNN)
         # Input needs to be transposed to [batch_size, 4, n_interp_points] for Conv1d
         self.figure_encoder = nn.Sequential(
             nn.Conv1d(4, 16, kernel_size=3, stride=1, padding=1),
@@ -530,7 +530,8 @@ class PPO_FigState_BumpAction():
             'clip_fraction': total_clip_fraction / n_updates
         }
     
-    def train(self, total_time_steps: int, log_interval: int = 10, save_interval: int = 100,
+    def train(self, total_time_steps: int, 
+              log_interval: int = 10, save_interval: int = 100, eval_interval: int = 100,
               save_path: str = 'ppo_model.pt', plot_training: bool = True,
               plot_path: str = 'training_progress.png') -> None:
         '''
@@ -591,11 +592,14 @@ class PPO_FigState_BumpAction():
                       f"Entropy {update_info['entropy']:.1f} -> std {np.mean(np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())):.4f} | "
                       f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
             
-            # Save model
-            if update_count % save_interval == 0:
-                self.save_model(save_path)
                 if plot_training:
                     self.plot_training_progress(save_path=plot_path)
+            
+            if update_count % save_interval == 0:
+                self.save_model(save_path)
+                
+            if update_count % eval_interval == 0:
+                self.plot_eval_results()
         
         print("Training completed!")
         self.save_model(save_path)
@@ -791,6 +795,10 @@ class PPO_FigState_BumpAction():
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
+    
+    def plot_eval_results(self):
+        '''Plot evaluation progress'''
+        self.evaluate(n_episodes=1, n_steps=10, render=True)
     
     def get_action(self, state_array: np.ndarray, figure_array: np.ndarray, 
                    deterministic: bool = False) -> np.ndarray:

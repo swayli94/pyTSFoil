@@ -330,8 +330,6 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         
         return rollout_data
 
-    def plot_training_progress(self, save_path: str = 'training_progress.png', eval_path: str = 'eval_progress.png'):
-        '''Plot training progress'''
-        super().plot_training_progress(save_path=save_path)
-
+    def plot_eval_results(self):
+        '''Plot evaluation results'''
         self.evaluate(n_episodes=1, n_steps=10, render=True)

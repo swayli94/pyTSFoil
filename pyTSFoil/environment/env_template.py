@@ -174,6 +174,7 @@ class TSFoilEnv_Template(gym.Env):
         '''
         Reset the environment.
         '''
+        self.airfoil_coordinates = self.airfoil_coordinates_initial.copy()
         self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial.copy()
         
         self._run_simulation()
@@ -675,12 +676,13 @@ class TSFoilEnv_Template(gym.Env):
         for i, entry in enumerate(self.trajectory):
             coords = entry['info']['airfoil_coordinates']
             alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))  # Fade older steps, highlight recent ones
+            linewidth = 3.0 if i==0 else 1.0
             step_num = entry['info']['i_current_step']
             is_valid = entry['info'].get('is_current_step_valid', True)
             linestyle = '-' if is_valid else '--'  # Dashed line for invalid steps
             label = f'Step {step_num}'  # Show all step numbers in legend
             self.axes[0].plot(coords[:, 0], coords[:, 1], 
-                            color=colors[i], alpha=alpha, linewidth=1, 
+                            color=colors[i], alpha=alpha, linewidth=linewidth, 
                             linestyle=linestyle, label=label)
         
         # Plot 2: Mach number distribution evolution
@@ -692,13 +694,14 @@ class TSFoilEnv_Template(gym.Env):
                 alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))
                 step_num = entry['info']['i_current_step']
                 is_valid = entry['info'].get('is_current_step_valid', True)
+                linewidth = 3.0 if i==0 else 1.0
                 linestyle = '-' if is_valid else '--'  # Dashed line for invalid steps
                 label_upper = f'Step {step_num}'
                 
                 self.axes[1].plot(xx, mau, color=colors[i], alpha=alpha, 
-                                linewidth=1, linestyle=linestyle, label=label_upper)
+                                linewidth=linewidth, linestyle=linestyle, label=label_upper)
                 self.axes[1].plot(xx, mal, color=colors[i], alpha=alpha, 
-                                linewidth=1, linestyle=linestyle, label=None)
+                                linewidth=linewidth, linestyle=linestyle, label=None)
         
         # Plot 3: Performance metrics history
         steps = [entry['info']['i_current_step'] for entry in self.trajectory]
