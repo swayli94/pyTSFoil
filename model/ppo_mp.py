@@ -112,7 +112,7 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
             log_probs.append(log_prob.cpu().numpy())
             
             # Take environment step
-            next_obs, reward, done, info = env.step(action_unscaled)
+            _, reward, done, info = env.step(action_unscaled)
             
             # Store step results
             rewards.append(reward)

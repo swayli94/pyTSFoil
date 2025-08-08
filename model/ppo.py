@@ -145,7 +145,8 @@ class ActorCritic(nn.Module):
         
         return action_mean, action_std, value
     
-    def get_action_and_value(self, state_array: torch.Tensor, figure_array: torch.Tensor, action: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_action_and_value(self, state_array: torch.Tensor, figure_array: torch.Tensor, 
+                                action: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
         Get action and value from the Actor-Critic network
         
@@ -174,6 +175,9 @@ class ActorCritic(nn.Module):
         
         if action is None:
             action = dist.sample()
+            # Clamp to environment bounds [-1,1]. Note: This creates a truncated normal
+            # distribution. Log probs are approximate but environment compatibility is critical.
+            action = torch.clamp(action, -1.0, 1.0)
         
         log_prob = dist.log_prob(action).sum(dim=-1)
         entropy = dist.entropy().sum(dim=-1)
@@ -193,20 +197,20 @@ class PPO_FigState_BumpAction():
     '''
     def __init__(self, 
                  env: TSFoilEnv_FigState_BumpAction,
-                 lr: float = 3e-4,
+                 lr: float = 3e-5,
                  gamma: float = 0.99,
                  gae_lambda: float = 0.95,
                  clip_epsilon: float = 0.2,
                  value_loss_coef: float = 0.5,
                  entropy_coef: float = 0.01,
-                 max_grad_norm: float = 0.5,
+                 max_grad_norm: float = 0.1,
                  n_epochs: int = 10,
                  batch_size: int = 64,
                  n_steps: int = 2048,
                  dim_latent: int = 64,
                  dim_hidden: int = 256,
                  n_interp_points: int = 101,
-                 initial_action_std: float = 0.1,
+                 initial_action_std: float = 0.5,   # High-dimensional action space requires higher std
                  device: str = 'auto'):
         
         self.env = env
@@ -338,7 +342,7 @@ class PPO_FigState_BumpAction():
             self.log_probs.append(log_prob.cpu().numpy())
                         
             # Take environment step with unscaled action
-            next_obs, reward, done, info = self.env.step(action_unscaled)
+            _, reward, done, info = self.env.step(action_unscaled)
             self.rewards.append(reward)
             self.dones.append(done)
             
@@ -351,7 +355,7 @@ class PPO_FigState_BumpAction():
             # Get the next state for next iteration
             state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
 
-            print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
+            # print(f"step {step:02d} | action: {action_unscaled} | reward: {reward:.2e}")
             
             if done:
                 break
@@ -447,7 +451,7 @@ class PPO_FigState_BumpAction():
             gae = delta + self.gamma * self.gae_lambda * next_non_terminal * gae
             advantages.insert(0, gae)
             returns.insert(0, gae + self.values[i])
-        
+
         self.advantages = advantages
         self.returns = returns
     
@@ -469,7 +473,7 @@ class PPO_FigState_BumpAction():
         state_arrays = torch.FloatTensor(rollout_data['state_arrays']).to(self.device)
         figure_arrays = torch.FloatTensor(rollout_data['figure_arrays']).to(self.device)
         actions = torch.FloatTensor(rollout_data['actions']).to(self.device)
-        old_log_probs = torch.FloatTensor(rollout_data['log_probs']).to(self.device)
+        old_log_probs = torch.FloatTensor(rollout_data['log_probs']).to(self.device).squeeze() # Very important to squeeze, to match the shape of the action
         advantages = torch.FloatTensor(rollout_data['advantages']).to(self.device)
         returns = torch.FloatTensor(rollout_data['returns']).to(self.device)
         old_values = torch.FloatTensor(rollout_data['values']).to(self.device)
@@ -504,10 +508,9 @@ class PPO_FigState_BumpAction():
                 
                 # Forward pass
                 _, new_log_probs, entropy, new_values = self.actor_critic.get_action_and_value(
-                    batch_state_arrays, batch_figure_arrays, batch_actions
-                )
+                    batch_state_arrays, batch_figure_arrays, batch_actions)
                 new_values = new_values.squeeze()
-                
+                                
                 # Policy loss (PPO clipped objective)
                 ratio = torch.exp(new_log_probs - batch_old_log_probs)
                 surr1 = ratio * batch_advantages
@@ -539,6 +542,8 @@ class PPO_FigState_BumpAction():
                 # Statistics
                 with torch.no_grad():
                     clip_fraction = ((ratio - 1.0).abs() > self.clip_epsilon).float().mean()
+                    
+                # print(f'ratio {ratio.min():.4f} {ratio.max():.1f} {ratio.mean():.1f}, clip_fraction {clip_fraction.item():.2f}, clip_epsilon {self.clip_epsilon}')
                     
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
@@ -625,7 +630,6 @@ class PPO_FigState_BumpAction():
                       f"Avg Length {avg_length:.1f} | "
                       f"Policy Loss {update_info['policy_loss']:.4f} | "
                       f"Value Loss {update_info['value_loss']:.4f} | "
-                      f"Entropy {update_info['entropy']:.1f} (coef={self.entropy_coef:.4f}) -> std {np.mean(np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())):.4f} | "
                       f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
             
                 if plot_training:

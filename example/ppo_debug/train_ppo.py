@@ -48,26 +48,27 @@ def main():
     # Create specialized PPO agent
     ppo_agent = PPO_FigState_BumpAction(
         env=env,
-        lr=3e-4,
+        lr=1e-5,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.2,
         value_loss_coef=0.5,
         entropy_coef=0.01,
-        max_grad_norm=0.5,
+        max_grad_norm=0.1,
         n_epochs=10,
         batch_size=64,
         n_steps=5,
         dim_latent=64,
         dim_hidden=256,
         n_interp_points=101,
+        initial_action_std=0.1,
         device='auto'
     )
     
     # Train the agent
     ppo_agent.train(
         total_time_steps=100,  # Small number for testing
-        log_interval=5,
+        log_interval=1,
         save_interval=50,
         save_path=os.path.join(path, 'ppo_fig_bump_model.pt'),
         plot_training=True,

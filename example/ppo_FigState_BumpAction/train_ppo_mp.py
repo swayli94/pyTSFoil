@@ -105,7 +105,7 @@ def main(device='auto', resume=False):
         env_eval=eval_env,
         lr=1e-6,  # Initial lr = 1e-5, resume lr = 1e-6
         gamma=0.99,
-        gae_lambda=0.98,
+        gae_lambda=0.95,
         clip_epsilon=0.2,
         value_loss_coef=0.5,
         entropy_coef=0.1,
@@ -116,6 +116,7 @@ def main(device='auto', resume=False):
         dim_latent=64,
         dim_hidden=512,
         n_interp_points=101,
+        initial_action_std=0.3,
         device=device,
         max_processes=50
     )

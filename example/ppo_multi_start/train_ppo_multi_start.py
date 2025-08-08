@@ -62,12 +62,12 @@ def create_env_with_id(worker_id=None, render_mode='none',
     action_class = BumpModificationAction()
     
     action_class.action_dict['UBL']['bound'] = [0.05, 0.9]
-    action_class.action_dict['UBH']['bound'] = [-0.003, 0.003]
+    action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['UBH']['min_increment'] = 0.001
     action_class.action_dict['UBW']['bound'] = [0.6, 1.0]
     
     action_class.action_dict['LBL']['bound'] = [0.05, 0.9]
-    action_class.action_dict['LBH']['bound'] = [-0.003, 0.003]
+    action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['LBH']['min_increment'] = 0.001
     action_class.action_dict['LBW']['bound'] = [0.6, 1.0]
     
@@ -140,12 +140,12 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_Custom_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-5,
+        lr=1e-4,
         gamma=0.99,
-        gae_lambda=0.98,
-        clip_epsilon=0.8,
+        gae_lambda=0.95,
+        clip_epsilon=0.2,
         value_loss_coef=0.5,
-        entropy_coef=0.1,
+        entropy_coef=0.01,
         max_grad_norm=0.5,
         n_epochs=10,
         batch_size=2000,
@@ -170,7 +170,7 @@ def main(device='auto', resume=False):
     # Train the agent
     try:
         ppo_agent.train(
-            total_time_steps=100000,  # Increased for new reliable implementation
+            total_time_steps=int(1e6),
             log_interval=1,
             save_interval=10,
             eval_interval=10,
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     
     print('path: ', path)
     
-    GPU_ID = 0
+    GPU_ID = 1
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
 
     main(device=device, resume=False)
