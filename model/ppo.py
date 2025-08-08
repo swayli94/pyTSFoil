@@ -206,6 +206,7 @@ class PPO_FigState_BumpAction():
                  dim_latent: int = 64,
                  dim_hidden: int = 256,
                  n_interp_points: int = 101,
+                 initial_action_std: float = 0.1,
                  device: str = 'auto'):
         
         self.env = env
@@ -225,6 +226,7 @@ class PPO_FigState_BumpAction():
         self.batch_size = batch_size
         self.n_steps = n_steps
         self.n_interp_points = n_interp_points
+        self.initial_action_std = initial_action_std
         
         # Device setup
         if device == 'auto':
@@ -243,7 +245,8 @@ class PPO_FigState_BumpAction():
             dim_action=self.dim_action,
             dim_latent=dim_latent,
             dim_hidden=dim_hidden,
-            n_interp_points=n_interp_points
+            n_interp_points=n_interp_points,
+            initial_std=initial_action_std
         ).to(self.device)
         
         self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=lr)

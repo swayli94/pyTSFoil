@@ -1,19 +1,152 @@
 '''
-Proximal Policy Optimization (PPO) algorithm for airfoil design
-
-With multiprocessing, we can run multiple environments in parallel.
+Customized PPO agent for airfoil design
 '''
-import torch
-import numpy as np
-from typing import List, Tuple, Optional, Callable
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+from typing import List, Optional, Callable, Dict, Any
+import time
 import copy
 import multiprocessing as mp
-import time
-from typing import Dict, Any
 
-from model.ppo import PPO_FigState_BumpAction, ActorCritic
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
+from model.ppo import ActorCritic, PPO_FigState_BumpAction
+
+
+class ActorCritic_Custom(ActorCritic):
+    '''
+    Actor-Critic network for PPO
+    '''
+    def __init__(self, 
+                    dim_state: int, 
+                    dim_action: int, 
+                    dim_latent: int = 64,
+                    dim_hidden: int = 256,
+                    n_interp_points: int = 100,
+                    initial_std: float = 0.1):
+        
+        super(ActorCritic, self).__init__()
+
+        self.dim_state = dim_state
+        self.dim_action = dim_action
+        self.dim_latent = dim_latent
+        self.dim_hidden = dim_hidden
+        self.n_interp_points = n_interp_points
+        self.initial_std = initial_std
+        
+        # Encode state_array [dim_state] into latent space
+        self.state_encoder = nn.Sequential(
+            nn.Linear(dim_state, 32),
+            nn.ReLU(),
+            nn.Linear(32, 256),
+            nn.ReLU(),
+            nn.Linear(256, dim_latent),
+            nn.ReLU()
+        )
+        
+        # Encode figure_array (yu, yl, mwu, mwl) [n_interp_points, 4] into latent space (with CNN)
+        # Input needs to be transposed to [batch_size, 4, n_interp_points] for Conv1d
+        self.figure_encoder = nn.Sequential(
+            nn.Conv1d(4, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),  # Global average pooling instead of flatten
+            nn.Flatten(),
+            nn.Linear(64, dim_latent),
+            nn.ReLU()
+        )
+        
+        # Shared feature extractor (combines both latent representations)
+        self.shared_net = nn.Sequential(
+            nn.Linear(2 * dim_latent, dim_hidden),  # Combined latent features
+            nn.ReLU(),
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+        )
+        
+        # Actor head (policy network)
+        self.actor_mean = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+            nn.Linear(dim_hidden, dim_action),
+            nn.Tanh()  # Output in [-1, 1]
+        )
+        
+        # Actor std (learnable std deviation)
+        self.actor_log_std = nn.Parameter(torch.ones(dim_action) * np.log(initial_std))
+        
+        # Critic head (value network)
+        self.critic = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+            nn.Linear(dim_hidden, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+
+
+class PPO_Custom(PPO_FigState_BumpAction):
+    '''
+    Proximal Policy Optimization (PPO) algorithm for airfoil design
+    
+    This class is specifically designed to work with:
+    - TSFoilEnv_FigState_BumpAction environment
+    - FigureState for state representation (parametric + visual)
+    - BumpModificationAction for airfoil modifications
+    
+    '''
+    def __init__(self, 
+                 env: TSFoilEnv_FigState_BumpAction,
+                 lr: float = 3e-4,
+                 gamma: float = 0.99,
+                 gae_lambda: float = 0.95,
+                 clip_epsilon: float = 0.2,
+                 value_loss_coef: float = 0.5,
+                 entropy_coef: float = 0.01,
+                 max_grad_norm: float = 0.5,
+                 n_epochs: int = 10,
+                 batch_size: int = 64,
+                 n_steps: int = 2048,
+                 dim_latent: int = 64,
+                 dim_hidden: int = 256,
+                 n_interp_points: int = 101,
+                 initial_action_std: float = 0.1,
+                 device: str = 'auto'):
+        
+        super(PPO_Custom, self).__init__(
+            env=env,
+            lr=lr,
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+            clip_epsilon=clip_epsilon,
+            value_loss_coef=value_loss_coef,
+            entropy_coef=entropy_coef,
+            max_grad_norm=max_grad_norm,
+            n_epochs=n_epochs,
+            batch_size=batch_size,
+            n_steps=n_steps,
+            dim_latent=dim_latent,
+            dim_hidden=dim_hidden,
+            n_interp_points=n_interp_points,
+            initial_action_std=initial_action_std,
+            device=device
+        )
+        
+        self.actor_critic = ActorCritic_Custom(
+            dim_state=self.dim_state,
+            dim_action=self.dim_action,
+            dim_latent=dim_latent,
+            dim_hidden=dim_hidden,
+            n_interp_points=n_interp_points,
+            initial_std=initial_action_std
+        ).to(self.device)
+        
+        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=lr)
 
 
 def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -61,7 +194,7 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         env = env_fn()
         
         # Use passed dimensions instead of inferring them
-        actor_critic = ActorCritic(
+        actor_critic = ActorCritic_Custom(
             dim_state=params['dim_state'],
             dim_action=params['dim_action'],
             dim_latent=params.get('dim_latent', 64),
@@ -160,54 +293,30 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
             'success': False,
             'error': str(e)
         }
-
-
-class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
-    '''
-    Proximal Policy Optimization (PPO) algorithm for airfoil design
-    
-    This class is specifically designed to work with:
-    - TSFoilEnv_FigState_BumpAction environments
-    - FigureState for state representation (parametric + visual)
-    - BumpModificationAction for airfoil modifications
-    
-    The 'MultiEnv' version uses multiprocessing.Pool to collect rollouts
-    in parallel from multiple environment instances. This approach is 
-    simpler and more reliable than the queue-based approach.
-    '''
-
-    def __init__(self, 
-                 env_fns: List[callable],
-                 env_eval: TSFoilEnv_FigState_BumpAction|None = None,
-                 lr: float = 3e-4,
-                 gamma: float = 0.99,
-                 gae_lambda: float = 0.95,
-                 clip_epsilon: float = 0.2,
-                 value_loss_coef: float = 0.5,
-                 entropy_coef: float = 0.01,
-                 max_grad_norm: float = 0.5,
-                 n_epochs: int = 10,
-                 batch_size: int = 64,
-                 n_steps: int = 2048,
-                 dim_latent: int = 64,
-                 dim_hidden: int = 256,
-                 n_interp_points: int = 101,
-                 initial_action_std: float = 0.1,
-                 device: str = 'auto',
-                 max_processes: Optional[int] = None):
-        '''
-        Initialize the PPO_FigState_BumpAction_MultiEnv class
         
-        Parameters:
-        -----------
-        env_fns: List[callable]
-            List of functions that create environment instances
-            Each function should return a TSFoilEnv_FigState_BumpAction instance
-        max_processes: Optional[int]
-            Maximum number of processes to use for parallel rollout collection.
-            If None, uses the number of environments (len(env_fns)).
-            If specified, will use min(max_processes, len(env_fns), cpu_count()).
-        '''
+
+class PPO_Custom_MultiEnv(PPO_Custom):
+
+    def __init__(self,
+            env_fns: List[callable],
+            env_eval: TSFoilEnv_FigState_BumpAction|None = None,
+            lr: float = 3e-4,
+            gamma: float = 0.99,
+            gae_lambda: float = 0.95,
+            clip_epsilon: float = 0.2,
+            value_loss_coef: float = 0.5,
+            entropy_coef: float = 0.01,
+            max_grad_norm: float = 0.5,
+            n_epochs: int = 10,
+            batch_size: int = 64,
+            n_steps: int = 2048,
+            dim_latent: int = 64,
+            dim_hidden: int = 256,
+            n_interp_points: int = 101,
+            initial_action_std: float = 0.1,
+            device: str = 'auto',
+            max_processes: Optional[int] = None):
+        
         # Create a temporary environment to get dimensions
         if env_eval is None:
             env_eval = copy.deepcopy(env_fns[0]())
@@ -229,7 +338,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             
         # Actual number of processes to use for multiprocessing
         self.n_processes = min(self.max_processes, mp.cpu_count())
-        
+         
     def collect_rollouts(self, n_steps: Optional[int] = None) -> dict:
         '''
         Collect rollouts from multiple environments in parallel using multiprocessing.Pool
@@ -257,7 +366,6 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
                 'worker_id': worker_id,
                 'n_steps': n_steps,
                 'n_interp_points': self.n_interp_points,
-                'initial_std': self.initial_action_std,
                 'actor_critic_state': self.actor_critic.state_dict(),
                 'device': 'cpu',  # Use CPU for workers to avoid GPU conflicts
                 'action_class': self.action_class,
@@ -351,3 +459,5 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
     def plot_eval_results(self):
         '''Plot evaluation results'''
         self.evaluate(n_episodes=1, n_steps=10, render=True)
+
+        

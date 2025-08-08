@@ -12,6 +12,9 @@ Key improvements:
 - More consistent performance across different systems
 '''
 import os
+import sys
+sys.path.append(os.path.dirname(__file__))
+
 import numpy as np
 import torch
 import multiprocessing as mp
@@ -23,8 +26,8 @@ mp.set_start_method('spawn', force=True)
 
 # Import the classes
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
-from pyTSFoil.environment.basic import BumpModificationAction, FigureState, cst_foil, check_validity
-from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
+from pyTSFoil.environment.basic import BumpModificationAction, cst_foil, check_validity
+from ppo_custom import PPO_Custom_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
 
@@ -107,7 +110,7 @@ class AirfoilDatabase():
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 
-                        n_max_step=5,
+                        n_max_step=10,
                         show_airfoil=False):
     '''
     Factory function to create a new environment instance with unique worker ID
@@ -132,15 +135,15 @@ def create_env_with_id(worker_id=None, render_mode='none',
     # Custom action class
     action_class = BumpModificationAction()
     
-    action_class.action_dict['UBL']['bound'] = [0.05, 0.8]
-    action_class.action_dict['UBH']['bound'] = [-0.003, 0.003]
+    action_class.action_dict['UBL']['bound'] = [0.05, 0.9]
+    action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['UBH']['min_increment'] = 0.001
-    action_class.action_dict['UBW']['bound'] = [0.4, 0.8]
+    action_class.action_dict['UBW']['bound'] = [0.6, 1.0]
     
-    action_class.action_dict['LBL']['bound'] = [0.05, 0.8]
-    action_class.action_dict['LBH']['bound'] = [-0.003, 0.003]
+    action_class.action_dict['LBL']['bound'] = [0.05, 0.9]
+    action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['LBH']['min_increment'] = 0.001
-    action_class.action_dict['LBW']['bound'] = [0.4, 0.8]
+    action_class.action_dict['LBW']['bound'] = [0.6, 1.0]
     
     action_class._update_action_bounds(action_class.action_dict)
 
@@ -191,11 +194,11 @@ class EnvFactory:
         return create_env_with_id(self.worker_id)
 
 
-def main(device='auto'):
+def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 50
+    n_envs = 100
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -208,24 +211,31 @@ def main(device='auto'):
     print(f"Creating PPO agent with {n_envs} parallel environments...")
     
     # Create specialized PPO agent with multiple environments
-    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
+    ppo_agent = PPO_Custom_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-6,
+        lr=1e-4,  # Initial lr = 1e-6
         gamma=0.99,
-        gae_lambda=0.95,
-        clip_epsilon=0.95,
-        value_loss_coef=0.1,
-        entropy_coef=0.01,
+        gae_lambda=0.98,
+        clip_epsilon=0.5,
+        value_loss_coef=0.5,
+        entropy_coef=0.1,  # negative entropy_coef to reduce entropy
         max_grad_norm=0.5,
-        n_epochs=20, 
-        batch_size=500,
-        n_steps=5,
-        dim_latent=64,
+        n_epochs=10,
+        batch_size=2000,
+        n_steps=10,
+        dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        device=device
+        initial_action_std=0.5, # a relatively large initial action std to reduce the impact of initial action
+        device=device,
+        max_processes=50
     )
+    
+    save_path = os.path.join(path, 'ppo_fig_bump_model.pt')
+    
+    if resume and os.path.exists(save_path):
+        ppo_agent.load_model(save_path)
     
     # Train the agent
     try:
@@ -269,8 +279,8 @@ if __name__ == "__main__":
     
     print('path: ', path)
     
-    GPU_ID = 1
+    GPU_ID = 0
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
     
-    main(device=device)
+    main(device=device, resume=False)
     
