@@ -366,6 +366,7 @@ class PPO_Custom_MultiEnv(PPO_Custom):
                 'worker_id': worker_id,
                 'n_steps': n_steps,
                 'n_interp_points': self.n_interp_points,
+                'initial_std': self.initial_action_std,
                 'actor_critic_state': self.actor_critic.state_dict(),
                 'device': 'cpu',  # Use CPU for workers to avoid GPU conflicts
                 'action_class': self.action_class,

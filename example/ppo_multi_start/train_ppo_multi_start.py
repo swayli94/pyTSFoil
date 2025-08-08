@@ -26,87 +26,12 @@ mp.set_start_method('spawn', force=True)
 
 # Import the classes
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
-from pyTSFoil.environment.basic import BumpModificationAction, cst_foil, check_validity
+from pyTSFoil.environment.basic import BumpModificationAction
 from ppo_custom import PPO_Custom_MultiEnv
+from model.database import AirfoilDatabase
+
 
 path = os.path.dirname(os.path.abspath(__file__))
-
-
-class AirfoilDatabase():
-    '''
-    Airfoil database for XFoil environment
-    '''
-    def __init__(self, fname_database='reference-airfoils-cst.dat', n_cst=10, n_point_geo=201):
-        
-        self.fname_database = fname_database
-        self.n_cst = n_cst
-        self.n_point_geo = n_point_geo
-        
-        self.airfoils : List[dict] = []
-        
-        self.read_database()
-        
-    def read_database(self) -> None:
-        
-        with open(self.fname_database, 'r') as f:
-            lines = f.readlines()
-
-        for line in lines:
-            
-            if line[0] == '#' or len(line) <= 0:
-                continue
-            
-            data = line.split()
-            
-            airfoil = {
-                'name' : data[0],
-                'tmax' : float(data[1]),
-                'tail' : float(data[2]),
-                'angle-TE' : float(data[3]),
-                'cst_u' : np.array([float(x) for x in data[4:4+self.n_cst]]),
-                'cst_l' : np.array([float(x) for x in data[4+self.n_cst:4+2*self.n_cst]]),
-            }
-            
-            self.airfoils.append(airfoil)
-
-    def get_airfoil_coordinates(self, ID: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        
-        cst_u = self.airfoils[ID]['cst_u']
-        cst_l = self.airfoils[ID]['cst_l']
-        
-        x, yu, yl, _, _ = cst_foil(self.n_point_geo, cst_u, cst_l)
-        
-        xx = np.concatenate((x[::-1], x[1:]))
-        yy = np.concatenate((yu[::-1], yl[1:]))
-        
-        return np.column_stack((xx, yy)), x, yu, yl
-
-    def get_random_airfoil_coordinates(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        
-        is_action_valid = False
-        n_try = 0
-        
-        while not is_action_valid:
-
-            id0 = np.random.randint(0, len(self.airfoils))
-            id1 = np.random.randint(0, len(self.airfoils))
-            alpha = np.random.rand()
-            
-            airfoil_0, x, yu0, yl0 = self.get_airfoil_coordinates(id0)
-            airfoil_1, _, yu1, yl1 = self.get_airfoil_coordinates(id1)
-            
-            airfoil_coordinates = alpha*airfoil_0 + (1-alpha)*airfoil_1
-            
-            yu_new = alpha*yu0 + (1-alpha)*yu1
-            yl_new = alpha*yl0 + (1-alpha)*yl1
-            
-            is_action_valid = check_validity(x, yu_new, yl_new)
-            n_try += 1
-            
-            if n_try > 100:
-                raise ValueError('Failed to generate valid airfoil coordinates')
-        
-        return airfoil_coordinates, x, yu_new, yl_new
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 
@@ -125,23 +50,24 @@ def create_env_with_id(worker_id=None, render_mode='none',
         n_max_step: Maximum number of steps per episode
     '''
     # Create sample airfoil
-    database = AirfoilDatabase(fname_database=os.path.join(path, 'reference-airfoils-cst.dat'))
+    database = AirfoilDatabase(fname_database=os.path.join(path, 'selected-airfoils-cst.dat'))
     
     if worker_id is not None:
-        airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
+        # airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
+        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(worker_id)
     else:
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(11)  # RAE2822
+        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
     
     # Custom action class
     action_class = BumpModificationAction()
     
     action_class.action_dict['UBL']['bound'] = [0.05, 0.9]
-    action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
+    action_class.action_dict['UBH']['bound'] = [-0.003, 0.003]
     action_class.action_dict['UBH']['min_increment'] = 0.001
     action_class.action_dict['UBW']['bound'] = [0.6, 1.0]
     
     action_class.action_dict['LBL']['bound'] = [0.05, 0.9]
-    action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
+    action_class.action_dict['LBH']['bound'] = [-0.003, 0.003]
     action_class.action_dict['LBH']['min_increment'] = 0.001
     action_class.action_dict['LBW']['bound'] = [0.6, 1.0]
     
@@ -198,7 +124,7 @@ def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 100
+    n_envs = 200
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -214,12 +140,12 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_Custom_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-4,  # Initial lr = 1e-6
+        lr=1e-5,
         gamma=0.99,
         gae_lambda=0.98,
-        clip_epsilon=0.5,
+        clip_epsilon=0.8,
         value_loss_coef=0.5,
-        entropy_coef=0.1,  # negative entropy_coef to reduce entropy
+        entropy_coef=0.1,
         max_grad_norm=0.5,
         n_epochs=10,
         batch_size=2000,
@@ -227,7 +153,7 @@ def main(device='auto', resume=False):
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.5, # a relatively large initial action std to reduce the impact of initial action
+        initial_action_std=0.5,
         device=device,
         max_processes=50
     )
@@ -236,6 +162,10 @@ def main(device='auto', resume=False):
     
     if resume and os.path.exists(save_path):
         ppo_agent.load_model(save_path)
+        
+        ppo_agent.actor_critic.actor_log_std.data = torch.ones_like(
+            ppo_agent.actor_critic.actor_log_std, device=device
+        ) * np.log(ppo_agent.initial_action_std)
     
     # Train the agent
     try:
@@ -281,6 +211,6 @@ if __name__ == "__main__":
     
     GPU_ID = 0
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
-    
+
     main(device=device, resume=False)
     

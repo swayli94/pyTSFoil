@@ -584,6 +584,8 @@ class Reward():
             cl_penalty = 0.0
                         
         reward = (cd_old - cd) * 100 + cl_penalty
+        
+        reward = max(reward, -1.0)
             
         return reward
 
