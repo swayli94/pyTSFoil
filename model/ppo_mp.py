@@ -12,8 +12,8 @@ import multiprocessing as mp
 import time
 from typing import Dict, Any
 
-from model.ppo import PPO_FigState_BumpAction, ActorCritic
-from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
+from model.ppo import PPO_FigState
+from pyTSFoil.environment.env_template import TSFoilEnv_Template
 
 
 def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,12 +164,12 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
+class PPO_FigState_MultiEnv(PPO_FigState):
     '''
     Proximal Policy Optimization (PPO) algorithm for airfoil design
     
     This class is specifically designed to work with:
-    - TSFoilEnv_FigState_BumpAction environments
+    - TSFoilEnv_Template environments
     - FigureState for state representation (parametric + visual)
     - BumpModificationAction for airfoil modifications
     
@@ -180,7 +180,7 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
 
     def __init__(self, 
                  env_fns: List[callable],
-                 env_eval: TSFoilEnv_FigState_BumpAction|None = None,
+                 env_eval: TSFoilEnv_Template|None = None,
                  lr: float = 3e-4,
                  gamma: float = 0.99,
                  gae_lambda: float = 0.95,
@@ -199,13 +199,13 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
                  max_processes: Optional[int] = None,
                  actor_critic_class_fn: Optional[Callable] = None):
         '''
-        Initialize the PPO_FigState_BumpAction_MultiEnv class
+        Initialize the PPO_FigState_MultiEnv class
         
         Parameters:
         -----------
         env_fns: List[callable]
             List of functions that create environment instances
-            Each function should return a TSFoilEnv_FigState_BumpAction instance
+            Each function should return a TSFoilEnv_Template instance
         max_processes: Optional[int]
             Maximum number of processes to use for parallel rollout collection.
             If None, uses the number of environments (len(env_fns)).

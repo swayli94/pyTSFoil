@@ -37,8 +37,9 @@ class Action():
                     action_upper_bound : np.ndarray=None, 
                     action_lower_bound : np.ndarray=None,
                     EPSILON: float=1E-20) -> None:
-        
+
         self.dim_action = dim_action
+        self.name = 'Action'
         self.action_name : List[str] = ['action_'+str(i) for i in range(dim_action)]
 
         if isinstance(action_upper_bound, np.ndarray):
@@ -169,6 +170,7 @@ class BumpModificationAction(Action):
                     action_lower_bound=np.array([self.action_dict[key]['bound'][0] for key in self.action_dict.keys()]))
 
         self.action_name = list(self.action_dict.keys())
+        self.name = 'BumpModificationAction'
         
         self.n_cst = n_cst
         self.keep_airfoil_tmax = keep_airfoil_tmax
@@ -255,7 +257,7 @@ class GlobalModificationAction(Action):
                 action_lower_bound = np.array([-self.action_dict[key]['bound'] for key in self.action_dict.keys()]))
         
         self.action_name = list(self.action_dict.keys())
-    
+        self.name = 'GlobalModificationAction'
         self.n_cst = 10
         
     def id(self, key: str) -> int:
@@ -396,6 +398,7 @@ class FigureState():
         # so the crest point is the point with the maximum abs(y)
         
         self.dim_state = len(self.state_dict)
+        self.name = 'FigureState'
         
         self.state_lower_bound = np.array([self.state_dict[key]['bound'][0] for key in self.state_dict.keys()])
         self.state_upper_bound = np.array([self.state_dict[key]['bound'][1] for key in self.state_dict.keys()])
@@ -571,8 +574,13 @@ class Reward():
     
     def __init__(self):
         
+        self.name = 'Reward'
+        
         self.critical_reward_to_update_reference_step = -0.1
         self.invalid_action_penalty_reward = -0.3
+        
+        # Note: invalid_action_penalty_reward should be smaller than critical_reward_to_update_reference_step
+        # so that the agent can learn to avoid invalid actions.
     
     def calculate_reward(self, cl: float, cd: float, cd_old: float, cl_target: float|None) -> float:
         '''
@@ -585,8 +593,13 @@ class Reward():
             
         # Do not allow cd_old or cd to be zero
         # This is usually the case with infeasible simulation results
-        cd_old = max(cd_old, 1E-6)
-        cd = max(cd, 1E-6)
+        if cd < 1E-6:
+            print('cd is negative', cd)
+            reward = self.invalid_action_penalty_reward
+            return reward
+        
+        if cd_old < 1E-6:
+            raise ValueError('cd_old is negative', cd_old)
                         
         reward = (cd_old - cd) * 100 + cl_penalty
         

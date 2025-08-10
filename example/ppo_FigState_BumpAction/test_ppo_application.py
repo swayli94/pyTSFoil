@@ -6,7 +6,7 @@ import os
 import numpy as np
 import torch
 
-from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
+from model.ppo_mp import PPO_FigState_MultiEnv
 from train_ppo_mp import create_env_with_id, EnvFactory
 
 path = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +33,7 @@ def load_trained_agent(model_path, device='auto'):
     # We'll create a dummy env_fn list just for initialization
     env_fns = [EnvFactory(0)]
     
-    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
+    ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,  # Dummy function, not used for evaluation
         lr=1e-5,
         gamma=0.99,

@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pyTSFoil.pytsfoil import PyTSFoil
-from pyTSFoil.environment.basic import Reward
+from pyTSFoil.environment.basic import Reward, Action, FigureState
 
 
 def dist_clustcos(nn: int, a0=0.0079, a1=0.96, beta=1.0) -> np.ndarray:
@@ -87,6 +87,8 @@ class TSFoilEnv_Template(gym.Env):
             cl_target : float|None = None,
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both', 'none'
+            state_class: FigureState = None,
+            action_class: Action = None,
             n_max_step: int = 10,
             reward_class: Reward|None = None,
             ) -> None:
@@ -100,6 +102,9 @@ class TSFoilEnv_Template(gym.Env):
         self.mach_infinity = mach_infinity
         self.cl_target_input = cl_target
         self.cl_target = None
+        
+        self.state_class = state_class if state_class is not None else FigureState()
+        self.action_class = action_class if action_class is not None else Action(dim_action=1)
         
         if reward_class is None:
             self.reward_class = Reward()
@@ -321,6 +326,12 @@ class TSFoilEnv_Template(gym.Env):
         '''
         self.observation = np.zeros(self.dim_observation)
         
+        return self.observation
+
+    def _get_observation_for_RL(self, *args, **kwargs) -> Any:
+        '''
+        Get the observation for RL.
+        '''
         return self.observation
 
     def _get_reward_and_validity(self) -> float:

@@ -19,7 +19,7 @@ import os
 import numpy as np
 import torch
 
-from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
+from model.ppo_mp import PPO_FigState_MultiEnv
 from train_ppo_multi_start import create_env_with_id, EnvFactory, AirfoilDatabase, ActorCritic_Custom
 
 path = os.path.dirname(os.path.abspath(__file__))
@@ -46,22 +46,28 @@ def load_trained_agent(model_path, device='auto'):
     # We'll create a dummy env_fn list just for initialization
     env_fns = [EnvFactory(0)]
     
-    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
+    eval_env = create_env_with_id(
+        worker_id=None,  # No worker ID for evaluation (uses main output directory)
+        render_mode='save',  # Enable rendering for evaluation
+    )
+    
+    ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
-        lr=1e-5,  # Initial lr = 1e-6
+        env_eval=eval_env,
+        lr=1e-3,
         gamma=0.99,
-        gae_lambda=0.98,
-        clip_epsilon=0.8,
+        gae_lambda=0.95,
+        clip_epsilon=0.2,
         value_loss_coef=0.5,
-        entropy_coef=0.1,
+        entropy_coef=0.0,
         max_grad_norm=0.5,
         n_epochs=10,
-        batch_size=2000,
+        batch_size=400,
         n_steps=10,
-        dim_latent=128,
-        dim_hidden=1024,
+        dim_latent=64,
+        dim_hidden=512,
         n_interp_points=101,
-        initial_action_std=0.3,
+        initial_action_std=0.2,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
@@ -69,10 +75,7 @@ def load_trained_agent(model_path, device='auto'):
     
     # Load the saved model weights
     if os.path.exists(model_path):
-        # Set weights_only=False to handle collections.deque in the saved model
-        # This is safe since we trust our own trained model
-        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-        ppo_agent.actor_critic.load_state_dict(checkpoint['actor_critic_state_dict'])
+        ppo_agent.load_model(model_path)
         print("Successfully loaded trained model weights!")
     else:
         raise FileNotFoundError(f"Model file not found: {model_path}")

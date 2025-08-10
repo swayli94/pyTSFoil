@@ -21,6 +21,8 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             output_dir : str|None = None,
             render_mode: str = 'both',  # 'display', 'save', 'both'
             path_save_fig_of_observation: str = None,
+            state_class: FigureState = None,
+            action_class: GlobalModificationAction = None,
             n_max_step: int = 10,
             reward_class: Reward|None = None,
             ) -> None:
@@ -36,8 +38,8 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             reward_class=reward_class,
         )
 
-        self.state_class = FigureState()
-        self.action_class = GlobalModificationAction()
+        self.state_class = state_class if state_class is not None else FigureState()
+        self.action_class = action_class if action_class is not None else GlobalModificationAction()
 
         self.dim_action = self.action_class.dim_action
         self.dim_observation = self.state_class.dim_state
@@ -72,13 +74,11 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
 
         _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
         
-        if not self.is_action_valid:
-            return
-        
-        self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
-        self.airfoil_coordinates[:,1] = np.concatenate((yu_new[::-1], yl_new[1:]))
-        
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates
+        if self.is_action_valid:
+            self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
+            self.airfoil_coordinates[:,1] = np.concatenate((yu_new[::-1], yl_new[1:]))
+            
+        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates.copy()
 
     def _get_observation(self) -> Tuple[np.ndarray, str]:
         '''
@@ -102,6 +102,28 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
         
         return self.observation, figure_base64
     
+    def _get_observation_for_RL(self, n_interp_points: int = 101) -> Tuple[np.ndarray, np.ndarray]:
+        '''
+        Get the observation for RL.
+        '''
+        state_array, figure_array = self.state_class.calculate_state_for_RL(
+            x=self.x_airfoil_surface,
+            yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
+            yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
+            xxu=self.info['xx'],
+            xxl=self.info['xx'],
+            mwu=self.info['mau'],
+            mwl=self.info['mal'],
+            Cl=self.info['cl'],
+            Cd_wave=self.info['cd_wave'],
+            Cm=self.info['cm'],
+            n_interp_points=n_interp_points
+        )
+
+        self.observation = state_array
+        
+        return self.observation, figure_array
+
 
 class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
     '''

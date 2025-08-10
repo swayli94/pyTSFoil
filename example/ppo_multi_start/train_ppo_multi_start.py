@@ -30,7 +30,7 @@ from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 from pyTSFoil.environment.basic import BumpModificationAction
 from model.database import AirfoilDatabase
 from model.ppo import ActorCritic
-from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
+from model.ppo_mp import PPO_FigState_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
 
@@ -213,7 +213,7 @@ def main(device='auto', resume=False):
     print(f"Creating PPO agent with {n_envs} parallel environments...")
     
     # Create specialized PPO agent with multiple environments
-    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
+    ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
         lr=1e-3,

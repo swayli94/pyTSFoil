@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Optional, List, Callable
 from collections import deque
 
-from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
+from pyTSFoil.environment.env_template import TSFoilEnv_Template
 
 
 class ActorCritic(nn.Module):
@@ -185,18 +185,18 @@ class ActorCritic(nn.Module):
         return action, log_prob, entropy, value
 
 
-class PPO_FigState_BumpAction():
+class PPO_FigState():
     '''
     Proximal Policy Optimization (PPO) algorithm for airfoil design
     
     This class is specifically designed to work with:
-    - TSFoilEnv_FigState_BumpAction environment
+    - TSFoilEnv environment
     - FigureState for state representation (parametric + visual)
-    - BumpModificationAction for airfoil modifications
+    - Action for airfoil modifications
     
     Parameters:
     -----------
-    env: TSFoilEnv_FigState_BumpAction
+    env: TSFoilEnv_Template
         Environment instance
     actor_critic_class_fn: Optional[Callable]
         Function to create ActorCritic instances.
@@ -204,7 +204,7 @@ class PPO_FigState_BumpAction():
         Should have signature: (dim_state, dim_action, dim_latent, dim_hidden, n_interp_points, initial_std) -> ActorCritic
     '''
     def __init__(self, 
-                 env: TSFoilEnv_FigState_BumpAction,
+                 env: TSFoilEnv_Template,
                  lr: float = 3e-5,
                  gamma: float = 0.99,
                  gae_lambda: float = 0.95,
@@ -291,10 +291,10 @@ class PPO_FigState_BumpAction():
         # Storage for rollouts
         self.reset_storage()
         
-        print(f"PPO_FigState_BumpAction initialized:")
+        print(f"PPO_FigState initialized:")
         print(f"  - State array dim: {self.dim_state} (FigureState parametric features)")
         print(f"  - Figure array dim: [{n_interp_points}, 4] (yu, yl, mwu, mwl)")
-        print(f"  - Action array dim: {self.dim_action} (BumpModificationAction)")
+        print(f"  - Action array dim: {self.dim_action} ({self.action_class.name})")
         print(f"  - Action bounds: {env.action_class.action_lower_bound} to {env.action_class.action_upper_bound}")
         print(f"  - Device: {self.device}")
         

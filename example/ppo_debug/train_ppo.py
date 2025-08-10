@@ -8,7 +8,7 @@ import torch
 # Import the classes
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 from pyTSFoil.environment.basic import BumpModificationAction, FigureState
-from model.ppo import PPO_FigState_BumpAction
+from model.ppo import PPO_FigState
 
 path = os.path.dirname(os.path.abspath(__file__))
 print('path: ', path)
@@ -46,7 +46,7 @@ def main():
     )
     
     # Create specialized PPO agent
-    ppo_agent = PPO_FigState_BumpAction(
+    ppo_agent = PPO_FigState(
         env=env,
         lr=1e-5,
         gamma=0.99,
