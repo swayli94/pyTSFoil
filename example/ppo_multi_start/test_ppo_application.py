@@ -19,8 +19,8 @@ import os
 import numpy as np
 import torch
 
-from ppo_custom import PPO_Custom_MultiEnv
-from train_ppo_multi_start import create_env_with_id, EnvFactory, AirfoilDatabase
+from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
+from train_ppo_multi_start import create_env_with_id, EnvFactory, AirfoilDatabase, ActorCritic_Custom
 
 path = os.path.dirname(os.path.abspath(__file__))
 
@@ -46,7 +46,7 @@ def load_trained_agent(model_path, device='auto'):
     # We'll create a dummy env_fn list just for initialization
     env_fns = [EnvFactory(0)]
     
-    ppo_agent = PPO_Custom_MultiEnv(
+    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
         env_fns=env_fns,
         lr=1e-5,  # Initial lr = 1e-6
         gamma=0.99,
@@ -63,7 +63,8 @@ def load_trained_agent(model_path, device='auto'):
         n_interp_points=101,
         initial_action_std=0.3,
         device=device,
-        max_processes=50
+        max_processes=50,
+        actor_critic_class_fn=ActorCritic_Custom
     )
     
     # Load the saved model weights

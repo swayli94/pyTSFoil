@@ -8,7 +8,7 @@ import torch.optim as optim
 from torch.distributions import Normal
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Callable
 from collections import deque
 
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
@@ -194,6 +194,14 @@ class PPO_FigState_BumpAction():
     - FigureState for state representation (parametric + visual)
     - BumpModificationAction for airfoil modifications
     
+    Parameters:
+    -----------
+    env: TSFoilEnv_FigState_BumpAction
+        Environment instance
+    actor_critic_class_fn: Optional[Callable]
+        Function to create ActorCritic instances.
+        If None, uses the default ActorCritic class.
+        Should have signature: (dim_state, dim_action, dim_latent, dim_hidden, n_interp_points, initial_std) -> ActorCritic
     '''
     def __init__(self, 
                  env: TSFoilEnv_FigState_BumpAction,
@@ -211,7 +219,8 @@ class PPO_FigState_BumpAction():
                  dim_hidden: int = 256,
                  n_interp_points: int = 101,
                  initial_action_std: float = 0.5,   # High-dimensional action space requires higher std
-                 device: str = 'auto'):
+                 device: str = 'auto',
+                 actor_critic_class_fn: Optional[Callable] = None):
         
         self.env = env
         self.action_class = env.action_class
@@ -244,14 +253,21 @@ class PPO_FigState_BumpAction():
         self.dim_latent = dim_latent
         self.dim_hidden = dim_hidden
         
-        self.actor_critic = ActorCritic(
-            dim_state=self.dim_state,
-            dim_action=self.dim_action,
-            dim_latent=dim_latent,
-            dim_hidden=dim_hidden,
-            n_interp_points=n_interp_points,
-            initial_std=initial_action_std
-        ).to(self.device)
+        # Store actor_critic class function or use default ActorCritic
+        if actor_critic_class_fn is None:
+            self.actor_critic_class_fn = ActorCritic
+        else:
+            self.actor_critic_class_fn = actor_critic_class_fn
+        
+        # Create actor_critic instance
+        self.actor_critic = self.actor_critic_class_fn(
+                dim_state=self.dim_state,
+                dim_action=self.dim_action,
+                dim_latent=dim_latent,
+                dim_hidden=dim_hidden,
+                n_interp_points=n_interp_points,
+                initial_std=initial_action_std
+            ).to(self.device)
         
         self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=lr)
         
@@ -281,6 +297,9 @@ class PPO_FigState_BumpAction():
         print(f"  - Action array dim: {self.dim_action} (BumpModificationAction)")
         print(f"  - Action bounds: {env.action_class.action_lower_bound} to {env.action_class.action_upper_bound}")
         print(f"  - Device: {self.device}")
+        
+        # Additional settings
+        self.reward_range_for_plot : List[float, float]|None = None
 
     def reset_storage(self) -> None:
         '''
@@ -785,6 +804,8 @@ class PPO_FigState_BumpAction():
             axes[0, 0].set_title('Episode Reward Statistics')
             axes[0, 0].set_xlabel('Update')
             axes[0, 0].set_ylabel('Reward')
+            if self.reward_range_for_plot is not None:
+                axes[0, 0].set_ylim(self.reward_range_for_plot[0], self.reward_range_for_plot[1])
             axes[0, 0].legend()
         
         # Episode length statistics per update

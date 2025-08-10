@@ -36,6 +36,7 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         - 'dim_action': Action space dimension
         - 'dim_latent': Latent space dimension
         - 'dim_hidden': Hidden layer dimension
+        - 'actor_critic_class_fn': Function that creates actor-critic model
         
     Returns:
     --------
@@ -54,6 +55,7 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         actor_critic_state = params['actor_critic_state']
         device = params['device']
         action_class = params['action_class']
+        actor_critic_class_fn = params['actor_critic_class_fn']
         
         # print(f"Worker {worker_id}: Starting rollout collection for {n_steps} steps")
         
@@ -61,7 +63,7 @@ def collect_rollout_worker(params: Dict[str, Any]) -> Dict[str, Any]:
         env = env_fn()
         
         # Use passed dimensions instead of inferring them
-        actor_critic = ActorCritic(
+        actor_critic = actor_critic_class_fn(
             dim_state=params['dim_state'],
             dim_action=params['dim_action'],
             dim_latent=params.get('dim_latent', 64),
@@ -194,7 +196,8 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
                  n_interp_points: int = 101,
                  initial_action_std: float = 0.1,
                  device: str = 'auto',
-                 max_processes: Optional[int] = None):
+                 max_processes: Optional[int] = None,
+                 actor_critic_class_fn: Optional[Callable] = None):
         '''
         Initialize the PPO_FigState_BumpAction_MultiEnv class
         
@@ -207,6 +210,10 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
             Maximum number of processes to use for parallel rollout collection.
             If None, uses the number of environments (len(env_fns)).
             If specified, will use min(max_processes, len(env_fns), cpu_count()).
+        actor_critic_class_fn: Optional[Callable]
+            Function to create ActorCritic instances in worker processes.
+            If None, uses the default ActorCritic class.
+            Should have signature: (dim_state, dim_action, dim_latent, dim_hidden, n_interp_points, initial_std) -> ActorCritic
         '''
         # Create a temporary environment to get dimensions
         if env_eval is None:
@@ -216,11 +223,12 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
         super().__init__(env_eval, lr, gamma, gae_lambda, clip_epsilon, 
                             value_loss_coef, entropy_coef, max_grad_norm, 
                             n_epochs, batch_size, n_steps, 
-                            dim_latent, dim_hidden, n_interp_points, initial_action_std, device)
+                            dim_latent, dim_hidden, n_interp_points, initial_action_std, 
+                            device, actor_critic_class_fn)
 
         self.env_fns = env_fns
         self.n_envs = len(env_fns)
-        
+                
         # Set maximum number of processes to use
         if max_processes is None:
             self.max_processes = self.n_envs
@@ -265,7 +273,8 @@ class PPO_FigState_BumpAction_MultiEnv(PPO_FigState_BumpAction):
                 'dim_hidden': self.dim_hidden,
                 # Pass model dimensions directly to avoid reconstructing in each worker
                 'dim_state': self.dim_state,
-                'dim_action': self.dim_action
+                'dim_action': self.dim_action,
+                'actor_critic_class_fn': self.actor_critic_class_fn
             }
             worker_params.append(params)
         

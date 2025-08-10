@@ -103,20 +103,20 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_FigState_BumpAction_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-6,  # Initial lr = 1e-5, resume lr = 1e-6
+        lr=1e-4,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.2,
         value_loss_coef=0.5,
-        entropy_coef=0.1,
+        entropy_coef=0.0001,
         max_grad_norm=0.5,
-        n_epochs=10,
-        batch_size=2000,
+        n_epochs=4,
+        batch_size=200,
         n_steps=10,
         dim_latent=64,
         dim_hidden=512,
         n_interp_points=101,
-        initial_action_std=0.3,
+        initial_action_std=0.2,
         device=device,
         max_processes=50
     )
@@ -125,6 +125,10 @@ def main(device='auto', resume=False):
     
     if resume and os.path.exists(save_path):
         ppo_agent.load_model(save_path)
+        
+        ppo_agent.actor_critic.actor_log_std.data = torch.ones_like(
+            ppo_agent.actor_critic.actor_log_std, device=device
+        ) * np.log(ppo_agent.initial_action_std)
     
     # Train the agent
     try:

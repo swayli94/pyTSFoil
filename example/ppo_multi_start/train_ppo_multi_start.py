@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(__file__))
 
 import numpy as np
 import torch
+import torch.nn as nn
 import multiprocessing as mp
 from typing import List, Tuple
 import matplotlib.pyplot as plt
@@ -27,9 +28,9 @@ mp.set_start_method('spawn', force=True)
 # Import the classes
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
 from pyTSFoil.environment.basic import BumpModificationAction
-from ppo_custom import PPO_Custom_MultiEnv
 from model.database import AirfoilDatabase
-
+from model.ppo import ActorCritic
+from model.ppo_mp import PPO_FigState_BumpAction_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
 
@@ -61,12 +62,12 @@ def create_env_with_id(worker_id=None, render_mode='none',
     # Custom action class
     action_class = BumpModificationAction()
     
-    action_class.action_dict['UBL']['bound'] = [0.05, 0.9]
+    action_class.action_dict['UBL']['bound'] = [0.05, 0.8]
     action_class.action_dict['UBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['UBH']['min_increment'] = 0.001
     action_class.action_dict['UBW']['bound'] = [0.6, 1.0]
     
-    action_class.action_dict['LBL']['bound'] = [0.05, 0.9]
+    action_class.action_dict['LBL']['bound'] = [0.05, 0.8]
     action_class.action_dict['LBH']['bound'] = [-0.005, 0.005]
     action_class.action_dict['LBH']['min_increment'] = 0.001
     action_class.action_dict['LBW']['bound'] = [0.6, 1.0]
@@ -120,6 +121,81 @@ class EnvFactory:
         return create_env_with_id(self.worker_id)
 
 
+class ActorCritic_Custom(ActorCritic):
+    '''
+    Actor-Critic network for PPO
+    '''
+    def __init__(self, 
+                    dim_state: int, 
+                    dim_action: int, 
+                    dim_latent: int = 64,
+                    dim_hidden: int = 256,
+                    n_interp_points: int = 100,
+                    initial_std: float = 0.1):
+        
+        super(ActorCritic, self).__init__()
+
+        self.dim_state = dim_state
+        self.dim_action = dim_action
+        self.dim_latent = dim_latent
+        self.dim_hidden = dim_hidden
+        self.n_interp_points = n_interp_points
+        self.initial_std = initial_std
+        
+        # Encode state_array [dim_state] into latent space
+        self.state_encoder = nn.Sequential(
+            nn.Linear(dim_state, 32),
+            nn.ReLU(),
+            nn.Linear(32, 256),
+            nn.ReLU(),
+            nn.Linear(256, dim_latent),
+            nn.ReLU()
+        )
+        
+        # Encode figure_array (yu, yl, mwu, mwl) [n_interp_points, 4] into latent space (with CNN)
+        # Input needs to be transposed to [batch_size, 4, n_interp_points] for Conv1d
+        self.figure_encoder = nn.Sequential(
+            nn.Conv1d(4, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),  # Global average pooling instead of flatten
+            nn.Flatten(),
+            nn.Linear(64, dim_latent),
+            nn.ReLU()
+        )
+        
+        # Shared feature extractor (combines both latent representations)
+        self.shared_net = nn.Sequential(
+            nn.Linear(2 * dim_latent, dim_hidden),  # Combined latent features
+            nn.ReLU(),
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+        )
+        
+        # Actor head (policy network)
+        self.actor_mean = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+            nn.Linear(dim_hidden, dim_action),
+            nn.Tanh()  # Output in [-1, 1]
+        )
+        
+        # Actor std (learnable std deviation)
+        self.actor_log_std = nn.Parameter(torch.ones(dim_action) * np.log(initial_std))
+        
+        # Critic head (value network)
+        self.critic = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+            nn.Linear(dim_hidden, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+
+
 def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
@@ -137,26 +213,29 @@ def main(device='auto', resume=False):
     print(f"Creating PPO agent with {n_envs} parallel environments...")
     
     # Create specialized PPO agent with multiple environments
-    ppo_agent = PPO_Custom_MultiEnv(
+    ppo_agent = PPO_FigState_BumpAction_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-4,
+        lr=1e-3,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.2,
         value_loss_coef=0.5,
-        entropy_coef=0.01,
+        entropy_coef=0.0,
         max_grad_norm=0.5,
         n_epochs=10,
-        batch_size=2000,
+        batch_size=400,
         n_steps=10,
-        dim_latent=128,
-        dim_hidden=1024,
+        dim_latent=64,
+        dim_hidden=512,
         n_interp_points=101,
-        initial_action_std=0.5,
+        initial_action_std=0.2,
         device=device,
-        max_processes=50
+        max_processes=50,
+        actor_critic_class_fn=ActorCritic_Custom
     )
+    
+    # ppo_agent.reward_range_for_plot = [-5, 5]
     
     save_path = os.path.join(path, 'ppo_fig_bump_model.pt')
     
@@ -212,5 +291,5 @@ if __name__ == "__main__":
     GPU_ID = 1
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
 
-    main(device=device, resume=False)
+    main(device=device, resume=True)
     

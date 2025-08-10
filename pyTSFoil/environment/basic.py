@@ -582,6 +582,11 @@ class Reward():
             cl_penalty = min(cl - cl_target, 0.0) * 1
         else:
             cl_penalty = 0.0
+            
+        # Do not allow cd_old or cd to be zero
+        # This is usually the case with infeasible simulation results
+        cd_old = max(cd_old, 1E-6)
+        cd = max(cd, 1E-6)
                         
         reward = (cd_old - cd) * 100 + cl_penalty
         
