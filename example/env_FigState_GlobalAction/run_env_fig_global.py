@@ -1,11 +1,14 @@
 
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_GlobalAction
 
 
 if __name__ == "__main__":
+    
+    np.set_printoptions(formatter={'float': '{:8.4f}'.format}, linewidth=np.inf)
 
     path = os.path.dirname(os.path.abspath(__file__))
     print('path: ', path)

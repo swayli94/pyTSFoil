@@ -204,12 +204,12 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=4e-4,
+        lr=1e-4,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.15,
         value_loss_coef=0.5,
-        entropy_coef=0.01,
+        entropy_coef=0.1,
         max_grad_norm=0.5,
         n_epochs=10,
         batch_size=400,
@@ -217,7 +217,7 @@ def main(device='auto', resume=False):
         dim_latent=64,
         dim_hidden=512,
         n_interp_points=101,
-        initial_action_std=0.3,
+        initial_action_std=0.5,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
@@ -279,5 +279,5 @@ if __name__ == "__main__":
     GPU_ID = 0
     device = f'cuda:{GPU_ID}' if torch.cuda.is_available() else 'cpu'
 
-    main(device=device, resume=True)
+    main(device=device, resume=False)
     

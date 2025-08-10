@@ -701,7 +701,13 @@ class PPO_FigState():
 
                 action_unscaled = self.get_action(state_array, figure_array, deterministic=deterministic)
                 
-                obs, reward, done, info = self.env.step(action_unscaled)
+                try:
+                    obs, reward, done, info = self.env.step(action_unscaled)
+                except Exception as e:
+                    print(f"Error in step {step}: {e}")
+                    done = True
+                    break
+                
                 state_array, figure_array = self.env._get_observation_for_RL(n_interp_points=self.n_interp_points)
                 
                 if done:

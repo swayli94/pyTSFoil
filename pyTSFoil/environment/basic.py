@@ -239,21 +239,21 @@ class GlobalModificationAction(Action):
 
         # action name, absolute bound, min increment
         self.action_dict = {
-            'dTHK': {'bound': 0.002, 'min_increment': 0.0002, 'meaning': 'airfoil THickness'},
-            'dCAM': {'bound': 0.002, 'min_increment': 0.0002, 'meaning': 'airfoil CAMber'},
+            'dTHK': {'bound': 0.000, 'min_increment': 0.0005, 'meaning': 'airfoil THickness'},
+            'dCAM': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'airfoil CAMber'},
             'dMTL': {'bound': 0.050, 'min_increment':   0.01, 'meaning': 'Maximum airfoil Thickness Location'},
-            'dCF6': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'average Camber of Front 60 percent of the airfoil'},
-            'dCR4': {'bound': 0.001, 'min_increment': 0.0005, 'meaning': 'average Camber of Rear 40 percent of the airfoil'},
-            'dLER': {'bound': 0.002, 'min_increment': 0.0005, 'meaning': 'Leading Edge Radius'},
-            'dLES': {'bound': 0.500, 'min_increment':    0.1, 'meaning': 'Leading Edge Slope angle (degree)'},
-            'dTEW': {'bound': 0.500, 'min_increment':    0.1, 'meaning': 'Trailing Edge Wedge angle (degree)'},
-            'dTES': {'bound': 0.500, 'min_increment':    0.1, 'meaning': 'Trailing Edge Slope angle (degree)'},
-            'dTH2': {'bound': 0.001, 'min_increment': 0.0002, 'meaning': 'THickness at 20 percent chord'},
-            'dTH7': {'bound': 0.001, 'min_increment': 0.0002, 'meaning': 'THickness at 70 percent chord'},
+            'dCF6': {'bound': 0.001, 'min_increment': 0.0005, 'meaning': 'average Camber of Front 60 percent of the airfoil'},
+            'dCR4': {'bound': 0.001, 'min_increment': 0.0002, 'meaning': 'average Camber of Rear 40 percent of the airfoil'},
+            'dLER': {'bound': 0.003, 'min_increment':  0.001, 'meaning': 'Leading Edge Radius'},
+            'dLES': {'bound': 2.000, 'min_increment':    0.8, 'meaning': 'Leading Edge Slope angle (degree)'},
+            'dTEW': {'bound': 4.000, 'min_increment':    1.5, 'meaning': 'Trailing Edge Wedge angle (degree)'},
+            'dTES': {'bound': 0.500, 'min_increment':    0.2, 'meaning': 'Trailing Edge Slope angle (degree)'},
+            'dTH2': {'bound': 0.004, 'min_increment':  0.002, 'meaning': 'THickness at 20 percent chord'},
+            'dTH7': {'bound': 0.005, 'min_increment':  0.002, 'meaning': 'THickness at 70 percent chord'},
             }
         
         super().__init__(dim_action=len(self.action_dict), 
-                action_upper_bound = np.array([ self.action_dict[key]['bound'] for key in self.action_dict.keys()]), 
+                action_upper_bound = np.array([ self.action_dict[key]['bound'] for key in self.action_dict.keys()]) + 1E-20, 
                 action_lower_bound = np.array([-self.action_dict[key]['bound'] for key in self.action_dict.keys()]))
         
         self.action_name = list(self.action_dict.keys())
@@ -364,6 +364,13 @@ class GlobalModificationAction(Action):
         is_action_valid = check_validity(x, yu_new, yl_new)
 
         return cst_u, cst_l, yu_new, yl_new, is_action_valid
+
+    def _update_action_bounds(self, EPSILON: float=1E-20) -> None:
+        '''
+        Update the action bounds based on the action dictionary
+        '''
+        self.action_upper_bound = np.array([ self.action_dict[key]['bound'] for key in self.action_dict.keys()]) + EPSILON
+        self.action_lower_bound = np.array([-self.action_dict[key]['bound'] for key in self.action_dict.keys()])
 
 
 class FigureState():
