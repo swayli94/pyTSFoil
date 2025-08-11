@@ -373,6 +373,147 @@ class GlobalModificationAction(Action):
         self.action_lower_bound = np.array([-self.action_dict[key]['bound'] for key in self.action_dict.keys()])
 
 
+
+class MultiBumpModificationAction(Action):
+    '''
+    Action of multiple bump modification to the upper and lower surfaces of an airfoil.
+    The bumps are located around x=0.1, 0.3, 0.5, 0.7, 0.9, on the upper and lower surfaces, respectively.
+    The action is the deviation of the bump location and the bump height.
+    
+    Parameters
+    --------------
+    n_bumps: int
+        number of bumps on the upper and lower surfaces, respectively
+    
+    action_upper_bound, action_lower_bound: ndarray [4*n_bumps]
+        upper and lower bounds of the action vector
+        
+    critical_height_for_no_bump: float
+        critical height for no bump
+    
+    n_cst: int
+        number of CST parameters in the upper/lower airfoil surface
+        
+    keep_airfoil_tmax: bool
+        whether keep the maximum airfoil thickness the same during modification
+    '''
+    def __init__(self,
+                    n_bumps=5,
+                    bump_width=1.0,
+                    critical_height_for_no_bump=1E-3,
+                    n_cst=10, 
+                    keep_airfoil_tmax=True) -> None:
+        
+        self.action_dict = {
+            'U0L': {'bound': [-0.05,  0.05],  'min_increment': 0.01,  'meaning': 'upper bump (0) location deviation from x=0.1'},
+            'U0H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'upper bump (0) height'},
+            'U1L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'upper bump (1) location deviation from x=0.3'},
+            'U1H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'upper bump (1) height'},
+            'U2L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'upper bump (2) location deviation from x=0.5'},
+            'U2H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'upper bump (2) height'},
+            'U3L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'upper bump (3) location deviation from x=0.7'},
+            'U3H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'upper bump (3) height'},
+            'U4L': {'bound': [-0.05,  0.05],  'min_increment': 0.01,  'meaning': 'upper bump (4) location deviation from x=0.9'},
+            'U4H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'upper bump (4) height'},
+            'L0L': {'bound': [-0.05,  0.05],  'min_increment': 0.01,  'meaning': 'lower bump (0) location deviation from x=0.1'},
+            'L0H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'lower bump (0) height'},
+            'L1L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'lower bump (1) location deviation from x=0.3'},
+            'L1H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'lower bump (1) height'},
+            'L2L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'lower bump (2) location deviation from x=0.5'},
+            'L2H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'lower bump (2) height'},
+            'L3L': {'bound': [-0.20,  0.20],  'min_increment': 0.01,  'meaning': 'lower bump (3) location deviation from x=0.7'},
+            'L3H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'lower bump (3) height'},
+            'L4L': {'bound': [-0.05,   0.05], 'min_increment': 0.01,  'meaning': 'lower bump (4) location deviation from x=0.9'},
+            'L4H': {'bound': [-0.005, 0.005], 'min_increment': 0.001, 'meaning': 'lower bump (4) height'},
+        }
+        
+        if len(self.action_dict) != 4*n_bumps:
+            raise ValueError(f'The number of bumps is {n_bumps}, but the number of actions is {len(self.action_dict)}')
+        
+        self.x_bump_locations = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+        
+        super().__init__(dim_action=len(self.action_dict), 
+                    action_upper_bound=np.array([self.action_dict[key]['bound'][1] for key in self.action_dict.keys()]), 
+                    action_lower_bound=np.array([self.action_dict[key]['bound'][0] for key in self.action_dict.keys()]))
+
+        self.action_name = list(self.action_dict.keys())
+        self.name = 'MultiBumpModificationAction'
+        
+        self.n_bumps = n_bumps
+        self.n_cst = n_cst
+        self.keep_airfoil_tmax = keep_airfoil_tmax
+        self.bump_width = bump_width
+        
+        self.critical_height_for_no_bump = critical_height_for_no_bump
+        
+    def apply_action(self, action_array: np.ndarray, x: np.ndarray, yu: np.ndarray, yl: np.ndarray) \
+                    -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        '''
+        Modify airfoil geometry based on a given action
+
+        Parameters
+        -------------
+        action_array: ndarray [dim_action]
+            unscaled action vector
+        
+        x, yu, yl: ndarray
+            coordinates of the airfoil
+
+        Returns
+        -------------
+        cst_u, cst_l: ndarray
+            CST parameters
+            
+        yu_new, yl_new: ndarray
+            new airfoil geometry
+            
+        is_action_valid: bool
+            whether the action is valid. 
+            When the new airfoil is reasonable, is_action_valid is True.
+            If not, the airfoil geometry should not be modified.
+        '''
+        if self.keep_airfoil_tmax:
+            tmax = np.max(yu-yl)
+        else:
+            tmax = None
+            
+        is_action_noticeable = False
+        
+        yu_new = yu.copy()
+        for i_bump in range(self.n_bumps):
+            
+            ii = 2*i_bump
+            
+            if abs(action_array[ii+1]) > self.critical_height_for_no_bump:
+                is_action_noticeable = True
+                yu_new = yu_new + bump_function(x, 
+                                    xc=action_array[ii]+self.x_bump_locations[i_bump], 
+                                    h=action_array[ii+1], 
+                                    s=self.bump_width, 
+                                    kind='H')
+
+        yl_new = yl.copy()
+        for i_bump in range(self.n_bumps):
+            
+            ii = 2*i_bump + 2*self.n_bumps
+            
+            if abs(action_array[ii+1]) > self.critical_height_for_no_bump:
+                is_action_noticeable = True
+                yl_new = yl_new + bump_function(x, 
+                                    xc=action_array[ii]+self.x_bump_locations[i_bump], 
+                                    h=action_array[ii+1], 
+                                    s=self.bump_width, 
+                                    kind='H')
+
+        cst_u, cst_l = cst_foil_fit(x, yu_new, x, yl_new, n_cst=self.n_cst)
+        
+        _, yu_new, yl_new, _, _ = cst_foil(x.shape[0], cst_u, cst_l, x=x, t=tmax)
+        
+        is_action_valid = check_validity(x, yu_new, yl_new) and is_action_noticeable
+
+        return cst_u, cst_l, yu_new, yl_new, is_action_valid
+
+
 class FigureState():
     '''
     Use the figure of wall Mach number distribution and parameters to represent the state of an airfoil.

@@ -54,18 +54,18 @@ def load_trained_agent(model_path, device='auto'):
     ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-3,
+        lr=1e-6,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.2,
-        value_loss_coef=0.5,
-        entropy_coef=0.0,
+        value_loss_coef=0.2,
+        entropy_coef=0.01,
         max_grad_norm=0.5,
         n_epochs=10,
-        batch_size=400,
+        batch_size=2000,
         n_steps=10,
-        dim_latent=64,
-        dim_hidden=512,
+        dim_latent=128,
+        dim_hidden=1024,
         n_interp_points=101,
         initial_action_std=0.2,
         device=device,
@@ -299,8 +299,9 @@ def main():
         print(f"An error occurred during evaluation: {e}")
         raise
 
+
 if __name__ == "__main__":
     
-    np.set_printoptions(formatter={'float': '{:8.4f}'.format})
+    np.set_printoptions(formatter={'float': '{:8.4f}'.format}, linewidth=np.inf)
     
     main()
