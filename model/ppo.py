@@ -279,7 +279,8 @@ class PPO_FigState():
             'value_losses': [],
             'entropies': [],
             'clip_fractions': [],
-            'learning_rates': []
+            'learning_rates': [],
+            'kl_divergences': []
         }
         
         # Per-update episode statistics for plotting
@@ -505,6 +506,7 @@ class PPO_FigState():
         total_value_loss = 0
         total_entropy = 0
         total_clip_fraction = 0
+        total_kl_divergence = 0
         n_updates = 0
         
         # Multiple epochs of optimization
@@ -561,6 +563,8 @@ class PPO_FigState():
                 # Statistics
                 with torch.no_grad():
                     clip_fraction = ((ratio - 1.0).abs() > self.clip_epsilon).float().mean()
+                    # Approximate KL divergence: KL(old||new) ≈ (old_log_prob - new_log_prob).mean()
+                    kl_divergence = (batch_old_log_probs - new_log_probs).mean()
                     
                 # print(f'ratio {ratio.min():.4f} {ratio.max():.1f} {ratio.mean():.1f}, clip_fraction {clip_fraction.item():.2f}, clip_epsilon {self.clip_epsilon}')
                     
@@ -568,6 +572,7 @@ class PPO_FigState():
                 total_value_loss += value_loss.item()
                 total_entropy += entropy.mean().item()
                 total_clip_fraction += clip_fraction.item()
+                total_kl_divergence += kl_divergence.item()
                 n_updates += 1
         
         # Store training statistics
@@ -575,13 +580,15 @@ class PPO_FigState():
         self.training_stats['value_losses'].append(total_value_loss / n_updates)
         self.training_stats['entropies'].append(total_entropy / n_updates)
         self.training_stats['clip_fractions'].append(total_clip_fraction / n_updates)
+        self.training_stats['kl_divergences'].append(total_kl_divergence / n_updates)
         self.training_stats['learning_rates'].append(self.lr)
         
         return {
             'policy_loss': total_policy_loss / n_updates,
             'value_loss': total_value_loss / n_updates,
             'entropy': total_entropy / n_updates,
-            'clip_fraction': total_clip_fraction / n_updates
+            'clip_fraction': total_clip_fraction / n_updates,
+            'kl_divergence': total_kl_divergence / n_updates
         }
     
     def train(self, total_time_steps: int, 
@@ -649,6 +656,7 @@ class PPO_FigState():
                       f"Avg Length {avg_length:.1f} | "
                       f"Policy Loss {update_info['policy_loss']:.4f} | "
                       f"Value Loss {update_info['value_loss']:.4f} | "
+                      f"KL Div {update_info['kl_divergence']:.6f} | "
                       f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
             
                 if plot_training:
@@ -971,67 +979,4 @@ class PPO_FigState():
         
         return action_unscaled
     
-    def diagnose_entropy_behavior(self) -> dict:
-        '''
-        Diagnose entropy behavior to understand if the current trend is problematic
-        
-        Returns:
-        --------
-        diagnosis: dict
-            Dictionary with entropy analysis and recommendations
-        '''
-        if len(self.training_stats['entropies']) < 10:
-            return {'status': 'insufficient_data', 'message': 'Need more training updates to analyze'}
-        
-        entropies = np.array(self.training_stats['entropies'])
-        recent_entropies = entropies[-10:]  # Last 10 updates
-        
-        # Check if entropy is increasing, decreasing, or stable
-        trend_slope = np.polyfit(range(len(recent_entropies)), recent_entropies, 1)[0]
-        
-        # Get current action standard deviations
-        current_std = np.exp(self.actor_critic.actor_log_std.detach().cpu().numpy())
-        mean_std = np.mean(current_std)
-        
-        # Get current entropy coefficient
-        current_entropy_coef = self.entropy_coef
-        
-        diagnosis = {
-            'entropy_trend_slope': trend_slope,
-            'mean_recent_entropy': np.mean(recent_entropies),
-            'current_action_std': current_std,
-            'mean_action_std': mean_std,
-            'entropy_coefficient': current_entropy_coef,
-            'status': 'unknown',
-            'recommendations': []
-        }
-        
-        # Analyze the behavior
-        if trend_slope > 0.1:  # Strongly increasing
-            if mean_std > 1.0:  # Very high exploration
-                diagnosis['status'] = 'problematic_high_entropy'
-                diagnosis['recommendations'].extend([
-                    f"Reduce entropy_coef from {current_entropy_coef:.4f} to {current_entropy_coef*0.5:.4f}",
-                    "Consider using entropy decay: use_entropy_decay=True",
-                    "Check if learning rate is too high causing instability"
-                ])
-            else:
-                diagnosis['status'] = 'exploration_phase'
-                diagnosis['recommendations'].append("Normal exploration behavior, monitor for convergence")
-                
-        elif trend_slope < -0.1:  # Strongly decreasing
-            diagnosis['status'] = 'converging'
-            diagnosis['recommendations'].append("Good: entropy decreasing, policy converging")
-            
-        else:  # Stable
-            if mean_std > 0.8:
-                diagnosis['status'] = 'high_stable_entropy'
-                diagnosis['recommendations'].extend([
-                    "High but stable entropy - may need entropy decay",
-                    f"Consider reducing entropy_coef from {current_entropy_coef:.4f}"
-                ])
-            else:
-                diagnosis['status'] = 'healthy'
-                diagnosis['recommendations'].append("Healthy entropy behavior")
-        
-        return diagnosis
+ 

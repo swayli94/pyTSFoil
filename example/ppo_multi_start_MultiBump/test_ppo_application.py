@@ -251,7 +251,7 @@ def main():
     torch.manual_seed(42)
     
     # Path to the saved model
-    model_path = os.path.join(path, 'ppo_fig_global_model.pt')
+    model_path = os.path.join(path, 'ppo_fig_bumps_model.pt')
     
     # Determine device
     GPU_ID = 0
