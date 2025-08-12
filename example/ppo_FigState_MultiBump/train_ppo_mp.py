@@ -100,9 +100,9 @@ def main(device='auto', resume=False):
         lr=1e-4,
         gamma=0.99,
         gae_lambda=0.95,
-        clip_epsilon=0.2,
+        clip_epsilon=0.15,
         value_loss_coef=0.5,
-        entropy_coef=0.01,
+        entropy_coef=0.0001,
         max_grad_norm=0.5,
         n_epochs=4,
         batch_size=200,
@@ -110,7 +110,7 @@ def main(device='auto', resume=False):
         dim_latent=64,
         dim_hidden=512,
         n_interp_points=101,
-        initial_action_std=0.3,
+        initial_action_std=0.2,
         device=device,
         max_processes=50
     )

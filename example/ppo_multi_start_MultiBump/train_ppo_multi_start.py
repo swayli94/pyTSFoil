@@ -188,7 +188,7 @@ def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 200
+    n_envs = 400
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -209,7 +209,7 @@ def main(device='auto', resume=False):
         gae_lambda=0.95,
         clip_epsilon=0.15,
         value_loss_coef=0.2,
-        entropy_coef=0.001,
+        entropy_coef=0.0001,
         max_grad_norm=0.5,
         n_epochs=5,
         batch_size=500,
@@ -217,7 +217,7 @@ def main(device='auto', resume=False):
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.3,
+        initial_action_std=0.2,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom

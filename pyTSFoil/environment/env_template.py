@@ -684,11 +684,14 @@ class TSFoilEnv_Template(gym.Env):
         n_steps = len(self.trajectory)
         colors = plt.cm.viridis(np.linspace(0, 1, n_steps))
         
+        total_reward_values = [entry['info']['total_reward'] for entry in self.trajectory]
+        index_max_reward = np.argmax(total_reward_values)
+        
         # Plot 1: Airfoil geometry evolution
         for i, entry in enumerate(self.trajectory):
             coords = entry['info']['airfoil_coordinates']
             alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))  # Fade older steps, highlight recent ones
-            linewidth = 3.0 if i==0 else 1.0
+            linewidth = 3.0 if (i==0 or i==index_max_reward) else 1.0
             step_num = entry['info']['i_current_step']
             is_valid = entry['info'].get('is_current_step_valid', True)
             linestyle = '-' if is_valid else '--'  # Dashed line for invalid steps
@@ -706,7 +709,7 @@ class TSFoilEnv_Template(gym.Env):
                 alpha = 0.3 + 0.7 * (i / max(1, n_steps - 1))
                 step_num = entry['info']['i_current_step']
                 is_valid = entry['info'].get('is_current_step_valid', True)
-                linewidth = 3.0 if i==0 else 1.0
+                linewidth = 3.0 if (i==0 or i==index_max_reward) else 1.0
                 linestyle = '-' if is_valid else '--'  # Dashed line for invalid steps
                 label_upper = f'Step {step_num}'
                 
