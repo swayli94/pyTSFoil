@@ -94,7 +94,7 @@ class ActorCritic(nn.Module):
             nn.Tanh()  # Output in [-1, 1]
         )
         
-        # Actor std (learnable std deviation)
+        # Actor log_std (learnable log standard deviation)
         self.actor_log_std = nn.Parameter(torch.ones(dim_action) * np.log(initial_std))
         
         # Critic head (value network)
@@ -118,7 +118,7 @@ class ActorCritic(nn.Module):
         Returns:
         --------
         action_mean: torch.Tensor [batch_size, dim_action]
-            mean of the action distribution
+            mean of the action distribution (before tanh)
         action_std: torch.Tensor [batch_size, dim_action]
             standard deviation of the action distribution
         value: torch.Tensor [batch_size, 1]
@@ -138,7 +138,8 @@ class ActorCritic(nn.Module):
         
         # Actor outputs
         action_mean = self.actor_mean(shared_features)
-        action_std = torch.exp(self.actor_log_std.expand_as(action_mean))
+        action_log_std = torch.clamp(self.actor_log_std, -5.0, 2.0).expand_as(action_mean)  # Limit for stability
+        action_std = torch.exp(action_log_std)
         
         # Critic output
         value = self.critic(shared_features)
@@ -148,7 +149,7 @@ class ActorCritic(nn.Module):
     def get_action_and_value(self, state_array: torch.Tensor, figure_array: torch.Tensor, 
                                 action: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
-        Get action and value from the Actor-Critic network
+        Get action and value from the Actor-Critic network using tanh-squashed Gaussian
         
         Parameters:
         -----------
@@ -157,30 +158,40 @@ class ActorCritic(nn.Module):
         figure_array: torch.Tensor [batch_size, n_interp_points, 4]
             airfoil geometry and Mach data
         action: Optional[torch.Tensor] [batch_size, dim_action]
-            action to be taken
+            action to be taken (if provided, should be in [-1, 1])
             
         Returns:
         --------
         action: torch.Tensor [batch_size, dim_action]
-            action to be taken
-        log_prob: torch.Tensor [batch_size, 1]
-            log probability of the action
-        entropy: torch.Tensor [batch_size, 1]
-            entropy of the action distribution
+            action in [-1, 1] range
+        log_prob: torch.Tensor [batch_size]
+            log probability of the action (corrected for tanh transform)
+        entropy: torch.Tensor [batch_size]
+            entropy of the base distribution
         value: torch.Tensor [batch_size, 1]
             value function estimate
         '''
         action_mean, action_std, value = self.forward(state_array, figure_array)
-        dist = Normal(action_mean, action_std)
+        base_dist = Normal(action_mean, action_std)
         
         if action is None:
-            action = dist.sample()
-            # Clamp to environment bounds [-1,1]. Note: This creates a truncated normal
-            # distribution. Log probs are approximate but environment compatibility is critical.
-            action = torch.clamp(action, -1.0, 1.0)
+            # Sample from base distribution and apply tanh transform
+            z = base_dist.rsample()  # reparameterized sampling for gradients
+            action = torch.tanh(z)
+        else:
+            # Inverse tanh to get z from action
+            # action should be in [-1, 1], clamp for numerical stability
+            action = torch.clamp(action, -0.999999, 0.999999)
+            z = torch.atanh(action)
         
-        log_prob = dist.log_prob(action).sum(dim=-1)
-        entropy = dist.entropy().sum(dim=-1)
+        # Calculate log probability with Jacobian correction
+        base_log_prob = base_dist.log_prob(z).sum(dim=-1)
+        # Jacobian correction: log(1 - tanh^2(z)) for each dimension, then sum
+        jacobian_correction = torch.log(1 - action.pow(2) + 1e-6).sum(dim=-1)
+        log_prob = base_log_prob - jacobian_correction
+        
+        # Entropy of the base distribution (before tanh transform)
+        entropy = base_dist.entropy().sum(dim=-1)
         
         return action, log_prob, entropy, value
 
@@ -950,7 +961,7 @@ class PPO_FigState():
         figure_array: np.ndarray [n_interp_points, 4]
             airfoil geometry and Mach data [yu, yl, mwu, mwl]
         deterministic: bool
-            If True, use mean of policy distribution
+            If True, use deterministic action (tanh of mean)
             
         Returns:
         --------
@@ -966,7 +977,7 @@ class PPO_FigState():
         with torch.no_grad():
             if deterministic:
                 action_mean, _, _ = self.actor_critic(state_array_tensor, figure_array_tensor)
-                action = action_mean.squeeze().cpu().numpy()
+                action = torch.tanh(action_mean).squeeze().cpu().numpy()
             else:
                 action, _, _, _ = self.actor_critic.get_action_and_value(
                     state_array_tensor, figure_array_tensor)
@@ -974,8 +985,8 @@ class PPO_FigState():
         
         self.actor_critic.train()
         
-        # Scale action from [-1, 1] to actual action bounds
-        action_unscaled = self.action_class.recover_action(np.clip(action, -1.0, 1.0))
+        # Action is already in [-1, 1] from tanh, scale to actual action bounds
+        action_unscaled = self.action_class.recover_action(action)
         
         return action_unscaled
     
