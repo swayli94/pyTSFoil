@@ -188,7 +188,7 @@ def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 400
+    n_envs = 200
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -204,7 +204,7 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-5,
+        lr=1e-4,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.15,
@@ -212,12 +212,12 @@ def main(device='auto', resume=False):
         entropy_coef=0.001,
         max_grad_norm=0.5,
         n_epochs=5,
-        batch_size=1000,
+        batch_size=500,
         n_steps=5,  # A limited number of steps due to the nature of the problem
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.15,
+        initial_action_std=0.3,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
