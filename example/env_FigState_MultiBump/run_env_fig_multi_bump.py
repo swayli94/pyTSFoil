@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from pyTSFoil.environment.basic import MultiBumpModificationAction
-from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
+from pyTSFoil.environment.utils import TSFoilEnv_FigState_MultiBumpAction
 
 
 if __name__ == "__main__":
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     
     action_class = MultiBumpModificationAction()
     
-    env = TSFoilEnv_FigState_BumpAction(
+    env = TSFoilEnv_FigState_MultiBumpAction(
             airfoil_coordinates=airfoil_coordinates,
             output_dir=path,
             render_mode='save',

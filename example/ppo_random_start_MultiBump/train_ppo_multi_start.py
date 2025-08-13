@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 mp.set_start_method('spawn', force=True)
 
 # Import the classes
+from pyTSFoil.pytsfoil import PyTSFoil
 from pyTSFoil.environment.utils import TSFoilEnv_FigState_MultiBumpAction
 from pyTSFoil.environment.basic import MultiBumpModificationAction
 from model.database import AirfoilDatabase
@@ -33,6 +34,38 @@ from model.ppo import ActorCritic
 from model.ppo_mp import PPO_FigState_MultiEnv
 
 path = os.path.dirname(os.path.abspath(__file__))
+
+
+def check_validity(airfoil_coordinates: np.ndarray) -> bool:
+    '''
+    Check if the airfoil is valid
+    '''
+    pytsfoil = PyTSFoil(
+        airfoil_coordinates=airfoil_coordinates
+    )
+    
+    pytsfoil.set_config(
+        ALPHA=0.5,              #! Must be the same as the environment
+        EMACH=0.75,             #! Must be the same as the environment
+        MAXIT=9999,
+        NWDGE=0,
+        n_point_x=200,
+        n_point_y=80,
+        n_point_airfoil=100,
+        EPS=0.2,
+        CVERGE=1e-6,
+        flag_output_solve=False,
+        flag_output_summary=False,
+        flag_output_shock=False,
+        flag_output_field=False,
+        flag_print_info=False,
+    )
+
+    pytsfoil.run()
+    
+    cd = pytsfoil.data_summary['cd']
+
+    return cd >= 0.0 and cd < 0.1
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 
@@ -54,8 +87,16 @@ def create_env_with_id(worker_id=None, render_mode='none',
     database = AirfoilDatabase(fname_database=os.path.join(path, 'selected-airfoils-cst.dat'))
     
     if worker_id is not None:
-        # airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(worker_id)
+        
+        print('>>> Creating random airfoils')
+        
+        airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates(
+            n_max_try=10,
+            check_validity_function=check_validity,
+            )
+        
+        print('>>> Airfoil created')
+        
     else:
         airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
     
@@ -189,7 +230,7 @@ def main(device='auto', resume=False):
     
     # Number of parallel environments (can be increased with new reliable implementation)
     n_envs = 400
-    n_updates = 300
+    n_updates = 200
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -213,12 +254,12 @@ def main(device='auto', resume=False):
         entropy_coef=0.0001,
         max_grad_norm=0.5,
         n_epochs=5,
-        batch_size=1000,
+        batch_size=500,
         n_steps=5,  # A limited number of steps due to the nature of the problem
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.195,
+        initial_action_std=0.2,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
@@ -247,7 +288,7 @@ def main(device='auto', resume=False):
             plot_path=os.path.join(path, 'training_progress.png'),
             use_action_std_decay=True,
             action_std_decay_max_updates=n_updates,
-            min_action_std=0.01
+            min_action_std=0.1
         )
     except Exception as e:
         print(f"Training failed with error: {e}")

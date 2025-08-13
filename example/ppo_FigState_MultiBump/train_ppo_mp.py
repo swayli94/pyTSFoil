@@ -20,7 +20,7 @@ import multiprocessing as mp
 mp.set_start_method('spawn', force=True)
 
 # Import the classes
-from pyTSFoil.environment.utils import TSFoilEnv_FigState_BumpAction
+from pyTSFoil.environment.utils import TSFoilEnv_FigState_MultiBumpAction
 from pyTSFoil.environment.basic import MultiBumpModificationAction
 from model.ppo_mp import PPO_FigState_MultiEnv
 from cst_modeling.foil import cst_foil
@@ -60,7 +60,7 @@ def create_env_with_id(worker_id=None, render_mode='none', n_max_step=10):
         worker_output_dir = path
 
     # Create environment instance
-    return TSFoilEnv_FigState_BumpAction(
+    return TSFoilEnv_FigState_MultiBumpAction(
         airfoil_coordinates=airfoil_coordinates,
         output_dir=worker_output_dir,
         render_mode=render_mode,

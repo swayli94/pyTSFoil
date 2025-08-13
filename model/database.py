@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 import matplotlib.pyplot as plt
 import os
 from cst_modeling.foil import cst_foil, check_validity
@@ -64,16 +64,44 @@ class AirfoilDatabase():
         
         return np.column_stack((xx, yy)), x, yu, yl
 
-    def get_random_airfoil_coordinates(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def get_random_airfoil_coordinates(self, n_max_try: int = 10, 
+                    check_validity_function: Callable|None = None,
+                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        '''
+        Get random airfoil coordinates from the database.
+
+        Parameters
+        ----------
+        n_max_try : int, optional
+            Maximum number of tries to generate a valid airfoil.
+            The default is 10.
+        check_validity_function : Callable, optional
+            Function to check if the airfoil is valid.
+            The default is None, which means no check is performed.
+
+        Returns
+        -------
+        airfoil_coordinates : np.ndarray
+            The airfoil coordinates.
+        x : np.ndarray
+            The x coordinates of the airfoil.
+        yu : np.ndarray
+            The upper surface coordinates of the airfoil.
+        yl : np.ndarray
+            The lower surface coordinates of the airfoil.
+        '''
         
-        is_action_valid = False
+        is_valid = False
         n_try = 0
         
-        while not is_action_valid:
+        while not is_valid:
 
             id0 = np.random.randint(0, len(self.airfoils))
             id1 = np.random.randint(0, len(self.airfoils))
             alpha = np.random.rand()
+            
+            if n_try >= n_max_try:
+                alpha = 1.0
             
             airfoil_0, x, yu0, yl0 = self.get_airfoil_coordinates(id0)
             airfoil_1, _, yu1, yl1 = self.get_airfoil_coordinates(id1)
@@ -84,10 +112,18 @@ class AirfoilDatabase():
             yl_new = alpha*yl0 + (1-alpha)*yl1
             
             is_action_valid = check_validity(x, yu_new, yl_new)
-            n_try += 1
             
-            if n_try > 100:
+            if is_action_valid and check_validity_function is not None:
+                is_check_valid = check_validity_function(airfoil_coordinates)
+            else:
+                is_check_valid = True
+            
+            is_valid = is_action_valid and is_check_valid
+            
+            if n_try > n_max_try and not is_valid:
                 raise ValueError('Failed to generate valid airfoil coordinates')
+            
+            n_try += 1
         
         return airfoil_coordinates, x, yu_new, yl_new
 
