@@ -422,31 +422,45 @@ class PPO_FigState():
         
         return rollout_data
     
-    def decay_entropy_coef(self, update_count: int, total_updates: int, 
-                          decay_type: str = 'linear', min_entropy_coef: float = 0.001) -> None:
+    def decay_action_std(self, update_count: int, total_updates: int,
+                        decay_type: str = 'linear', min_std: float = 0.1) -> None:
         '''
-        Decay entropy coefficient during training to reduce exploration over time
+        Decay action standard deviation during training to reduce exploration over time
         
         Parameters:
         -----------
         update_count: int
             Current update number
-        total_updates: int  
+        total_updates: int
             Total number of updates planned
         decay_type: str
             Type of decay ('linear', 'exponential')
-        min_entropy_coef: float
-            Minimum entropy coefficient value
+        min_std: float
+            Minimum standard deviation value
         '''
-        if decay_type == 'linear':
-            decay_factor = max(0, 1 - update_count / total_updates)
-        elif decay_type == 'exponential':
-            decay_factor = 0.99 ** update_count
-        else:
-            decay_factor = 1.0
+        with torch.no_grad():
+            if decay_type == 'linear':
+                decay_factor = max(0, 1 - update_count / total_updates)
+            elif decay_type == 'exponential':
+                decay_factor = 0.99 ** update_count
+            else:
+                decay_factor = 1.0
             
-        self.entropy_coef = max(min_entropy_coef, 
-                               self.initial_entropy_coef * decay_factor)
+            # Calculate target log_std values
+            min_log_std = np.log(min_std)
+            initial_log_std = np.log(self.initial_action_std)
+            target_log_std = max(min_log_std, initial_log_std * decay_factor)
+            
+            # Gradually move towards target (to avoid sudden jumps)
+            current_log_std = self.actor_critic.actor_log_std.data
+            new_log_std = torch.clamp(
+                current_log_std * 0.99 + target_log_std * 0.01,
+                min_log_std, 
+                initial_log_std
+            )
+            
+            # Update the parameter
+            self.actor_critic.actor_log_std.data.fill_(new_log_std.mean().item())
     
     def compute_gae(self, next_state_array: torch.Tensor, next_figure_array: torch.Tensor) -> None:
         '''
@@ -606,7 +620,10 @@ class PPO_FigState():
               log_interval: int = 10, save_interval: int = 100, eval_interval: int = 100,
               save_path: str = 'ppo_model.pt', plot_training: bool = True,
               plot_path: str = 'training_progress.png',
-              use_entropy_decay: bool = False, entropy_decay_type: str = 'linear') -> None:
+              use_action_std_decay: bool = False, 
+              action_std_decay_type: str = 'linear',
+              action_std_decay_max_updates: int = 200,
+              min_action_std: float = 0.1) -> None:
         '''
         Train the PPO agent
         
@@ -631,7 +648,6 @@ class PPO_FigState():
 
         time_steps_so_far = 0
         update_count = 0
-        estimated_total_updates = total_time_steps // self.n_steps + 1
         
         while time_steps_so_far < total_time_steps:
             
@@ -644,10 +660,10 @@ class PPO_FigState():
             # Update policy
             update_info = self.update_policy(rollout_data)
             update_count += 1
-            
-            # Apply entropy decay if enabled
-            if use_entropy_decay:
-                self.decay_entropy_coef(update_count, estimated_total_updates, entropy_decay_type)
+
+            # Apply action std decay if enabled
+            if use_action_std_decay:
+                self.decay_action_std(update_count, action_std_decay_max_updates, action_std_decay_type, min_action_std)
             
             # Save episode statistics for this update period
             self.episode_rewards_per_update.append(self.current_update_rewards.copy())
@@ -661,14 +677,16 @@ class PPO_FigState():
                 avg_reward = np.mean(self.training_stats['episode_rewards']) if self.training_stats['episode_rewards'] else 0
                 avg_length = np.mean(self.training_stats['episode_lengths']) if self.training_stats['episode_lengths'] else 0
                 
+                current_action_std = torch.exp(self.actor_critic.actor_log_std).mean().item()
                 print(f"  Update {update_count:3d} | "
                       f"Timesteps {time_steps_so_far:5d} | "
                       f"Avg Reward {avg_reward:.2f} | "
                       f"Avg Length {avg_length:.1f} | "
-                      f"Policy Loss {update_info['policy_loss']:.4f} | "
-                      f"Value Loss {update_info['value_loss']:.4f} | "
-                      f"KL Div {update_info['kl_divergence']:.6f} | "
-                      f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.4f}")
+                      f"Policy Loss {update_info['policy_loss']:.3f} | "
+                      f"Value Loss {update_info['value_loss']:.3f} | "
+                      f"KL Div {update_info['kl_divergence']:.3f} | "
+                      f"Policy Std: {current_action_std:.3f} | "
+                      f"Actual action std: {np.mean(np.std(rollout_data['actions'], axis=0)):.3f}")
             
                 if plot_training:
                     self.plot_training_progress(save_path=plot_path)

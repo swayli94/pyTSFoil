@@ -189,6 +189,7 @@ def main(device='auto', resume=False):
     
     # Number of parallel environments (can be increased with new reliable implementation)
     n_envs = 400
+    n_updates = 300
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -204,20 +205,20 @@ def main(device='auto', resume=False):
     ppo_agent = PPO_FigState_MultiEnv(
         env_fns=env_fns,
         env_eval=eval_env,
-        lr=1e-4,
+        lr=1e-5,
         gamma=0.99,
         gae_lambda=0.95,
         clip_epsilon=0.15,
-        value_loss_coef=0.2,
+        value_loss_coef=1.0,
         entropy_coef=0.0001,
         max_grad_norm=0.5,
         n_epochs=5,
-        batch_size=500,
+        batch_size=1000,
         n_steps=5,  # A limited number of steps due to the nature of the problem
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.2,
+        initial_action_std=0.195,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
@@ -237,14 +238,16 @@ def main(device='auto', resume=False):
     # Train the agent
     try:
         ppo_agent.train(
-            total_time_steps=int(1e6),
+            total_time_steps=int(n_updates*n_envs*ppo_agent.n_steps),
             log_interval=1,
             save_interval=10,
             eval_interval=10,
             save_path=os.path.join(path, 'ppo_fig_bumps_model.pt'),
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png'),
-            use_entropy_decay=True
+            use_action_std_decay=True,
+            action_std_decay_max_updates=n_updates,
+            min_action_std=0.01
         )
     except Exception as e:
         print(f"Training failed with error: {e}")

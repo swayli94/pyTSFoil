@@ -140,7 +140,7 @@ def main(device='auto', resume=False):
             save_path=save_path,
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png'),
-            use_entropy_decay=True
+            use_action_std_decay=False
         )
     except Exception as e:
         print(f"Training failed with error: {e}")
