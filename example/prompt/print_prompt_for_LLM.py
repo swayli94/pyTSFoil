@@ -8,8 +8,8 @@ Usage:
 
 '''
 
-from pyTSFoil.environment.basic import BumpModificationAction, FigureState
-from pyTSFoil.environment.prompt import DescriptionActionBumpMod, DescriptionStateFigure, PromptForLLM
+from pyTSFoil.environment.basic import MultiBumpModificationAction, FigureState
+from pyTSFoil.environment.prompt import DescriptionActionMultiBump, DescriptionStateFigure, PromptForLLM
 import os
 import tiktoken
 
@@ -30,13 +30,13 @@ def count_tokens(text: str) -> int:
 
 if __name__ == "__main__":
     
-    trajectory_json_path = 'example/env_FigState_BumpAction/trajectory.json'
+    trajectory_json_path = 'example/env_FigState_MultiBump/trajectory.json'
     os.makedirs('example/prompt/descriptions', exist_ok=True)
     
-    action = BumpModificationAction()
+    action = MultiBumpModificationAction()
     state = FigureState()
     
-    description_action = DescriptionActionBumpMod(action)
+    description_action = DescriptionActionMultiBump(action)
     description_state = DescriptionStateFigure(state)
     
     prompt_for_LLM = PromptForLLM(

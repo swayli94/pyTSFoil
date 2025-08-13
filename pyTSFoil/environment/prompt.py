@@ -4,7 +4,7 @@ Language description of actions
 import json
 import numpy as np
 from typing import List, Dict, Any, Union
-from pyTSFoil.environment.basic import BumpModificationAction, GlobalModificationAction, FigureState
+from pyTSFoil.environment.basic import BumpModificationAction, GlobalModificationAction, FigureState, MultiBumpModificationAction
 
 
 class DescriptionActionBumpMod():
@@ -109,6 +109,25 @@ If the text indicates no bump is added to the upper or lower surface, then the p
 """
         return description
     
+    @staticmethod
+    def instruction_for_action_output():
+        '''
+        Get the instruction for action output
+        '''
+        description = """
+At the very end of your response, you **must** tell me the decision in the following format: 
+    upper = [location, height, width]
+    lower = [location, height, width] 
+
+For example: 
+    upper = [0.2, 0.001, 0.5] 
+    lower = [0.8, -0.001, 0.5]
+
+No more content after the decision in this format is given. 
+
+If the text indicates no bump is added to the upper or lower surface, then the parameters of the corresponding surface are zero. You should only reply python code in plain text without any other content.
+"""
+        return description
 
 class DescriptionActionGlobalMod():
     '''
@@ -215,6 +234,189 @@ The modification consists of {len(self.action_dict)} parameters organized by fun
             description += f'{i+1}. {self.action_names[i]}: {action}\n'
         return description
 
+
+class DescriptionActionMultiBump():
+    '''
+    Multi-bump modification of airfoil geometry
+    '''
+    def __init__(self, multi_bump_action: MultiBumpModificationAction = None):
+        # Get action parameters from actual MultiBumpModificationAction instance
+        if multi_bump_action is None:
+            multi_bump_action = MultiBumpModificationAction()  # Use default parameters
+            
+        self.action_names = multi_bump_action.action_name
+        self.action_dict = multi_bump_action.action_dict
+        self.action_bounds = {
+            'upper_bound': multi_bump_action.action_upper_bound.tolist(),
+            'lower_bound': multi_bump_action.action_lower_bound.tolist()
+        }
+        self.n_bumps = multi_bump_action.n_bumps
+        self.x_bump_locations = multi_bump_action.x_bump_locations
+        self.bump_width = multi_bump_action.bump_width
+        self.critical_height_for_no_bump = multi_bump_action.critical_height_for_no_bump
+        self.n_cst = multi_bump_action.n_cst
+        self.keep_airfoil_tmax = multi_bump_action.keep_airfoil_tmax
+    
+    def get_general_description(self):
+        """
+        Returns a comprehensive description of the MultiBumpModificationAction for LLMs.
+        """
+        
+        # Build parameter descriptions dynamically, organized by bump and surface
+        param_descriptions = []
+        
+        # Group parameters by bump location for better organization
+        upper_bumps = []
+        lower_bumps = []
+        
+        for i, name in enumerate(self.action_names):
+            lower = self.action_bounds['lower_bound'][i]
+            upper = self.action_bounds['upper_bound'][i]
+            meaning = self.action_dict[name]['meaning']
+            
+            # Determine parameter type based on parameter name suffix
+            if name.endswith('L'):  # Location deviation parameters
+                param_type = 'location deviation'
+                param_detail = 'Deviation from base location: positive = toward trailing edge, negative = toward leading edge'
+                units = 'chord fraction'
+            elif name.endswith('H'):  # Height parameters
+                param_type = 'bump height'
+                param_detail = 'Positive = outward bump, negative = inward bump'
+                units = 'chord fraction'
+            else:
+                param_type = 'unknown parameter'
+                param_detail = 'Parameter type not recognized'
+                units = 'unknown'
+            
+            surface = 'upper' if name.startswith('U') else 'lower'
+            bump_number = name[1] if len(name) > 1 else '0'
+            base_location = self.x_bump_locations[int(bump_number)]
+            
+            param_info = {
+                'name': name,
+                'lower': lower,
+                'upper': upper,
+                'param_type': param_type,
+                'param_detail': param_detail,
+                'units': units,
+                'meaning': meaning,
+                'bump_number': bump_number,
+                'base_location': base_location
+            }
+            
+            if surface == 'upper':
+                upper_bumps.append(param_info)
+            else:
+                lower_bumps.append(param_info)
+        
+        # Create organized parameter descriptions
+        param_descriptions.append("\n**Upper Surface Bumps:**")
+        for i in range(0, len(upper_bumps), 2):  # Process in pairs (location, height)
+            if i + 1 < len(upper_bumps):
+                loc_param = upper_bumps[i]
+                height_param = upper_bumps[i + 1]
+                bump_num = loc_param['bump_number']
+                base_loc = loc_param['base_location']
+                
+                param_descriptions.append(f"""
+Bump {bump_num} (base location x={base_loc}):
+  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']})
+    * {loc_param['param_detail']}
+    * Units: {loc_param['units']}
+  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']})
+    * {height_param['param_detail']}
+    * Units: {height_param['units']}""")
+        
+        param_descriptions.append("\n**Lower Surface Bumps:**")
+        for i in range(0, len(lower_bumps), 2):  # Process in pairs (location, height)
+            if i + 1 < len(lower_bumps):
+                loc_param = lower_bumps[i]
+                height_param = lower_bumps[i + 1]
+                bump_num = loc_param['bump_number']
+                base_loc = loc_param['base_location']
+                
+                param_descriptions.append(f"""
+Bump {bump_num} (base location x={base_loc}):
+  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']})
+    * {loc_param['param_detail']}
+    * Units: {loc_param['units']}
+  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']})
+    * {height_param['param_detail']}
+    * Units: {height_param['units']}""")
+        
+        description = f"""
+**Airfoil Multi-Bump Modification Strategy:**
+This action applies multiple localized bumps ({self.n_bumps} bumps each) to both the upper and lower surfaces of the airfoil. Each bump can be independently controlled in terms of its chordwise location and height, allowing for sophisticated shape modifications to achieve desired aerodynamic properties.
+
+**Physical Understanding:**
+- **Upper Surface Bumps:** 
+  * Positive height → increases local thickness and curvature (outward bump)
+  * Negative height → decreases local thickness and curvature (inward bump)
+  * Location deviation shifts bump position along the chord
+- **Lower Surface Bumps:**
+  * Positive height → decreases local thickness and curvature (inward bump)  
+  * Negative height → increases local thickness and curvature (outward bump)
+  * Location deviation shifts bump position along the chord
+
+**Bump Distribution:**
+The {self.n_bumps} bumps are strategically positioned at base locations: {', '.join([f'x={loc:.1f}' for loc in self.x_bump_locations])}, providing comprehensive control over the airfoil shape from leading edge to trailing edge.
+
+**Action Parameters:**
+The modification consists of {len(self.action_names)} parameters ({2 * self.n_bumps} for each surface):{''.join(param_descriptions)}
+
+**Technical Implementation:**
+- Uses Hicks-Henne bump functions for smooth, aerodynamically-reasonable modifications
+- Bump width is fixed at {self.bump_width} for consistent shape characteristics
+- Bumps are only applied if their height exceeds the critical threshold ({self.critical_height_for_no_bump}) to avoid insignificant changes
+- {'Maintains' if self.keep_airfoil_tmax else 'Does not maintain'} original maximum thickness during modification
+- Multiple bumps can be combined to create complex shape variations while maintaining smoothness
+
+**Design Strategy:**
+- Use multiple small bumps for fine-tuned local control
+- Coordinate bump locations to avoid interference between adjacent bumps
+- Consider the cumulative effect of multiple bumps on pressure distribution
+- Front bumps (x=0.1, 0.3) primarily affect leading edge suction and transition
+- Middle bumps (x=0.5) control maximum thickness region and shock formation
+- Rear bumps (x=0.7, 0.9) influence pressure recovery and trailing edge characteristics
+- Rear bumps on the lower surface are effective to change the aft loading, and consequently, the lift and pitching moment.
+
+"""
+        return description
+    
+    def get_action_description(self, action_array: np.ndarray):
+        '''
+        Get the description of the action
+        '''
+        description = ''
+        for i, action in enumerate(action_array):
+            description += f'{i+1}. {self.action_names[i]}: {action}\n'
+        return description
+
+    def instruction_for_action_output(self):
+        '''
+        Get the instruction for action output
+        '''
+        # Build parameter list for instruction
+        param_list = []
+        for name in self.action_names:
+            param_list.append(name)
+        
+        description = f"""
+At the very end of your response, you **must** tell me the decision in the following format: 
+action = [{', '.join(param_list)}]
+
+For example: 
+action = [0.01, 0.002, -0.02, -0.001, 0.0, 0.0, 0.01, 0.001, 0.0, 0.0, 0.02, -0.003, 0.01, 0.002, -0.01, -0.001, 0.0, 0.0, 0.01, 0.001]
+
+Where each value corresponds to:
+- First {self.n_bumps * 2} values: Upper surface bumps (alternating location deviation, height)
+- Last {self.n_bumps * 2} values: Lower surface bumps (alternating location deviation, height)
+
+If no modification is desired for a specific bump, set both its location deviation and height to 0.0.
+
+No more content after the decision in this format is given.
+"""
+        return description
 
 class DescriptionStateFigure():
     '''
@@ -374,26 +576,6 @@ There are some rules for airfoil design:
     
 These rules are not always correct for different airfoils, but they can guide you in modifying the airfoil to reduce drag.
 
-"""
-        return description
-
-    @staticmethod
-    def instruction_for_bump_action_output():
-        '''
-        Get the instruction for action output
-        '''
-        description = """
-At the very end of your response, you **must** tell me the decision in the following format: 
-    upper = [location, height, width]
-    lower = [location, height, width] 
-
-For example: 
-    upper = [0.2, 0.001, 0.5] 
-    lower = [0.8, -0.001, 0.5]
-
-No more content after the decision in this format is given. 
-
-If the text indicates no bump is added to the upper or lower surface, then the parameters of the corresponding surface are zero. You should only reply python code in plain text without any other content.
 """
         return description
 
@@ -562,6 +744,6 @@ class PromptForLLM():
             state_dict,
             action_dict,
             )
-        prompt += DescriptionTask.instruction_for_bump_action_output()
+        prompt += self.description_action.instruction_for_action_output()
         return prompt
 

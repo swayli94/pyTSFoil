@@ -12,7 +12,7 @@ This action adds localized bumps to both the upper and lower surfaces of the air
 
 **Action Parameters:**
 The modification consists of 6 parameters:
-1. **UBL** (range: 0.0 to 1.0)
+1. **UBL** (range: 0.01 to 0.99)
    - Controls the chordwise location of the bump on the upper surface
    - Position along chord: 0.0 = leading edge, 1.0 = trailing edge
    - Units: chord fraction
@@ -24,7 +24,7 @@ The modification consists of 6 parameters:
    - Controls the bump width of the bump on the upper surface
    - Controls bump spread: larger values = wider, more gradual bumps
    - Units: dimensionless
-4. **LBL** (range: 0.0 to 1.0)
+4. **LBL** (range: 0.01 to 0.99)
    - Controls the chordwise location of the bump on the lower surface
    - Position along chord: 0.0 = leading edge, 1.0 = trailing edge
    - Units: chord fraction
@@ -40,5 +40,5 @@ The modification consists of 6 parameters:
 **Technical Implementation:**
 - Uses Hicks-Henne bump functions for smooth, aerodynamically-reasonable modifications
 - Bumps are only applied if their height exceeds the critical threshold (0.001) to avoid insignificant changes
-- Does not maintain original maximum thickness during modification
+- Maintains original maximum thickness during modification
 

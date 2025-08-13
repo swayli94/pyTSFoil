@@ -27,13 +27,13 @@ Output: Markdown file with step-by-step design history including:
 '''
 
 from pyTSFoil.environment.prompt import DescriptionHistory
-from pyTSFoil.environment.basic import BumpModificationAction, FigureState
+from pyTSFoil.environment.basic import MultiBumpModificationAction, FigureState
 import os
 
 
 if __name__ == "__main__":
     
-    trajectory_json_path = 'example/env_FigState_BumpAction/trajectory.json'
+    trajectory_json_path = 'example/env_FigState_MultiBump/trajectory.json'
     os.makedirs('example/prompt/descriptions', exist_ok=True)
     
     print(f"Processing trajectory file: {trajectory_json_path}")
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     description = DescriptionHistory.convert_to_description(
                     trajectory_json_path,
                     state_dict=FigureState().state_dict,
-                    action_dict=BumpModificationAction().action_dict,
+                    action_dict=MultiBumpModificationAction().action_dict,
                     )
     
     # Save description to markdown file
