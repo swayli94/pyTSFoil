@@ -36,6 +36,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             render_mode=render_mode,
             n_max_step=n_max_step,
             reward_class=reward_class,
+            path_save_fig_of_observation=path_save_fig_of_observation,
         )
 
         self.state_class = state_class if state_class is not None else FigureState()
@@ -54,75 +55,6 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             shape=(self.dim_observation,), dtype=np.float32)
         
         self.observation = np.zeros(self.dim_observation)
-        
-        self.path_save_fig_of_observation = path_save_fig_of_observation
-
-    def _apply_action_to_reference_step(self, action: np.ndarray) -> None:
-        '''
-        Apply the action, update the airfoil coordinates.
-        
-        Parameters
-        ----------
-        action: np.ndarray
-            The unscaled action to be applied
-        '''
-        ref_airfoil_coordinates = self.trajectory[self.i_reference_step]['info']['airfoil_coordinates']
-        
-        # Split airfoil into upper and lower surfaces
-        yu = ref_airfoil_coordinates[:,1][:self.n_airfoil_points][::-1]
-        yl = ref_airfoil_coordinates[:,1][self.n_airfoil_points-1:]
-
-        _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
-        
-        if self.is_action_valid:
-            self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
-            self.airfoil_coordinates[:,1] = np.concatenate((yu_new[::-1], yl_new[1:]))
-            
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates.copy()
-
-    def _get_observation(self) -> Tuple[np.ndarray, str]:
-        '''
-        Get the observation.
-        '''
-        state_array, figure_base64 = self.state_class.calculate_state(
-            x=self.x_airfoil_surface,
-            yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
-            yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
-            xxu=self.info['xx'],
-            xxl=self.info['xx'],
-            mwu=self.info['mau'],
-            mwl=self.info['mal'],
-            Cl=self.info['cl'],
-            Cd_wave=self.info['cd_wave'],
-            Cm=self.info['cm'],
-            save_fig_path=self.path_save_fig_of_observation
-        )
-        
-        self.observation = state_array
-        
-        return self.observation, figure_base64
-    
-    def _get_observation_for_RL(self, n_interp_points: int = 101) -> Tuple[np.ndarray, np.ndarray]:
-        '''
-        Get the observation for RL.
-        '''
-        state_array, figure_array = self.state_class.calculate_state_for_RL(
-            x=self.x_airfoil_surface,
-            yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
-            yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
-            xxu=self.info['xx'],
-            xxl=self.info['xx'],
-            mwu=self.info['mau'],
-            mwl=self.info['mal'],
-            Cl=self.info['cl'],
-            Cd_wave=self.info['cd_wave'],
-            Cm=self.info['cm'],
-            n_interp_points=n_interp_points
-        )
-
-        self.observation = state_array
-        
-        return self.observation, figure_array
 
 
 class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
@@ -152,6 +84,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             render_mode=render_mode,
             n_max_step=n_max_step,
             reward_class=reward_class,
+            path_save_fig_of_observation=path_save_fig_of_observation,
         )
         
         self.state_class = state_class if state_class is not None else FigureState()
@@ -170,68 +103,3 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             shape=(self.dim_observation,), dtype=np.float32)
         
         self.observation = np.zeros(self.dim_observation)
-        
-        self.path_save_fig_of_observation = path_save_fig_of_observation
-        
-    def _apply_action_to_reference_step(self, action: np.ndarray) -> None:
-        '''
-        Apply the action, update the airfoil coordinates.
-        '''
-        ref_airfoil_coordinates = self.trajectory[self.i_reference_step]['info']['airfoil_coordinates']
-        
-        # Split airfoil into upper and lower surfaces
-        yu = ref_airfoil_coordinates[:,1][:self.n_airfoil_points][::-1]
-        yl = ref_airfoil_coordinates[:,1][self.n_airfoil_points-1:]
-
-        _, _, yu_new, yl_new, self.is_action_valid = self.action_class.apply_action(action, self.x_airfoil_surface, yu, yl)
-        
-        if self.is_action_valid:
-            self.airfoil_coordinates[:,0] = ref_airfoil_coordinates[:,0]
-            self.airfoil_coordinates[:,1] = np.concatenate((yu_new[::-1], yl_new[1:]))
-            
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates.copy()
-        
-    def _get_observation(self) -> Tuple[np.ndarray, str]:
-        '''
-        Get the observation.
-        '''
-        state_array, figure_base64 = self.state_class.calculate_state(
-            x=self.x_airfoil_surface,
-            yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
-            yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
-            xxu=self.info['xx'],
-            xxl=self.info['xx'],
-            mwu=self.info['mau'],
-            mwl=self.info['mal'],
-            Cl=self.info['cl'],
-            Cd_wave=self.info['cd_wave'],
-            Cm=self.info['cm'],
-            save_fig_path=self.path_save_fig_of_observation
-        )
-        
-        self.observation = state_array
-        
-        return self.observation, figure_base64
-
-    def _get_observation_for_RL(self, n_interp_points: int = 101) -> Tuple[np.ndarray, np.ndarray]:
-        '''
-        Get the observation for RL.
-        '''
-        state_array, figure_array = self.state_class.calculate_state_for_RL(
-            x=self.x_airfoil_surface,
-            yu=self.airfoil_coordinates[:,1][:self.n_airfoil_points][::-1],
-            yl=self.airfoil_coordinates[:,1][self.n_airfoil_points-1:],
-            xxu=self.info['xx'],
-            xxl=self.info['xx'],
-            mwu=self.info['mau'],
-            mwl=self.info['mal'],
-            Cl=self.info['cl'],
-            Cd_wave=self.info['cd_wave'],
-            Cm=self.info['cm'],
-            n_interp_points=n_interp_points
-        )
-
-        self.observation = state_array
-        
-        return self.observation, figure_array
-
