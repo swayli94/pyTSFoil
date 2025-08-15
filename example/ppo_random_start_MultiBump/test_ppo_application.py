@@ -128,7 +128,7 @@ def evaluate_all_airfoils(ppo_agent, n_eval_episodes=1, fig_name_prefix='airfoil
         
         # Create evaluation environment for this specific airfoil
         eval_env = create_env_with_id(
-            worker_id=airfoil_id,  # Use airfoil ID as worker ID
+            specific_airfoil_id=airfoil_id,  # Use airfoil ID as worker ID
             render_mode='save',     # Enable rendering for evaluation
         )
         
