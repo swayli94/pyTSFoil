@@ -129,6 +129,7 @@ If the text indicates no bump is added to the upper or lower surface, then the p
 """
         return description
 
+
 class DescriptionActionGlobalMod():
     '''
     Global modification of airfoil geometry
@@ -310,7 +311,7 @@ class DescriptionActionMultiBump():
                 lower_bumps.append(param_info)
         
         # Create organized parameter descriptions
-        param_descriptions.append("\n**Upper Surface Bumps:**")
+        param_descriptions.append("\n")
         for i in range(0, len(upper_bumps), 2):  # Process in pairs (location, height)
             if i + 1 < len(upper_bumps):
                 loc_param = upper_bumps[i]
@@ -319,15 +320,12 @@ class DescriptionActionMultiBump():
                 base_loc = loc_param['base_location']
                 
                 param_descriptions.append(f"""
-Bump {bump_num} (base location x={base_loc}):
-  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']})
-    * {loc_param['param_detail']}
-    * Units: {loc_param['units']}
-  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']})
-    * {height_param['param_detail']}
-    * Units: {height_param['units']}""")
+Upper Surface Bump {bump_num} (base location x={base_loc}):
+  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']}): deviation from base location
+  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']}): bump height
+""")
         
-        param_descriptions.append("\n**Lower Surface Bumps:**")
+        param_descriptions.append("\n")
         for i in range(0, len(lower_bumps), 2):  # Process in pairs (location, height)
             if i + 1 < len(lower_bumps):
                 loc_param = lower_bumps[i]
@@ -336,13 +334,10 @@ Bump {bump_num} (base location x={base_loc}):
                 base_loc = loc_param['base_location']
                 
                 param_descriptions.append(f"""
-Bump {bump_num} (base location x={base_loc}):
-  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']})
-    * {loc_param['param_detail']}
-    * Units: {loc_param['units']}
-  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']})
-    * {height_param['param_detail']}
-    * Units: {height_param['units']}""")
+Lower Surface Bump {bump_num} (base location x={base_loc}):
+  - **{loc_param['name']}** (range: {loc_param['lower']} to {loc_param['upper']}): deviation from base location
+  - **{height_param['name']}** (range: {height_param['lower']} to {height_param['upper']}): bump height
+""")
         
         description = f"""
 **Airfoil Multi-Bump Modification Strategy:**
@@ -364,17 +359,9 @@ The {self.n_bumps} bumps are strategically positioned at base locations: {', '.j
 **Action Parameters:**
 The modification consists of {len(self.action_names)} parameters ({2 * self.n_bumps} for each surface):{''.join(param_descriptions)}
 
-**Technical Implementation:**
-- Uses Hicks-Henne bump functions for smooth, aerodynamically-reasonable modifications
-- Bump width is fixed at {self.bump_width} for consistent shape characteristics
+**Design Strategy:**
 - Bumps are only applied if their height exceeds the critical threshold ({self.critical_height_for_no_bump}) to avoid insignificant changes
 - {'Maintains' if self.keep_airfoil_tmax else 'Does not maintain'} original maximum thickness during modification
-- Multiple bumps can be combined to create complex shape variations while maintaining smoothness
-
-**Design Strategy:**
-- Use multiple small bumps for fine-tuned local control
-- Coordinate bump locations to avoid interference between adjacent bumps
-- Consider the cumulative effect of multiple bumps on pressure distribution
 - Front bumps (x=0.1, 0.3) primarily affect leading edge suction and transition
 - Middle bumps (x=0.5) control maximum thickness region and shock formation
 - Rear bumps (x=0.7, 0.9) influence pressure recovery and trailing edge characteristics
@@ -396,19 +383,38 @@ The modification consists of {len(self.action_names)} parameters ({2 * self.n_bu
         '''
         Get the instruction for action output
         '''
-        # Build parameter list for instruction
-        param_list = []
-        for name in self.action_names:
-            param_list.append(name)
+        # Build upper and lower surface bump examples
+        upper_examples = []
+        lower_examples = []
+        
+        # Create examples for upper surface bumps
+        for i in range(self.n_bumps):
+            loc_param = f'U{i}L'
+            height_param = f'U{i}H'
+            upper_examples.append(f"\\boxed{{upper surface {loc_param}: 0.01}}")
+            upper_examples.append(f"\\boxed{{upper surface {height_param}: 0.002}}")
+        
+        # Create examples for lower surface bumps  
+        for i in range(self.n_bumps):
+            loc_param = f'L{i}L'
+            height_param = f'L{i}H'
+            lower_examples.append(f"\\boxed{{lower surface {loc_param}: -0.01}}")
+            lower_examples.append(f"\\boxed{{lower surface {height_param}: -0.002}}")
         
         description = f"""
-At the very end of your response, you **must** tell me the decision in the following format: 
-action = [{', '.join(param_list)}]
+**Action Output Format:**
+At the very end of your response, you **must** tell me the decision in the following format:
 
-For example: 
-action = [0.01, 0.002, -0.02, -0.001, 0.0, 0.0, 0.01, 0.001, 0.0, 0.0, 0.02, -0.003, 0.01, 0.002, -0.01, -0.001, 0.0, 0.0, 0.01, 0.001]
+<reasoning>
+Your reasoning
+</reasoning>
 
-Where each value corresponds to:
+<answer>
+{chr(10).join(upper_examples)}
+{chr(10).join(lower_examples)}
+</answer>
+
+Where:
 - First {self.n_bumps * 2} values: Upper surface bumps (alternating location deviation, height)
 - Last {self.n_bumps * 2} values: Lower surface bumps (alternating location deviation, height)
 
@@ -417,6 +423,7 @@ If no modification is desired for a specific bump, set both its location deviati
 No more content after the decision in this format is given.
 """
         return description
+
 
 class DescriptionStateFigure():
     '''
