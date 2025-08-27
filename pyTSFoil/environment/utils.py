@@ -15,8 +15,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
     Gym environment with FigureState and GlobalModificationAction.
     '''
     def __init__(self, 
-            database: AirfoilDatabase,
-            airfoil_coordinates: np.ndarray|None = None,
+            database: AirfoilDatabase|None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -27,11 +26,11 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             action_class: GlobalModificationAction = None,
             n_max_step: int = 10,
             reward_class: Reward|None = None,
+            initial_airfoil: int|str|np.ndarray = 'random-selected',
             ) -> None:
 
         super().__init__(
             database=database,
-            airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
             cl_target=cl_target,
@@ -40,6 +39,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             n_max_step=n_max_step,
             reward_class=reward_class,
             path_save_fig_of_observation=path_save_fig_of_observation,
+            initial_airfoil=initial_airfoil,
         )
 
         self.state_class = state_class if state_class is not None else FigureState()
@@ -65,7 +65,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
     Gym environment with FigureState and BumpModificationAction.
     '''
     def __init__(self, 
-            airfoil_coordinates: np.ndarray,
+            database: AirfoilDatabase|None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -76,10 +76,11 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             action_class: BumpModificationAction = None,
             n_max_step: int = 10,
             reward_class: Reward|None = None,
+            initial_airfoil: int|str|np.ndarray = 'random-selected',
             ) -> None:
         
         super().__init__(
-            airfoil_coordinates=airfoil_coordinates,
+            database=database,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
             cl_target=cl_target,
@@ -88,6 +89,7 @@ class TSFoilEnv_FigState_BumpAction(TSFoilEnv_Template):
             n_max_step=n_max_step,
             reward_class=reward_class,
             path_save_fig_of_observation=path_save_fig_of_observation,
+            initial_airfoil=initial_airfoil,
         )
         
         self.state_class = state_class if state_class is not None else FigureState()
@@ -113,8 +115,7 @@ class TSFoilEnv_FigState_MultiBumpAction(TSFoilEnv_Template):
     Gym environment with FigureState and MultiBumpModificationAction.
     '''
     def __init__(self, 
-            database: AirfoilDatabase,
-            airfoil_coordinates: np.ndarray | None = None,
+            database: AirfoilDatabase|None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -125,11 +126,11 @@ class TSFoilEnv_FigState_MultiBumpAction(TSFoilEnv_Template):
             action_class: MultiBumpModificationAction = None,
             n_max_step: int = 10,
             reward_class: Reward|None = None,
+            initial_airfoil: int|str|np.ndarray = 'random-selected',
             ) -> None:
         
         super().__init__(
             database=database,
-            airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
             cl_target=cl_target,
@@ -138,6 +139,7 @@ class TSFoilEnv_FigState_MultiBumpAction(TSFoilEnv_Template):
             n_max_step=n_max_step,
             reward_class=reward_class,
             path_save_fig_of_observation=path_save_fig_of_observation,
+            initial_airfoil=initial_airfoil,
         )
         
         self.state_class = state_class if state_class is not None else FigureState()

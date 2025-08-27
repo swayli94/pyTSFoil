@@ -35,11 +35,11 @@ class Environment:
         self.description_state = DescriptionStateFigure(self.state)
         self.foil_env = create_env()
 
-    def get_env_reward(self, actions: np.ndarray, initial_state: np.ndarray) -> float:
+    def get_env_reward(self, actions: np.ndarray, initial_airfoil: np.ndarray) -> float:
         '''
         Get the reward of the environment.
         '''
-        self.foil_env.reset(airfoil_coordinates=initial_state)
+        self.foil_env.reset(airfoil_coordinates=initial_airfoil)
         for action in actions:
             self.foil_env.step(action)
         reward = self.foil_env.reward
@@ -154,19 +154,23 @@ class Environment:
 
 if __name__ == "__main__":
     
-    trajectory_json_path = '/data1/xwn/projects/llm_grpo_foil/pyTSFoil/example/env_FigState_MultiBump/trajectory.json'
+    # trajectory_json_path = '/data1/xwn/projects/llm_grpo_foil/pyTSFoil/example/env_FigState_MultiBump/trajectory.json'
+    trajectory_json_path = 'example/env_FigState_MultiBump/trajectory.json'
     os.makedirs('example/prompt/descriptions', exist_ok=True)
     env = Environment()
     prompt = env.generate_prompt(trajectory_json_path)
 
     with open(trajectory_json_path, 'r') as f:
         trajectory_data = json.load(f)
+        
+    initial_airfoil = np.array(trajectory_data[0]['info']['airfoil_coordinates'])
 
     for i in range(1, 4):
-        initial_state = np.array(trajectory_data[0]['info']['airfoil_coordinates'])
-        actions = [np.array(action['action']) for action in trajectory_data[:i]]
-        reward = env.get_env_reward(actions = actions, initial_state=initial_state)
-        print(reward)
-    # print(len(trajectory_data))
+        
+        actions = [np.array(action['action']) for action in trajectory_data[1:i+1]]
     
+        reward = env.get_env_reward(actions = actions, initial_airfoil=initial_airfoil)
+        
+        print(f"Step {env.foil_env.i_current_step}: Reward = {reward:.3f}; {trajectory_data[i]['reward']:.3f}")
+
 

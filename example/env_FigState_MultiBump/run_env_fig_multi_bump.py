@@ -18,7 +18,7 @@ if __name__ == "__main__":
     action_class = MultiBumpModificationAction()
     
     env = TSFoilEnv_FigState_MultiBumpAction(
-            airfoil_coordinates=airfoil_coordinates,
+            initial_airfoil=airfoil_coordinates,
             output_dir=path,
             render_mode='save',
             path_save_fig_of_observation=os.path.join(path, 'fig_of_observation.png'),

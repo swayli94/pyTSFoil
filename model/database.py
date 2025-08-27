@@ -49,9 +49,31 @@ class AirfoilDatabase():
     def n_airfoils(self) -> int:
         return len(self.airfoils)
 
-    def get_airfoil_coordinates(self, ID: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def get_airfoil_coordinates(self, ID: int|None = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        '''
+        Get airfoil coordinates from the database.
+
+        Parameters
+        ----------
+        ID : int, optional
+            The ID of the airfoil.
+            The default is None, which means a random airfoil is selected.
+
+        Returns
+        -------
+        airfoil_coordinates : np.ndarray
+            The airfoil coordinates.
+        x : np.ndarray
+            The x coordinates of the airfoil.
+        yu : np.ndarray
+            The upper surface coordinates of the airfoil.
+        yl : np.ndarray
+            The lower surface coordinates of the airfoil.
+        '''
         
-        if ID >= len(self.airfoils):
+        if ID is None:
+            ID = np.random.randint(0, len(self.airfoils))
+        elif ID >= len(self.airfoils):
             ID = ID % len(self.airfoils)
         
         cst_u = self.airfoils[ID]['cst_u']
