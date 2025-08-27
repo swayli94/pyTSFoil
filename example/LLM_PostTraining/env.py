@@ -45,7 +45,7 @@ class Environment:
         reward = self.foil_env.reward
         self.foil_env.close()
 
-        return 0.0
+        return reward
     
     def generate_prompt(self, trajectory_json_path: str, random_step: bool = True):
         # 默认是找一个随机的step生成一条数据
