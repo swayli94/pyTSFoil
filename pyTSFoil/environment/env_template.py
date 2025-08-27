@@ -3,12 +3,13 @@ Template gym environment for reinforcement learning.
 '''
 import os
 import json
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Optional
 
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
+from model.database import AirfoilDatabase
 
 from pyTSFoil.pytsfoil import PyTSFoil
 from pyTSFoil.environment.basic import Reward, Action, FigureState
@@ -79,9 +80,41 @@ class TSFoilEnv_Template(gym.Env):
     - The reward is the lift to drag ratio. (default)
     - The done is the step number is greater than the maximum step number. (default)
     - The info is the information of the current step. (default)
+    
+    Parameters
+    ----------
+    database: AirfoilDatabase|None
+        The database of the airfoil.
+        If None, the database is not used. You need to specify the initial_airfoil as np.ndarray.
+    angle_of_attack: float
+        The angle of attack.
+    mach_infinity: float
+        The Mach number.
+    cl_target: float
+        The target lift coefficient.
+    output_dir: str
+        The directory to save the output.
+    render_mode: str
+        The mode to render the environment.
+    state_class: FigureState
+        The state class.
+    action_class: Action
+        The action class.
+    n_max_step: int
+        The maximum number of steps.
+    reward_class: Reward
+        The reward class.
+    path_save_fig_of_observation: str
+        The path to save the figure of observation.
+    initial_airfoil: int|str|np.ndarray
+        The initial airfoil.
+        - 'random-interpolated': random interpolated airfoil from the database.
+        - 'random-selected': random select original airfoil from the database.  (default)
+        - int: the airfoil ID from the database.
+        - np.ndarray: the airfoil coordinates.
     '''
     def __init__(self, 
-            airfoil_coordinates: np.ndarray,
+            database: AirfoilDatabase|None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -92,9 +125,11 @@ class TSFoilEnv_Template(gym.Env):
             n_max_step: int = 10,
             reward_class: Reward|None = None,
             path_save_fig_of_observation: str = None,
+            initial_airfoil: int|str|np.ndarray = 'random-selected', # 'random' or specify the airfoil ID, or specify the airfoil coordinates
             ) -> None:
         
         super(TSFoilEnv_Template, self).__init__()
+
         
         self.name = 'TSFoilEnv_Template'
         self.ID = 0
@@ -131,11 +166,12 @@ class TSFoilEnv_Template(gym.Env):
         
         self.n_airfoil_points = 101 # Number of points in the airfoil surfaces
         self.x_airfoil_surface = dist_clustcos(self.n_airfoil_points)
+
+        self.database = database
+        self.initial_airfoil = initial_airfoil
         
-        interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
-        
+        interp_coordinates = self._get_initial_airfoil()
         self.airfoil_coordinates = interp_coordinates.copy()
-        self.airfoil_coordinates_initial = interp_coordinates.copy()
 
         self.render_mode = render_mode
         
@@ -181,12 +217,19 @@ class TSFoilEnv_Template(gym.Env):
         
         return self.observation, self.reward, self.done, self.info
 
-    def reset(self) -> np.ndarray:
+    def reset(self, airfoil_coordinates: np.ndarray|None = None) -> np.ndarray:
         '''
         Reset the environment.
         '''
-        self.airfoil_coordinates = self.airfoil_coordinates_initial.copy()
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial.copy()
+        # Get airfoil coordinates
+        if airfoil_coordinates is None:
+            interp_coordinates = self._get_initial_airfoil()
+        else:
+            interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+        
+        # Reset environment
+        self.airfoil_coordinates = interp_coordinates.copy()
+        self.pytsfoil.airfoil['coordinates'] = interp_coordinates.copy()
         
         self._run_simulation()
 
@@ -241,6 +284,28 @@ class TSFoilEnv_Template(gym.Env):
             plt.close(self.fig)
             self.fig = None
 
+    def _get_initial_airfoil(self) -> np.ndarray:
+        '''
+        Get the initial airfoil for pyTSFoil solver.
+        '''
+        if isinstance(self.initial_airfoil, np.ndarray):
+            airfoil_coordinates = self.initial_airfoil.copy()
+        elif self.database is None:
+            raise ValueError('Database is not specified, please specify the initial_airfoil as np.ndarray or specify the database.')
+        elif isinstance(self.initial_airfoil, int):
+            airfoil_coordinates, _, _, _ = self.database.get_airfoil_coordinates(ID=self.initial_airfoil)
+        elif self.initial_airfoil == 'random-selected':
+            airfoil_coordinates, _, _, _ = self.database.get_airfoil_coordinates(ID=None)
+        elif self.initial_airfoil == 'random-interpolated':
+            airfoil_coordinates, _, _, _ = self.database.get_random_airfoil_coordinates()
+        else:
+            raise ValueError(f'Invalid initial airfoil: {self.initial_airfoil}. '
+                             'Please specify the airfoil ID, coordinates, or "random-interpolated" or "random-selected".')
+            
+        interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+
+        return interp_coordinates
+    
     def _preprocess_airfoil(self, airfoil_coordinates: np.ndarray) -> np.ndarray:
         '''
         Preprocess the airfoil coordinates.
@@ -791,5 +856,5 @@ class TSFoilEnv_Template(gym.Env):
         if self.render_mode in ['save', 'both']:
             # Save current state render
             render_path = os.path.join(self.output_dir, self.render_fig_fname)
-            self.fig.savefig(render_path, dpi=300, bbox_inches='tight')
+            self.fig.savefig(render_path, dpi=100, bbox_inches='tight')
 

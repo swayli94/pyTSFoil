@@ -36,8 +36,7 @@ path = os.path.dirname(os.path.abspath(__file__))
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 
-                        n_max_step=10,
-                        show_airfoil=False):
+                        n_max_step=10):
     '''
     Factory function to create a new environment instance with unique worker ID
     
@@ -53,44 +52,21 @@ def create_env_with_id(worker_id=None, render_mode='none',
     # Create sample airfoil
     database = AirfoilDatabase(fname_database=os.path.join(path, 'selected-airfoils-cst.dat'))
     
-    if worker_id is not None:
-        # airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(worker_id)
-    else:
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
-    
     # Custom action class
     action_class = GlobalModificationAction()
 
     # Create unique output directory for each worker to avoid file conflicts
     if worker_id is not None:
+        initial_airfoil = worker_id
         worker_output_dir = os.path.join(path, 'temp', f'worker_{worker_id}')
         os.makedirs(worker_output_dir, exist_ok=True)
-        
-        # Plot airfoil geometry
-        if show_airfoil:
-            os.makedirs(os.path.join(path, 'temp_geometry'), exist_ok=True)
-            plt.plot(airfoil_coordinates[:, 0], airfoil_coordinates[:, 1], 'k')
-            plt.xlim(-0.1, 1.1)
-            plt.ylim(-0.1, 0.1)
-            plt.savefig(os.path.join(path, 'temp_geometry', f'airfoil_{worker_id}.png'))
-            plt.close()
-
     else:
+        initial_airfoil = 10  # RAE2822
         worker_output_dir = path
-        
-        # Plot airfoil geometry
-        if show_airfoil:
-            os.makedirs(os.path.join(path, 'temp_geometry'), exist_ok=True)
-            plt.plot(airfoil_coordinates[:, 0], airfoil_coordinates[:, 1], 'k')
-            plt.xlim(-0.1, 1.1)
-            plt.ylim(-0.1, 0.1)
-            plt.savefig(os.path.join(path, 'temp_geometry', 'airfoil.png'))
-            plt.close()
 
     # Create environment instance
     return TSFoilEnv_FigState_GlobalAction(
-        airfoil_coordinates=airfoil_coordinates,
+        initial_airfoil=initial_airfoil,
         output_dir=worker_output_dir,
         render_mode=render_mode,
         action_class=action_class,

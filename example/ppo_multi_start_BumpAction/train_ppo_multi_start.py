@@ -102,7 +102,7 @@ def create_env_with_id(worker_id=None, render_mode='none',
 
     # Create environment instance
     return TSFoilEnv_FigState_BumpAction(
-        airfoil_coordinates=airfoil_coordinates,
+        initial_airfoil=airfoil_coordinates,
         output_dir=worker_output_dir,
         render_mode=render_mode,
         action_class=action_class,

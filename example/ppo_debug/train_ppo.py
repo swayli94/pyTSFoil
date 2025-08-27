@@ -39,7 +39,7 @@ def main():
 
     # Create environment
     env = TSFoilEnv_FigState_BumpAction(
-        airfoil_coordinates=airfoil_coordinates,
+        initial_airfoil=airfoil_coordinates,
         output_dir=path,
         render_mode='both',  # or 'display' or 'both',
         action_class=action_class

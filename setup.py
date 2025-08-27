@@ -1,8 +1,10 @@
 from setuptools import setup, find_packages
-from pyTSFoil import __version__, __name__
+from pathlib import Path
 
-setup(name=__name__,
-      version=__version__,
+NAME = "pyTSFoil"
+VERSION = (Path(__file__).parent / NAME / "VERSION").read_text().strip()
+setup(name=NAME,
+      version=VERSION,
       description='This is a python interface of TSFOIL2',
       keywords=['CFD', 'TSFOIL2', 'transonic small disturbance theory'],
       download_url='https://github.com/swayli94/pyTSFoil',

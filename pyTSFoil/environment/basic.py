@@ -373,7 +373,6 @@ class GlobalModificationAction(Action):
         self.action_lower_bound = np.array([-self.action_dict[key]['bound'] for key in self.action_dict.keys()])
 
 
-
 class MultiBumpModificationAction(Action):
     '''
     Action of multiple bump modification to the upper and lower surfaces of an airfoil.
