@@ -4,6 +4,7 @@ Gym environment with CST-modeling tools.
 import numpy as np
 from typing import Tuple
 from gymnasium import spaces
+from model.database import AirfoilDatabase
 
 from pyTSFoil.environment.env_template import TSFoilEnv_Template
 from pyTSFoil.environment.basic import FigureState, GlobalModificationAction, BumpModificationAction, MultiBumpModificationAction, Reward
@@ -14,7 +15,8 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
     Gym environment with FigureState and GlobalModificationAction.
     '''
     def __init__(self, 
-            airfoil_coordinates: np.ndarray,
+            database: AirfoilDatabase,
+            airfoil_coordinates: np.ndarray|None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -28,6 +30,7 @@ class TSFoilEnv_FigState_GlobalAction(TSFoilEnv_Template):
             ) -> None:
 
         super().__init__(
+            database=database,
             airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,
@@ -110,7 +113,8 @@ class TSFoilEnv_FigState_MultiBumpAction(TSFoilEnv_Template):
     Gym environment with FigureState and MultiBumpModificationAction.
     '''
     def __init__(self, 
-            airfoil_coordinates: np.ndarray,
+            database: AirfoilDatabase,
+            airfoil_coordinates: np.ndarray | None = None,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
             cl_target : float|None = None,
@@ -124,6 +128,7 @@ class TSFoilEnv_FigState_MultiBumpAction(TSFoilEnv_Template):
             ) -> None:
         
         super().__init__(
+            database=database,
             airfoil_coordinates=airfoil_coordinates,
             angle_of_attack=angle_of_attack,
             mach_infinity=mach_infinity,

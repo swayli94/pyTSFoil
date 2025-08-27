@@ -9,6 +9,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
+from model.database import AirfoilDatabase
 
 from pyTSFoil.pytsfoil import PyTSFoil
 from pyTSFoil.environment.basic import Reward, Action, FigureState
@@ -81,6 +82,7 @@ class TSFoilEnv_Template(gym.Env):
     - The info is the information of the current step. (default)
     '''
     def __init__(self, 
+            database: AirfoilDatabase,
             airfoil_coordinates: np.ndarray,
             angle_of_attack : float = 0.5,
             mach_infinity : float = 0.75,
@@ -92,9 +94,11 @@ class TSFoilEnv_Template(gym.Env):
             n_max_step: int = 10,
             reward_class: Reward|None = None,
             path_save_fig_of_observation: str = None,
+            random_initial_airfoil: bool = True,
             ) -> None:
         
         super(TSFoilEnv_Template, self).__init__()
+
         
         self.name = 'TSFoilEnv_Template'
         self.ID = 0
@@ -131,11 +135,18 @@ class TSFoilEnv_Template(gym.Env):
         
         self.n_airfoil_points = 101 # Number of points in the airfoil surfaces
         self.x_airfoil_surface = dist_clustcos(self.n_airfoil_points)
+
+        self.random_initial_airfoil = random_initial_airfoil
+
+        if not self.random_initial_airfoil:
         
-        interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+            self.interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+            
+        else:
+            self.interp_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
         
-        self.airfoil_coordinates = interp_coordinates.copy()
-        self.airfoil_coordinates_initial = interp_coordinates.copy()
+        self.airfoil_coordinates = self.interp_coordinates.copy()
+        self.airfoil_coordinates_initial = self.interp_coordinates.copy()
 
         self.render_mode = render_mode
         
@@ -181,12 +192,17 @@ class TSFoilEnv_Template(gym.Env):
         
         return self.observation, self.reward, self.done, self.info
 
-    def reset(self) -> np.ndarray:
+    def reset(self, airfoil_coordinates: np.ndarray|None = None) -> np.ndarray:
         '''
         Reset the environment.
         '''
-        self.airfoil_coordinates = self.airfoil_coordinates_initial.copy()
-        self.pytsfoil.airfoil['coordinates'] = self.airfoil_coordinates_initial.copy()
+        if airfoil_coordinates is not None:
+            self.interp_coordinates = self._preprocess_airfoil(airfoil_coordinates)
+        else:
+            if self.random_initial_airfoil:
+                self.interp_coordinates, _, _, _ = self.database.get_random_airfoil_coordinates()
+        self.airfoil_coordinates = self.interp_coordinates.copy()
+        self.pytsfoil.airfoil['coordinates'] = self.interp_coordinates.copy()
         
         self._run_simulation()
 

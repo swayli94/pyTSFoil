@@ -401,20 +401,36 @@ The modification consists of {len(self.action_names)} parameters ({2 * self.n_bu
         for name in self.action_names:
             param_list.append(name)
         
-        description = f"""
-At the very end of your response, you **must** tell me the decision in the following format: 
-action = [{', '.join(param_list)}]
+        description = r"""
+In your response, you **must** response in the following format exclude the content in the brackets:
 
-For example: 
-action = [0.01, 0.002, -0.02, -0.001, 0.0, 0.0, 0.01, 0.001, 0.0, 0.0, 0.02, -0.003, 0.01, 0.002, -0.01, -0.001, 0.0, 0.0, 0.01, 0.001]
+### Reasoning
+(Your reasoning content, you should analyse historical information and the current state of the airfoil, and conclude to a decision.)
 
-Where each value corresponds to:
-- First {self.n_bumps * 2} values: Upper surface bumps (alternating location deviation, height)
-- Last {self.n_bumps * 2} values: Lower surface bumps (alternating location deviation, height)
 
-If no modification is desired for a specific bump, set both its location deviation and height to 0.0.
-
-No more content after the decision in this format is given.
+### Answer
+(Alter the value in your answer, and if no modification is desired for a specific bump, you can skip that bump.)
+\\boxed{upper bump 0 deviation: 0.01}
+\\boxed{upper bump 0 height: 0.002}
+\\boxed{upper bump 1 deviation: 0.01}
+\\boxed{upper bump 1 height: 0.002} 
+\\boxed{upper bump 2 deviation: 0.01}
+\\boxed{upper bump 2 height: 0.002}
+\\boxed{upper bump 3 deviation: 0.01}
+\\boxed{upper bump 3 height: 0.002}
+\\boxed{upper bump 4 deviation: 0.01}
+\\boxed{upper bump 4 height: 0.002}
+\\boxed{lower bump 0 deviation: -0.01}
+\\boxed{lower bump 0 height: -0.002}
+\\boxed{lower bump 1 deviation: -0.01}
+\\boxed{lower bump 1 height: -0.002}
+\\boxed{lower bump 2 deviation: -0.01}
+\\boxed{lower bump 2 height: -0.002}
+\\boxed{lower bump 3 deviation: -0.01}
+\\boxed{lower bump 3 height: -0.002}
+\\boxed{lower bump 4 deviation: -0.01}
+\\boxed{lower bump 4 height: -0.002}
+</answer>
 """
         return description
 

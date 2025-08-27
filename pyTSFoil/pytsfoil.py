@@ -52,6 +52,34 @@ except ImportError as e:
     print("  python3 pyTSFoil/compile_f2py.py")
     sys.exit(1)
 
+import os, socket, time, uuid, threading
+
+def get_output_dir(base_dir: Path) -> Path:
+    """
+    在 base_dir 下为当前进程/线程创建唯一目录并返回。
+    结构：base/run-YYYYmmdd-HHMMSS/host-<hostname>/pid-<pid>/thr-<tid>-<uuid4>
+    """
+    # 运行批次目录（同一次程序运行共享）
+    ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    host = socket.gethostname()
+    pid = os.getpid()
+    tid = threading.get_ident()  # 多进程下每个进程的线程ID空间独立
+
+    run_dir = base_dir / f"run-{ts}" / f"host-{host}" / f"pid-{pid}"
+
+    # 尝试创建一个带 UUID 的线程目录，避免极端碰撞
+    for _ in range(5):
+        leaf = f"thr-{tid}-{uuid.uuid4().hex[:8]}"
+        outdir = run_dir / leaf
+        try:
+            outdir.mkdir(parents=True, exist_ok=False)
+            return outdir
+        except FileExistsError:
+            continue
+    # 极端情况下仍冲突，退而求其次用 mkdtemp
+    from tempfile import mkdtemp
+    return Path(mkdtemp(prefix="fallback-", dir=str(run_dir)))
+
 
 class PyTSFoil(object):
     '''
@@ -102,7 +130,7 @@ class PyTSFoil(object):
         self.work_dir = os.getcwd()
         
         if output_dir is None:
-            self.output_dir = self.work_dir
+            self.output_dir = get_output_dir(self.work_dir)
         else:
             self.output_dir = output_dir
         

@@ -53,11 +53,11 @@ def create_env_with_id(worker_id=None, render_mode='none',
     # Create sample airfoil
     database = AirfoilDatabase(fname_database=os.path.join(path, 'selected-airfoils-cst.dat'))
     
-    if worker_id is not None:
-        # airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(worker_id)
-    else:
-        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
+    # if worker_id is not None:
+    #     # airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates()
+    #     airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(worker_id)
+    # else:
+    #     airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
     
     # Custom action class
     action_class = MultiBumpModificationAction()
@@ -90,7 +90,8 @@ def create_env_with_id(worker_id=None, render_mode='none',
 
     # Create environment instance
     return TSFoilEnv_FigState_MultiBumpAction(
-        airfoil_coordinates=airfoil_coordinates,
+        database=database,
+        # airfoil_coordinates=airfoil_coordinates,
         output_dir=worker_output_dir,
         render_mode=render_mode,
         action_class=action_class,
