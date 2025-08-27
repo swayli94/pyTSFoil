@@ -70,7 +70,8 @@ def check_validity(airfoil_coordinates: np.ndarray) -> bool:
 
 def create_env_with_id(worker_id=None, render_mode='none', 
                         n_max_step=10,
-                        show_airfoil=False):
+                        show_airfoil=False,
+                        specific_airfoil_id=None):
     '''
     Factory function to create a new environment instance with unique worker ID
     
@@ -87,15 +88,13 @@ def create_env_with_id(worker_id=None, render_mode='none',
     database = AirfoilDatabase(fname_database=os.path.join(path, 'selected-airfoils-cst.dat'))
     
     if worker_id is not None:
-        
-        print('>>> Creating random airfoils')
-        
         airfoil_coordinates, _, _, _ = database.get_random_airfoil_coordinates(
             n_max_try=10,
             check_validity_function=check_validity,
             )
         
-        print('>>> Airfoil created')
+    elif specific_airfoil_id is not None:
+        airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(specific_airfoil_id)
         
     else:
         airfoil_coordinates, _, _, _ = database.get_airfoil_coordinates(10)  # RAE2822
@@ -229,8 +228,8 @@ def main(device='auto', resume=False):
     '''Main training loop using refactored multiprocessing implementation'''
     
     # Number of parallel environments (can be increased with new reliable implementation)
-    n_envs = 400
-    n_updates = 200
+    n_envs = 800
+    n_updates = 201
     
     # Create list of environment factory functions with unique worker IDs
     env_fns = [EnvFactory(i) for i in range(n_envs)]
@@ -249,17 +248,17 @@ def main(device='auto', resume=False):
         lr=1e-5,
         gamma=0.99,
         gae_lambda=0.95,
-        clip_epsilon=0.15,
+        clip_epsilon=0.1,
         value_loss_coef=1.0,
-        entropy_coef=0.0001,
+        entropy_coef=0.001,
         max_grad_norm=0.5,
-        n_epochs=5,
+        n_epochs=3,
         batch_size=500,
         n_steps=5,  # A limited number of steps due to the nature of the problem
         dim_latent=128,
         dim_hidden=1024,
         n_interp_points=101,
-        initial_action_std=0.2,
+        initial_action_std=0.1,
         device=device,
         max_processes=50,
         actor_critic_class_fn=ActorCritic_Custom
@@ -272,9 +271,9 @@ def main(device='auto', resume=False):
     if resume and os.path.exists(save_path):
         ppo_agent.load_model(save_path)
         
-        ppo_agent.actor_critic.actor_log_std.data = torch.ones_like(
-            ppo_agent.actor_critic.actor_log_std, device=device
-        ) * np.log(ppo_agent.initial_action_std)
+        # ppo_agent.actor_critic.actor_log_std.data = torch.ones_like(
+        #     ppo_agent.actor_critic.actor_log_std, device=device
+        # ) * np.log(ppo_agent.initial_action_std)
     
     # Train the agent
     try:
@@ -286,7 +285,7 @@ def main(device='auto', resume=False):
             save_path=os.path.join(path, 'ppo_fig_bumps_model.pt'),
             plot_training=True,
             plot_path=os.path.join(path, 'training_progress.png'),
-            use_action_std_decay=True,
+            use_action_std_decay=False,
             action_std_decay_max_updates=n_updates,
             min_action_std=0.1
         )
