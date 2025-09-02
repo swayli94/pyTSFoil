@@ -337,25 +337,16 @@ The modification consists of {len(self.action_names)} parameters ({2 * self.n_bu
             lower_examples.append(f"\\boxed{{{self.action_names[2*i+1+2*self.n_bumps]}: -0.002}}")
         
         description = f"""
-**Action Output Format:**
-At the very end of your response, you **must** tell me the decision in the following format:
+**Output Format:**
+You **must** respond in the following format exclude the content in the brackets:
 
-<reasoning>
-Your reasoning
-</reasoning>
+### Reasoning
+(Your reasoning content, you should analyse historical information and the current state of the airfoil, and conclude to a decision.)
 
-<answer>
+### Answer
+(Alter the value in your answer, and if no modification is desired for a specific bump, you can skip that bump. First {self.n_bumps * 2} values are upper surface bumps and last {self.n_bumps * 2} values are lower surface bumps. You should alternate the values of location deviation and the height)
 {chr(10).join(upper_examples)}
 {chr(10).join(lower_examples)}
-</answer>
-
-Where:
-- First {self.n_bumps * 2} values: Upper surface bumps (alternating location deviation, height)
-- Last {self.n_bumps * 2} values: Lower surface bumps (alternating location deviation, height)
-
-If no modification is desired for a specific bump, set both its location deviation and height to 0.0.
-
-No more content after the decision in this format is given.
 """
         return description
 
