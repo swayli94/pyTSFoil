@@ -125,6 +125,7 @@ class TSFoilEnv_Template(gym.Env):
             n_max_step: int = 10,
             reward_class: Reward|None = None,
             path_save_fig_of_observation: str = None,
+            path_save_fig_trajectory: str = None,
             initial_airfoil: int|str|np.ndarray = 'random-selected', # 'random' or specify the airfoil ID, or specify the airfoil coordinates
             ) -> None:
         
@@ -195,7 +196,12 @@ class TSFoilEnv_Template(gym.Env):
         self._init_render()
         
         self.path_save_fig_of_observation = path_save_fig_of_observation
+        if path_save_fig_trajectory is None:
+            self.path_save_fig_trajectory = self.output_dir
+        else:
+            self.path_save_fig_trajectory = path_save_fig_trajectory
         self.render_fig_fname = 'tsfoil_gym_render.png'
+        self.render_dpi = 100
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, dict]:
         
@@ -205,6 +211,7 @@ class TSFoilEnv_Template(gym.Env):
         self._apply_action_to_reference_step(action)
         self._run_simulation()
         self._get_reward_and_validity()
+        self._get_total_reward()
         self._get_done()
         self._get_info()
         self._get_observation()
@@ -451,18 +458,35 @@ class TSFoilEnv_Template(gym.Env):
         
         self.reward = self.reward_class.calculate_reward(cl, cd, cd_old, self.cl_target)
         
-        #* Check if the current step is valid
-        if self.reward > self.reward_class.critical_reward_to_update_reference_step:
-            self.total_reward += self.reward
-            self.is_current_step_valid = True
-        else:
-            self.is_current_step_valid = False
-            
+        self.is_current_step_valid = True
+        
+        #* Check if the current step is valid by the action
         if not self.is_action_valid:
             self.reward = self.reward_class.invalid_action_penalty_reward
             self.is_current_step_valid = False
+          
+        #* Check if the current step is valid by the Mach number
+        xx = self.pytsfoil.mesh['xx']
+        mau = self.pytsfoil.data_summary['mau']
+        mal = self.pytsfoil.data_summary['mal']
+        if self.reward_class._check_divergence_by_mach(xx, mau, mal):
+            self.reward = self.reward_class.invalid_action_penalty_reward
+            self.is_current_step_valid = False
         
+        #* Check if the current step is valid by the reward
+        if self.reward < self.reward_class.critical_reward_to_update_reference_step:
+            self.is_current_step_valid = False
+
         return self.reward
+
+    def _get_total_reward(self) -> float:
+        '''
+        Update the total reward.
+        '''
+        if self.is_current_step_valid:
+            self.total_reward += self.reward
+            
+        return self.total_reward
 
     def _get_done(self) -> bool:
         '''
@@ -513,6 +537,51 @@ class TSFoilEnv_Template(gym.Env):
         if self.is_current_step_valid:
             self.i_reference_step = self.i_current_step
 
+    def step_with_greedy_search(self, n_action_try: int = 10) -> tuple[np.ndarray, float, bool, dict]:
+        '''
+        Take a step with greedy search.
+        
+        - Actions are randomly sampled from the action space.
+        - The action with the highest reward is selected.
+        - `n_action_try` is the number of actions to try.
+        '''
+
+        self.i_current_step += 1
+        
+        previous_state = self._get_state_from_reference_step()
+        
+        reward_max = -np.inf
+        action_max = None
+        
+        for _ in range(n_action_try):
+            
+            action = self.action_class.random_action()
+            self._apply_action_to_reference_step(action)
+            self._run_simulation()
+            self._get_reward_and_validity()
+            if self.reward > reward_max and self.is_current_step_valid:
+                reward_max = self.reward
+                action_max = action
+                
+        if action_max is None:
+            action_max = self.action_class.random_action()
+                
+        self._apply_action_to_reference_step(action_max)
+        self._run_simulation()
+        self._get_reward_and_validity()
+        self._get_total_reward()
+        self._get_done()
+        self._get_info()
+        self._get_observation()
+        
+        # Store trajectory data (previous_state, action, reward, next_state) + all step info
+        self._store_trajectory_data(previous_state, action, self.reward, self.observation)
+        
+        # Update reference step for the next step
+        self._update_reference_step()
+        
+        return self.observation, self.reward, self.done, self.info
+    
     #* Undo related functions
 
     def undo_last_step(self) -> None:
@@ -855,6 +924,6 @@ class TSFoilEnv_Template(gym.Env):
         '''
         if self.render_mode in ['save', 'both']:
             # Save current state render
-            render_path = os.path.join(self.output_dir, self.render_fig_fname)
-            self.fig.savefig(render_path, dpi=100, bbox_inches='tight')
+            render_path = os.path.join(self.path_save_fig_trajectory, self.render_fig_fname)
+            self.fig.savefig(render_path, dpi=self.render_dpi, bbox_inches='tight')
 

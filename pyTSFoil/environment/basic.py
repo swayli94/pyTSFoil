@@ -754,3 +754,14 @@ class Reward():
             
         return reward
 
+    def _check_divergence_by_mach(self, xx: np.ndarray, mau: np.ndarray, mal: np.ndarray) -> bool:
+        '''
+        Check if the simulation failed. Look at the wall Mach number near trailing edge (x=0.9).
+        If Mw > 1.0, the simulation failed.
+        
+        '''
+        ii = np.argmin(np.abs(xx - 0.9))
+        if mau[ii] > 1.0 or mal[ii] > 1.0:
+            return True
+        return False
+

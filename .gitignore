@@ -16,3 +16,7 @@
 
 temp*
 test_ppo
+
+example/sample_greedy_trajectories/figures/
+example/sample_greedy_trajectories/trajectories/
+
