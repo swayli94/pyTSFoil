@@ -54,6 +54,10 @@ class Action():
                         
         for i in range(self.dim_action):
             self.action_upper_bound[i] = max(self.action_upper_bound[i], self.action_lower_bound[i]+EPSILON)
+            
+        # action precision, default is 3 decimal places
+        # self.action_precision = [6 for _ in range(self.dim_action)]
+        self.action_precision = None
 
     def _update_action_bounds(self, action_dict: dict, EPSILON: float=1E-20) -> None:
         '''
@@ -100,6 +104,11 @@ class Action():
             scaled_action_array = np.clip(scaled_action_array, -1, 1)
         
         action_array = (scaled_action_array + 1)/2*(self.action_upper_bound-self.action_lower_bound) + self.action_lower_bound
+        
+        if self.action_precision is not None:
+            action_array = np.array([
+                np.round(val, prec) for val, prec in zip(action_array, self.action_precision)
+            ])
         
         return action_array
 
