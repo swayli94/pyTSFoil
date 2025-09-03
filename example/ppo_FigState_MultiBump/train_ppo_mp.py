@@ -12,6 +12,14 @@ Key improvements:
 - More consistent performance across different systems
 '''
 import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import numpy as np
 import torch
 import multiprocessing as mp
@@ -25,7 +33,6 @@ from pyTSFoil.environment.basic import MultiBumpModificationAction
 from model.ppo_mp import PPO_FigState_MultiEnv
 from cst_modeling.foil import cst_foil
 
-path = os.path.dirname(os.path.abspath(__file__))
 
 def create_env_with_id(worker_id=None, render_mode='none', n_max_step=10):
     '''

@@ -190,7 +190,7 @@ contains
     subroutine SOLVE()
         use common_data, only: Y, AK, BCTYPE, NWDGE, UNIT_OUTPUT, IPRTER, MAXIT
         use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
-        use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT_SOLVE
+        use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
         use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
         use solver_data, only: POLD, EMU, THETA
         use solver_base, only: LIFT, PITCH
@@ -230,7 +230,7 @@ contains
         WEP = WE(KK)
         WI = 1.0 / WEP
         
-        if (FLAG_OUTPUT_SOLVE == 1) then
+        if (FLAG_OUTPUT == 1) then
             ! Write header to output files
             write(UNIT_OUTPUT, '(1H1)')
 
@@ -305,7 +305,7 @@ contains
             end if
             
             ! Print iteration results if needed
-            if (OUTERR .and. FLAG_OUTPUT_SOLVE == 1) then
+            if (OUTERR .and. FLAG_OUTPUT == 1) then
 
                 CL_LOCAL = LIFT(CLFACT)
                 CM_LOCAL = PITCH(CMFACT)
@@ -361,7 +361,7 @@ contains
             ! Check convergence
             if (ERROR <= CVERGE) then
                 CONVERGED = .true.
-                if (FLAG_OUTPUT_SOLVE == 1) then
+                if (FLAG_OUTPUT == 1) then
                     write(UNIT_OUTPUT, '(//20X,"........SOLUTION CONVERGED........")')
                     write(*,*) 'Solution converged after', ITER, 'iterations.'
                 end if
@@ -374,7 +374,7 @@ contains
             ! Check divergence
             if (ERROR >= DVERGE) then
                 ABORT1 = .true.
-                if (FLAG_OUTPUT_SOLVE == 1) then
+                if (FLAG_OUTPUT == 1) then
                     write(UNIT_OUTPUT, '(//20X,"******  SOLUTION DIVERGED  ******")')
                     write(*,*) 'Solution diverged after', ITER, 'iterations.'
                 end if
@@ -384,7 +384,7 @@ contains
         end do
         
         ! Handle case where iteration limit is reached
-        if (.not. CONVERGED .and. .not. ABORT1 .and. FLAG_OUTPUT_SOLVE == 1) then
+        if (.not. CONVERGED .and. .not. ABORT1 .and. FLAG_OUTPUT == 1) then
             write(UNIT_OUTPUT, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
             write(*,*) 'Iteration limit reached after', MAXITM, 'iterations.'
         end if

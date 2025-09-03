@@ -363,7 +363,7 @@ class TSFoilEnv_Template(gym.Env):
             n_point_airfoil=100,
             EPS=0.2,
             CVERGE=1e-6,
-            flag_output_solve=False,
+            flag_output=False,
             flag_output_summary=False,
             flag_output_shock=False,
             flag_output_field=False,

@@ -327,7 +327,7 @@ contains
         use common_data, only: JMIN, JMAX, JUP, JLOW
         use common_data, only: AK, GAM1
         use common_data, only: FXL, FXU
-        use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY
+        use common_data, only: UNIT_OUTPUT, UNIT_SUMMARY, FLAG_OUTPUT
         use solver_data, only: CJUP, CJUP1, CJLOW, CJLOW1
         use solver_data, only: CDFACT
         use math_module, only: TRAP
@@ -375,19 +375,23 @@ contains
                 ! Shock is too close to body to do contour integral.
                 ! Write message and return
                 ULE = PX(ILE, JUP)
-                
-                if (ULE > SONVEL) then
-                    write(UNIT_OUTPUT, '("31H1SHOCK WAVE IS ATTACHED TO BODY/", &
-                        & "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
-                        & "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
-                else
-                    write(UNIT_OUTPUT, '("41H1DETACHED SHOCK WAVE IS TOO CLOSE TO BODY/", &
-                        & "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
-                        & "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
-                end if
-                
                 CD = DRAG(CDFACT)
-                write(UNIT_OUTPUT, '("4H0CD=", F12.6)') CD
+                
+                if (FLAG_OUTPUT == 1) then
+
+                    if (ULE > SONVEL) then
+                        write(UNIT_OUTPUT, '("31H1SHOCK WAVE IS ATTACHED TO BODY/", &
+                            & "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
+                            & "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
+                    else
+                        write(UNIT_OUTPUT, '("41H1DETACHED SHOCK WAVE IS TOO CLOSE TO BODY/", &
+                            & "33H MOMENTUM INTEGRAL CANNOT BE DONE/", &
+                            & "45H DRAG OBTAINED FROM SURFACE PRESSURE INTEGRAL/")')
+                    end if
+                    
+                    write(UNIT_OUTPUT, '("4H0CD=", F12.6)') CD
+                
+                end if
                 return
             end if
             
@@ -614,38 +618,41 @@ contains
         CD = CDC + CDWAVE
         
         ! Write drag coefficient breakdown
-        write(UNIT_OUTPUT, '(A)') '1'
-        write(UNIT_OUTPUT, '(A)') ' CALCULATION OF DRAG COEFFICIENT BY MOMENTUM INTEGRAL METHOD'
-        write(UNIT_OUTPUT, '(A)') ''
-        write(UNIT_OUTPUT, '(A)') ' BOUNDARIES OF CONTOUR USED CONTRIBUTION TO CD'
-        write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' UPSTREAM    X =', XU_LOC, '  CDUP   =', CDUP
-        write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' DOWNSTREAM  X =', XD_LOC, '  CDDOWN =', CDDOWN  
-        write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' TOP         Y =', YT_LOC, '  CDTOP  =', CDTOP
-        write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' BOTTOM      Y =', YB_LOC, '  CDBOT  =', CDBOT
-        write(UNIT_OUTPUT, '(A)') ''
-        write(UNIT_OUTPUT, '(A,I3)')    'Number of shock inside contour, N =      ', NSHOCK
-        write(UNIT_OUTPUT, '(A,F15.9)') 'Body aft location,              X =      ', XD_LOC
-        write(UNIT_OUTPUT, '(A,F15.9)') 'Drag due to body,               CD_body =', CDBODY
-        write(UNIT_OUTPUT, '(A,F15.9)') 'Drag due to shock,              CD_wave =', CDWAVE
-        write(UNIT_OUTPUT, '(A,F15.9)') 'Drag by momentum integral,      CD_int = ', CDC
-        write(UNIT_OUTPUT, '(A,F15.9)') 'Total drag (CD_int + CD_wave),  CD =     ', CD
-        write(UNIT_OUTPUT, '(A)') ''
-    
-        if (NSHOCK > 0 .and. LPRT2 == 0) then
-            write(UNIT_OUTPUT, '("NOTE - All shocks contained within contour, CD_wave equals total wave drag")')
-        end if
+        if (FLAG_OUTPUT == 1) then
+            write(UNIT_OUTPUT, '(A)') '1'
+            write(UNIT_OUTPUT, '(A)') ' CALCULATION OF DRAG COEFFICIENT BY MOMENTUM INTEGRAL METHOD'
+            write(UNIT_OUTPUT, '(A)') ''
+            write(UNIT_OUTPUT, '(A)') ' BOUNDARIES OF CONTOUR USED CONTRIBUTION TO CD'
+            write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' UPSTREAM    X =', XU_LOC, '  CDUP   =', CDUP
+            write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' DOWNSTREAM  X =', XD_LOC, '  CDDOWN =', CDDOWN  
+            write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' TOP         Y =', YT_LOC, '  CDTOP  =', CDTOP
+            write(UNIT_OUTPUT, '(A,F12.6,A,F12.6)') ' BOTTOM      Y =', YB_LOC, '  CDBOT  =', CDBOT
+            write(UNIT_OUTPUT, '(A)') ''
+            write(UNIT_OUTPUT, '(A,I3)')    'Number of shock inside contour, N =      ', NSHOCK
+            write(UNIT_OUTPUT, '(A,F15.9)') 'Body aft location,              X =      ', XD_LOC
+            write(UNIT_OUTPUT, '(A,F15.9)') 'Drag due to body,               CD_body =', CDBODY
+            write(UNIT_OUTPUT, '(A,F15.9)') 'Drag due to shock,              CD_wave =', CDWAVE
+            write(UNIT_OUTPUT, '(A,F15.9)') 'Drag by momentum integral,      CD_int = ', CDC
+            write(UNIT_OUTPUT, '(A,F15.9)') 'Total drag (CD_int + CD_wave),  CD =     ', CD
+            write(UNIT_OUTPUT, '(A)') ''
         
-        if (NSHOCK > 0 .and. LPRT2 == 1) then
-            write(UNIT_OUTPUT, '("NOTE - One or more shocks extend outside of contour, CD_wave does not equal total wave drag")')
+            if (NSHOCK > 0 .and. LPRT2 == 0) then
+                write(UNIT_OUTPUT, '("NOTE - All shocks contained within contour")')
+                write(UNIT_OUTPUT, '("NOTE - CD_wave equals total wave drag")')
+            end if
+            
+            if (NSHOCK > 0 .and. LPRT2 == 1) then
+                write(UNIT_OUTPUT, '("NOTE - One or more shocks extend outside of contour")')
+                write(UNIT_OUTPUT, '("NOTE - CD_wave does not equal total wave drag")')
+            end if
+        
+            write(UNIT_SUMMARY, '(A,I3)')    'Number of shock inside contour, N =      ', NSHOCK
+            write(UNIT_SUMMARY, '(A,F15.9)') 'Body aft location,              X =      ', XD_LOC
+            write(UNIT_SUMMARY, '(A,F15.9)') 'Drag due to body,               CD_body =', CDBODY
+            write(UNIT_SUMMARY, '(A,F15.9)') 'Drag due to shock,              CD_wave =', CDWAVE
+            write(UNIT_SUMMARY, '(A,F15.9)') 'Drag by momentum integral,      CD_int = ', CDC
+            write(UNIT_SUMMARY, '(A,F15.9)') 'Total drag (CD_int + CD_wave),  CD =     ', CD
         end if
-    
-        write(UNIT_SUMMARY, '(A,I3)')    'Number of shock inside contour, N =      ', NSHOCK
-        write(UNIT_SUMMARY, '(A,F15.9)') 'Body aft location,              X =      ', XD_LOC
-        write(UNIT_SUMMARY, '(A,F15.9)') 'Drag due to body,               CD_body =', CDBODY
-        write(UNIT_SUMMARY, '(A,F15.9)') 'Drag due to shock,              CD_wave =', CDWAVE
-        write(UNIT_SUMMARY, '(A,F15.9)') 'Drag by momentum integral,      CD_int = ', CDC
-        write(UNIT_SUMMARY, '(A,F15.9)') 'Total drag (CD_int + CD_wave),  CD =     ', CD
-    
     end subroutine CDCOLE
 
     ! Finds shock location on line J between ISTART and IEND
@@ -704,7 +711,7 @@ contains
     ! Print shock wave drag contributions and total pressure loss along shock wave
     ! Called by - CDCOLE
     subroutine PRTSK(XI,ARG,L,NSHOCK,CDSK,LPRT1,YFACT,DELTA)
-        use common_data, only: GAM1, UNIT_OUTPUT, N_MESH_POINTS
+        use common_data, only: GAM1, UNIT_OUTPUT, N_MESH_POINTS, FLAG_OUTPUT
         use solver_data, only: CDFACT
         implicit none
         real, intent(in) :: XI(N_MESH_POINTS), ARG(N_MESH_POINTS)
@@ -719,27 +726,31 @@ contains
         POYCOF = DELTA**2 * GAM1 * (GAM1 - 1.0) / 12.0
         
         ! Write header for first shock wave only (format 1001 equivalent)
-        if (NSHOCK == 1) then
+        if (NSHOCK == 1 .and. FLAG_OUTPUT == 1) then
             write(UNIT_OUTPUT, '(A)') '0'
             write(UNIT_OUTPUT,'(A)') ' INVISCID WAKE PROFILES FOR INDIVIDUAL SHOCK WAVES WITHIN MOMENTUM CONTOUR'
         end if
         
         ! Write shock information (format 1002 equivalent)
-        write(UNIT_OUTPUT,'(A)') ''  ! blank line for 0 carriage control
-        write(UNIT_OUTPUT,'(A,I3)') 'SHOCK', NSHOCK
-        write(UNIT_OUTPUT,'(A,F12.6)') ' WAVE DRAG FOR THIS SHOCK=', CDSK
-        write(UNIT_OUTPUT,'(A,A,A,A,A)') '      Y', '         ', 'CD(Y)', '        ', 'PO/POINF'
+        if (FLAG_OUTPUT == 1) then
+            write(UNIT_OUTPUT,'(A)') ''  ! blank line for 0 carriage control
+            write(UNIT_OUTPUT,'(A,I3)') 'SHOCK', NSHOCK
+            write(UNIT_OUTPUT,'(A,F12.6)') ' WAVE DRAG FOR THIS SHOCK=', CDSK
+            write(UNIT_OUTPUT,'(A,A,A,A,A)') '      Y', '         ', 'CD(Y)', '        ', 'PO/POINF'
+        end if
         
         ! Write shock profile data (format 1003 equivalent)
         do K = 1, L
             YY = XI(K) * YFACT
             CDY = CDYCOF * ARG(K)
             POY = 1.0 + POYCOF * ARG(K)
-            write(UNIT_OUTPUT,'(1X,3F12.8)') YY, CDY, POY
+            if (FLAG_OUTPUT == 1) then
+                write(UNIT_OUTPUT,'(1X,3F12.8)') YY, CDY, POY
+            end if
         end do
         
         ! Write footer if shock extends outside contour (format 1004 equivalent)
-        if (LPRT1 == 1) then
+        if (LPRT1 == 1 .and. FLAG_OUTPUT == 1) then
             write(UNIT_OUTPUT,'(A)') ''  ! blank line for 0 carriage control
             write(UNIT_OUTPUT,'(A)') ' SHOCK WAVE EXTENDS OUTSIDE CONTOUR'
             write(UNIT_OUTPUT,'(A)') ' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK'

@@ -108,7 +108,7 @@ module common_data
     ! File unit numbers
     ! ------------------------------------------------
 
-    integer :: FLAG_OUTPUT_SOLVE = 1 ! Flag to output SOLVE function process to tsfoil2.out
+    integer :: FLAG_OUTPUT = 1  ! Flag to output information to UNIT_OUTPUT and UNIT_SUMMARY
     
     integer, parameter :: UNIT_INPUT = 2          ! Input file
     integer, parameter :: UNIT_OUTPUT = 15        ! tsfoil2.out (Main output file with comprehensive results)
@@ -211,6 +211,10 @@ contains
         implicit none
         integer, intent(in) :: I_ERROR_CODE
         
+        if (FLAG_OUTPUT /= 1) then
+            stop
+        end if
+
         select case (I_ERROR_CODE)
         case (1)
             write(UNIT_OUTPUT, '(A)') ' '

@@ -5,6 +5,14 @@ Verify the results are consistent, i.e., memory is not contaminated.
 '''
 
 import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import numpy as np
 
 from pyTSFoil.pytsfoil import PyTSFoil
@@ -21,7 +29,7 @@ def run_pytsfoil(pytsfoil: PyTSFoil, airfoil_coordinates: np.ndarray):
         n_point_airfoil=100,
         EPS=0.2,
         CVERGE=1e-6,
-        flag_output_solve=False,
+        flag_output=False,
         flag_output_summary=False,
         flag_output_shock=False,
         flag_output_field=False,
@@ -40,7 +48,6 @@ def run_pytsfoil(pytsfoil: PyTSFoil, airfoil_coordinates: np.ndarray):
 
 if __name__ == "__main__":
     
-    path = os.path.dirname(os.path.abspath(__file__))
     print('path: ', path)
     
     x, y = np.loadtxt(os.path.join(path, 'rae2822.dat'), skiprows=1).T
