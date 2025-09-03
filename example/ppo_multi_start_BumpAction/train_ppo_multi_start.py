@@ -13,8 +13,13 @@ Key improvements:
 '''
 import os
 import sys
-sys.path.append(os.path.dirname(__file__))
 
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import numpy as np
 import torch
 import torch.nn as nn
@@ -31,8 +36,6 @@ from pyTSFoil.environment.basic import BumpModificationAction
 from model.database import AirfoilDatabase
 from model.ppo import ActorCritic
 from model.ppo_mp import PPO_FigState_MultiEnv
-
-path = os.path.dirname(os.path.abspath(__file__))
 
 
 def create_env_with_id(worker_id=None, render_mode='none', 

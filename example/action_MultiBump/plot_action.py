@@ -1,10 +1,17 @@
 '''
 Plot the action of the MultiBumpModificationAction.
 '''
+import os
+import sys
 
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 
 from cst_modeling.foil import cst_foil
 from pyTSFoil.environment.basic import MultiBumpModificationAction
@@ -16,7 +23,6 @@ cst_l = np.array([-0.12927128, -0.13176061, -0.17044964, -0.07045476, -0.3388806
 
 if __name__ == '__main__':
     
-    path = os.path.dirname(os.path.abspath(__file__))
     print('path: ', path)
     
     x, yu, yl, _, _ = cst_foil(501, cst_u, cst_l)

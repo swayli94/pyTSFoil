@@ -1,5 +1,13 @@
 
 import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import numpy as np
 
 from pyTSFoil.environment.basic import MultiBumpModificationAction
@@ -8,7 +16,6 @@ from pyTSFoil.environment.utils import TSFoilEnv_FigState_MultiBumpAction
 
 if __name__ == "__main__":
 
-    path = os.path.dirname(os.path.abspath(__file__))
     print('path: ', path)
 
     # Create the environment

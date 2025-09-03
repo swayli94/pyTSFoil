@@ -16,13 +16,19 @@ Key features:
 '''
 
 import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import numpy as np
 import torch
 
 from model.ppo_mp import PPO_FigState_MultiEnv
 from train_ppo_multi_start import create_env_with_id, EnvFactory, AirfoilDatabase, ActorCritic_Custom
-
-path = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_trained_agent(model_path, device='auto'):

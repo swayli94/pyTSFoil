@@ -26,14 +26,22 @@ Output: Markdown file with step-by-step design history including:
 - Overall progress summary
 '''
 
+import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from pyTSFoil.environment.prompt import DescriptionHistory
 from pyTSFoil.environment.basic import MultiBumpModificationAction, FigureState
-import os
 
 
 if __name__ == "__main__":
     
-    trajectory_json_path = 'example/env_FigState_MultiBump/trajectory.json'
+    trajectory_json_path = 'pyTSFoil/example/env_FigState_MultiBump/trajectory.json'
     os.makedirs('example/prompt/descriptions', exist_ok=True)
     
     print(f"Processing trajectory file: {trajectory_json_path}")
@@ -46,7 +54,7 @@ if __name__ == "__main__":
                     )
     
     # Save description to markdown file
-    output_path = 'example/prompt/descriptions/history_of_trajectory.md'
+    output_path = 'pyTSFoil/example/prompt/descriptions/history_of_trajectory.md'
     with open(output_path, 'w') as f:
         f.write(description)
     

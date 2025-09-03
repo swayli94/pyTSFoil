@@ -52,34 +52,6 @@ except ImportError as e:
     print("  python3 pyTSFoil/compile_f2py.py")
     sys.exit(1)
 
-import os, socket, time, uuid, threading
-
-def get_output_dir(base_dir: Path) -> Path:
-    """
-    在 base_dir 下为当前进程/线程创建唯一目录并返回。
-    结构：base/run-YYYYmmdd-HHMMSS/host-<hostname>/pid-<pid>/thr-<tid>-<uuid4>
-    """
-    # 运行批次目录（同一次程序运行共享）
-    ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-    host = socket.gethostname()
-    pid = os.getpid()
-    tid = threading.get_ident()  # 多进程下每个进程的线程ID空间独立
-
-    run_dir = base_dir / f"run-{ts}" / f"host-{host}" / f"pid-{pid}"
-
-    # 尝试创建一个带 UUID 的线程目录，避免极端碰撞
-    for _ in range(5):
-        leaf = f"thr-{tid}-{uuid.uuid4().hex[:8]}"
-        outdir = run_dir / leaf
-        try:
-            outdir.mkdir(parents=True, exist_ok=False)
-            return outdir
-        except FileExistsError:
-            continue
-    # 极端情况下仍冲突，退而求其次用 mkdtemp
-    from tempfile import mkdtemp
-    return Path(mkdtemp(prefix="fallback-", dir=str(run_dir)))
-
 
 class PyTSFoil(object):
     '''
@@ -130,7 +102,7 @@ class PyTSFoil(object):
         self.work_dir = os.getcwd()
         
         if output_dir is None:
-            self.output_dir = get_output_dir(self.work_dir)
+            self.output_dir = self.work_dir
         else:
             self.output_dir = output_dir
         
@@ -220,7 +192,7 @@ class PyTSFoil(object):
             'n_point_y': 60,        # Number of points in the y-direction (JMAXI)
             'n_point_airfoil': 51,  # Number of points on the airfoil
             
-            'flag_output_solve': True,     # write solver process to tsfoil2.out
+            'flag_output': True,     # write solver process to tsfoil2.out
             'flag_output_summary': True,   # smry.out
             'flag_output_shock': True,     # cpxs.dat
             'flag_output_field': True,     # field.dat
@@ -259,7 +231,10 @@ class PyTSFoil(object):
         self.nmp_plus2 = tsf.common_data.nmp_plus2
         
         # Open output files
-        tsf.io_module.open_output_file()
+        if self.config['flag_output']:
+            tsf.io_module.open_output_file()
+        if self.config['flag_output_summary']:
+            tsf.io_module.open_summary_file()
     
         # Apply self.config to common data
         for key, value in self.config.items():

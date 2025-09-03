@@ -55,11 +55,18 @@ def create_env_with_id(initial_airfoil='random-selected', n_max_step=N_MAX_STEP,
     
     # Custom action class
     action_class = MultiBumpModificationAction()
+    
+    # Define custom digit precision for the action, so that it's easier for LLM to learn
+    action_class.action_precision = []
+    for i in range(action_class.dim_action):
+        if i % 2 == 0:
+            action_class.action_precision.append(2)
+        else:
+            action_class.action_precision.append(3)
 
     # Create unique output directory for each worker to avoid file conflicts
     if isinstance(initial_airfoil, int):
-        worker_output_dir = os.path.join(path, 'temp', f'worker_{initial_airfoil}')
-        os.makedirs(worker_output_dir, exist_ok=True)
+        worker_output_dir = None
     else:
         worker_output_dir = path
 

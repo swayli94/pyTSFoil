@@ -1,12 +1,18 @@
 
 import os
+import sys
+
+path = os.path.dirname(os.path.abspath(__file__))
+# Add project root to Python path for multi-branch development
+project_root = os.path.abspath(os.path.join(path, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from pyTSFoil.pytsfoil import PyTSFoil
 
 
 if __name__ == "__main__":
     
-    path = os.path.dirname(os.path.abspath(__file__))
     print('path: ', path)
     
     pytsfoil = PyTSFoil(
