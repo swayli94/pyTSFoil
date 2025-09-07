@@ -114,7 +114,9 @@ class Environment:
             description_parts.append("\n")
         
 
-        # TODO: 需要给出当前的状态和奖励，让LLM推断动作，目前是直接把最后一步的state action reward都给了
+        # 给出当前的状态+动作的next state，让LLM继续推断动作
+        description_parts.append("Now, please infer the next action based on the last state and history.\n")
+
 
         prompt += "".join(description_parts)
         prompt += self.description_action.instruction_for_action_output()
@@ -176,6 +178,7 @@ class Environment:
             t = (sec, idx, key)
             if t in pos_map:              # 只填入我们关心的 20 个槽位
                 arr[0, pos_map[t]] = val  # 缺失的不动 -> 仍为 0
+        arr = arr.squeeze(0)
         return arr
 
 

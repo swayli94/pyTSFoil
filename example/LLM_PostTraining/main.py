@@ -53,8 +53,10 @@ def rollout_foil(
     model: AutoModelForCausalLM,
     tokenizer: PreTrainedTokenizer,
     foil_env: FoilEnvironment,
+    task_data: dict,
     num_rollouts: int,
     max_length: int = 1024,
+    max_new_tokens: int = 4096,
     temperature: float = 0.8,
     top_p: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
@@ -66,7 +68,9 @@ def rollout_foil(
     # 获取模型所在的设备
     model_device = get_model_device(model)
 
-    prompt, initial_airfoil, history_actions = foil_env.generate_prompt()
+    prompt, initial_airfoil, history_actions = task_data['prompt'], task_data['initial_airfoil'], task_data['history_actions']
+
+    # prompt, initial_airfoil, history_actions = foil_env.generate_prompt()
     
     messages = [
     {"role": "system", "content": "You are a foil expert, you can give the optimal action to improve the airfoil."},
@@ -84,7 +88,7 @@ def rollout_foil(
         padding=True,
         return_attention_mask=True,
         truncation=True,
-        max_length=max_length - 512,
+        max_length=max_length - max_new_tokens,
     ).to(model_device)
 
     # duplicate prompt num_rollouts times
@@ -100,7 +104,7 @@ def rollout_foil(
     generation_config = GenerationConfig(
         max_length=max_length,
         do_sample=True,
-        max_new_tokens=512,
+        max_new_tokens=max_new_tokens,
         top_p=top_p,
         temperature=temperature,
         eos_token_id=tokenizer.eos_token_id,  # 明确设置eos_token_id
@@ -121,12 +125,12 @@ def rollout_foil(
     
     for i, completion in enumerate(completions):
         # 使用foil环境评估输出质量
-        try:
-            score = foil_env.verify_score(completion, initial_airfoil, history_actions)
-            returns[i] = score
-        except Exception as e:
-            print(f"Error evaluating completion {i}: {e}")
-            returns[i] = 0.0
+        # try:
+        score = foil_env.verify_score(completion, initial_airfoil, history_actions)
+        returns[i] = score
+        # except Exception as e:
+        #     print(f"Error evaluating completion {i}: {e}")
+        #     returns[i] = 0.0
 
     return sequence_ids, returns.to(sequence_ids.device), action_mask, completions
 
@@ -174,22 +178,18 @@ def read_jsonl(file_name: str | Path) -> Iterator:
         for line in f:
             yield json.loads(line)
 
-
-def read_chess_prompts(
-    file_name: str,
-    predicate: Optional[Callable[[Any], bool]] = None,
+def gen_foil_prompts(
+    env: FoilEnvironment,
     max_rows: Optional[int] = None,
 ) -> list:
     """
-    读取chess数据集
+    生成foil数据集
     """
-    rows = []
-    for x in read_jsonl(file_name):
-        if predicate is None or predicate(x):
-            rows.append(x)
-        if max_rows is not None and len(rows) >= max_rows:
-            break
-    return rows
+    prompts = []
+    for i in range(max_rows):
+        prompt, initial_airfoil, history_actions = env.generate_prompt()
+        prompts.append({"prompt": prompt, "initial_airfoil": initial_airfoil, "history_actions": history_actions})
+    return prompts
 
 
 def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None):
@@ -253,8 +253,10 @@ def parse_args():
                         help="Epochs per training step")
     
     # 生成参数
-    parser.add_argument("--max_length", type=int, default=2048,
+    parser.add_argument("--max_length", type=int, default=20000,
                         help="Maximum sequence length")
+    parser.add_argument("--max_new_tokens", type=int, default=4096,
+                        help="Maximum new tokens")
     parser.add_argument("--temperature", type=float, default=0.8,
                         help="Generation temperature")
     parser.add_argument("--top_p", type=float, default=0.9,
@@ -282,7 +284,7 @@ def main():
     # 设置日志
     log_file = args.log_file or f"train_foil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     logger = setup_logging(args.log_level, log_file)
-    logger.info("Starting Chess GRPO Training")
+    logger.info("Starting foil GRPO Training")
     logger.info(f"Arguments: {args}")
     
     # 使用args中的参数
@@ -304,6 +306,7 @@ def main():
     max_norm = args.max_norm
     
     max_length = args.max_length
+    max_new_tokens = args.max_new_tokens
     top_p = args.top_p
     temperature = args.temperature
     
@@ -313,9 +316,9 @@ def main():
     
     init_rng(seed)
 
-    # 初始化chess环境
+    # 初始化foil环境
     logger.info("Initializing foil environment...")
-    chess_env = FoilEnvironment(data_file_path="data/chess_games.txt")
+    env = FoilEnvironment(data_file_path="example/env_FigState_MultiBump/data")
 
     # 加载模型
     logger.info("Loading models...")
@@ -342,17 +345,11 @@ def main():
 
     pad_token_id = tokenizer.eos_token_id
 
-    # 读取chess数据集
-    logger.info("Loading chess dataset...")
-    prompts = read_chess_prompts(
-        "data/chess_tasks.jsonl",
-        predicate=lambda x: x.get("num_legal_moves", 0) > 1,
-        max_rows=args.max_rows,
-    )
-    logger.info(f"Found {len(prompts)} matching chess prompts")
+    prompts = gen_foil_prompts(env, args.max_rows)
+    logger.info(f"Generated {len(prompts)} foil prompts")
     
     if len(prompts) == 0:
-        logger.error("No chess prompts found! Please check data/chess_tasks.jsonl")
+        logger.error("No prompts found! Please check traj data")
         return
     
     def custom_collate_fn(batch):
@@ -388,13 +385,14 @@ def main():
             for task_idx, task_data in enumerate(prompt_batch):
                 logger.debug(f"Processing task {task_idx + 1}/{len(prompt_batch)}")
                 
-                sequence_ids, returns, action_mask, completions = rollout_chess(
+                sequence_ids, returns, action_mask, completions = rollout_foil(
                     model,
                     tokenizer,
-                    chess_env,
+                    env,
                     task_data,
                     num_rollouts=group_size,
                     max_length=max_length,
+                    max_new_tokens=max_new_tokens,
                     temperature=temperature,
                     top_p=top_p,
                 )
@@ -403,7 +401,7 @@ def main():
                     f"Rollout completed - returns_sum={returns.sum().item():.2f}, "
                     f"replay_buffer_size={len(replay_buffer)}, "
                     f"sequence_shape={sequence_ids.shape}, "
-                    f"moves={len(task_data['moves'])}"
+                    # f"moves={len(task_data['moves'])}"
                 )
                 rollout_returns.append(returns.cpu())
 
@@ -532,10 +530,11 @@ def test_rollout_foil():
     # 使用多GPU配置而不是单GPU
     # device_index = 0  # 注释掉单GPU设置
     model_name = args.model_name
-    max_length = 2048
+    max_length = args.max_length
     top_p = 0.1
     temperature = 0.2
     num_rollouts = 4  # 测试用较小的rollouts数量
+    max_new_tokens = args.max_new_tokens
     
     # 初始化
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -556,22 +555,22 @@ def test_rollout_foil():
         else:
             print(f"Model automatically distributed across GPUs: {model.hf_device_map}")
     
-    print("Initializing chess environment...")
-    # 初始化chess环境
+    print("Initializing foil environment...")
+    # 初始化foil环境
     env = FoilEnvironment(data_file_path="example/env_FigState_MultiBump/data")
     
-    print("Reading chess data...")
-    # 读取一条chess数据
+    print("Generating foil prompt...")
+    # 读取一条foil数据
     prompts, initial_airfoil, history_actions = env.generate_prompt()
     
     if len(prompts) == 0:
-        print("No chess prompts found! Please run generate_chess_dataset.py first.")
+        print("No foil prompts found!")
         return
     print(f"Test data: prompt={prompts}, initial_airfoil={initial_airfoil}, history_actions={history_actions}")
         
     
     print("Running rollout_foil...")
-    # 调用rollout_chess
+    # 调用rollout_foil
     try:
         with torch.no_grad():
             sequence_ids, returns, action_mask, completions = rollout_foil(
@@ -580,6 +579,7 @@ def test_rollout_foil():
                 foil_env=env,
                 num_rollouts=num_rollouts,
                 max_length=max_length,
+                max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_p=top_p,
             )
@@ -607,7 +607,7 @@ if __name__ == "__main__":
     args = parse_args()
     # setting visible devices
     import os
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4,5,6"
     
     if args.test_only:
         # 运行测试
