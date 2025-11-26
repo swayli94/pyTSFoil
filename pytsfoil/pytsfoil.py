@@ -91,7 +91,7 @@ class PyTSFoil(object):
         self.mesh = {}
         self.data_summary = {}
 
-        # Change to parent directory where input/output files are located
+        # The directory for Fortran output files (smry.out, tsfoil2.out)
         if work_dir is None:
             script_dir = Path(__file__).parent
             parent_dir = script_dir.parent
@@ -101,6 +101,7 @@ class PyTSFoil(object):
                         
         self.work_dir = os.getcwd()
         
+        # The directory for Python output files (cpxs.dat, field.dat)
         if output_dir is None:
             self.output_dir = self.work_dir
         else:
