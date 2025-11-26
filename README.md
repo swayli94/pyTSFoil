@@ -29,12 +29,24 @@ It solves the transonically-scaled perturbation potential and similarity variabl
 
 - Python 3.8 or higher
 - NumPy, SciPy, Matplotlib
-- Fortran compiler (for f2py, meson compilation)
+- Fortran compiler for f2py, meson compilation (gfortran is recommended)
+- Linux is recommended (for easier usage of meson)
+- cst-modeling3d is recommended (for airfoil geometric modelling)
 
 ### Install Package
 
 ```bash
+sudo apt update
+sudo apt install gfortran
+
+git clone https://github.com/swayli94/pyTSFoil.git
+cd pyTSFoil
 pip install -e .
+
+python -c "import pytsfoil; print('✓ pytsfoil installed successfully')" || echo "pytsfoil failed to import"
+
+# Optional: Install cst-modeling3d
+pip install cst-modeling3d
 ```
 
 ## Quick Start
