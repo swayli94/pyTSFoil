@@ -52,15 +52,14 @@ pip install cst-modeling3d
 ## Quick Start
 
 ```python
-import os
-import numpy as np
-from pyTSFoil.pytsfoil import PyTSFoil
+from pytsfoil import PyTSFoil
 
 # Load airfoil coordinates (or provide as numpy array)
 pytsfoil = PyTSFoil(
-    airfoil_file='path/to/airfoil.dat',
-    work_dir='output_directory'   # output directory for Fortran output files (smry.out, tsfoil2.out)
-    output_dir='output_directory' # output directory for Python output files (cpxs.dat, field.dat)
+    airfoil_coordinates=airfoil_coordinates,  # coordinates of the airfoil (x, y) [n_points, 2]
+    airfoil_file='path/to/airfoil.dat',       # file containing the airfoil geometry (provide either airfoil_coordinates or airfoil_file)
+    work_dir='output_directory',              # output directory for Fortran output files (smry.out, tsfoil2.out)
+    output_dir='output_directory',            # output directory for Python output files (cpxs.dat, field.dat)
 )
 
 # Configure flow conditions
@@ -119,7 +118,7 @@ pyTSFoil/
 import multiprocessing as mp
 
 def run_analysis(params):
-    pytsfoil = PyTSFoil()  # ✅ Each process gets its own data
+    pytsfoil = PyTSFoil()  # Each process gets its own data
     # ... run analysis
     return results
 
