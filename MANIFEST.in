@@ -1,0 +1,30 @@
+# Include essential project files
+include LICENSE
+include README.md
+include pyproject.toml
+include setup.py
+
+# Include the VERSION file
+include pytsfoil/VERSION
+
+# Include all Fortran source files
+recursive-include pytsfoil *.f
+recursive-include pytsfoil *.f90
+recursive-include pytsfoil *.pyf
+
+# Include compiled libraries if present
+recursive-include pytsfoil *.so
+recursive-include pytsfoil *.exe
+
+# Include Python files
+recursive-include pytsfoil *.py
+
+# Include example files
+recursive-include example *
+
+# Exclude unnecessary files
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.egg-info

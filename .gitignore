@@ -20,3 +20,6 @@ temp*
 cpxs.dat
 field.dat
 
+build/
+dist/
+__pycache__/

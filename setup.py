@@ -135,21 +135,57 @@ class CustomInstall(install):
             # Do not stop installation, just warn
             print("Warning: Fortran modules compilation failed, but installation will continue")
 
+# Read the README file for long description
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text(encoding='utf-8')
+
 setup(name=NAME,
       version=VERSION,
-      description='This is a python interface of TSFOIL2',
-      keywords=['CFD', 'TSFOIL2', 'transonic small disturbance theory'],
+      description='A Python interface for TSFOIL2, an inviscid transonic small-disturbance (TSD) solver for flow past lifting airfoils',
+      long_description=long_description,
+      long_description_content_type='text/markdown',
+      keywords=['CFD', 'TSFOIL2', 'transonic', 'small-disturbance-theory', 'aerodynamics', 'airfoil'],
+      url='https://github.com/swayli94/pyTSFoil',
       download_url='https://github.com/swayli94/pyTSFoil',
       license='MIT',
       author='Runze LI',
       author_email='swayli94@gmail.com',
       packages=find_packages(),
-      package_data={"":['*.f','*.exe','*.so','*.f90','*.pyf']},
-      install_requires=['numpy','scipy','matplotlib','meson'],
-      setup_requires=['numpy'],  # f2py needs numpy
-      classifiers=[
-            'Programming Language :: Python :: 3'
+      package_data={"":['*.f','*.exe','*.so','*.f90','*.pyf', 'VERSION']},
+      include_package_data=True,
+      python_requires='>=3.8',
+      install_requires=[
+          'numpy>=1.18.0',
+          'scipy>=1.5.0',
+          'matplotlib>=3.0.0',
+          'meson',
       ],
+      setup_requires=['numpy'],  # f2py needs numpy
+      extras_require={
+          'dev': ['pytest>=6.0', 'pytest-cov', 'black', 'flake8'],
+          'modeling': ['cst-modeling3d'],
+      },
+      classifiers=[
+          'Development Status :: 4 - Beta',
+          'Intended Audience :: Science/Research',
+          'Topic :: Scientific/Engineering :: Physics',
+          'Topic :: Scientific/Engineering :: Visualization',
+          'Programming Language :: Python :: 3',
+          'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
+          'Programming Language :: Python :: 3.10',
+          'Programming Language :: Python :: 3.11',
+          'Programming Language :: Python :: 3.12',
+          'Programming Language :: Fortran',
+          'Operating System :: POSIX :: Linux',
+          'Operating System :: MacOS',
+      ],
+      project_urls={
+          'Homepage': 'https://github.com/swayli94/pyTSFoil',
+          'Bug Tracker': 'https://github.com/swayli94/pyTSFoil/issues',
+          'Repository': 'https://github.com/swayli94/pyTSFoil',
+          'Documentation': 'https://github.com/swayli94/pyTSFoil/blob/main/README.md',
+      },
       cmdclass={
           'build_ext': CustomBuildExt,
           'build_py': CustomBuildPy,
