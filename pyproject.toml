@@ -1,3 +1,63 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "numpy"]
+requires = [
+    "setuptools>=61.0", 
+    "wheel", 
+    "numpy", 
+    "meson-python>=0.12.0",
+    "ninja"
+]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytsfoil"
+dynamic = ["version"]
+description = "A Python interface for TSFOIL2, an inviscid transonic small-disturbance (TSD) solver for flow past lifting airfoils"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Runze LI", email = "swayli94@gmail.com"}
+]
+keywords = ["CFD", "TSFOIL2", "transonic", "small-disturbance-theory", "aerodynamics", "airfoil"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",  
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Fortran",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.18.0",
+    "scipy>=1.5.0", 
+    "matplotlib>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=6.0", "pytest-cov", "black", "flake8"]
+modeling = ["cst-modeling3d"]
+
+[project.urls]
+Homepage = "https://github.com/swayli94/pyTSFoil"
+"Bug Tracker" = "https://github.com/swayli94/pyTSFoil/issues"
+Repository = "https://github.com/swayli94/pyTSFoil"
+Documentation = "https://github.com/swayli94/pyTSFoil/blob/main/README.md"
+
+[tool.setuptools.dynamic]
+version = {attr = "pytsfoil.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["pytsfoil*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.f", "*.exe", "*.f90", "*.pyf", "VERSION"]
+
+[tool.setuptools]
+license-files = []  # Disable automatic license file inclusion

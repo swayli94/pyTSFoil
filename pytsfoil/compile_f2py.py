@@ -130,8 +130,8 @@ def main():
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
     
-    # Change to source directory (relative to script location)
-    src_dir = script_dir.parent / "src"
+    # Change to source directory (now inside pytsfoil package)
+    src_dir = script_dir / "src"
     
     # Check if the source directory exists
     if not src_dir.exists():

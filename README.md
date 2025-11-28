@@ -39,10 +39,15 @@ It solves the transonically-scaled perturbation potential and similarity variabl
 sudo apt update
 sudo apt install gfortran
 
+# Install from source
 git clone https://github.com/swayli94/pyTSFoil.git
 cd pyTSFoil
 pip install -e .
 
+# Or install from PyPI
+pip install pytsfoil>=0.2.1
+
+# Test installation
 python -c "import pytsfoil; print('✓ pytsfoil installed successfully')" || echo "pytsfoil failed to import"
 
 # Optional: Install cst-modeling3d
