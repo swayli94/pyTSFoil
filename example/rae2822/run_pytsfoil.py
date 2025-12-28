@@ -12,6 +12,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 '''
 
+import time
 import numpy as np
 from pytsfoil import PyTSFoil
 
@@ -28,11 +29,11 @@ def run_pytsfoil(pytsfoil: PyTSFoil, airfoil_coordinates: np.ndarray, output=Tru
         n_point_airfoil=100,
         EPS=0.2,
         CVERGE=1e-6,
-        flag_output=output,
-        flag_output_summary=output,
+        flag_output=False,
+        flag_output_summary=False,
         flag_output_shock=output,
         flag_output_field=output,
-        flag_print_info=output,
+        flag_print_info=False,
     )
     
     pytsfoil.airfoil['coordinates'] = airfoil_coordinates.copy()
@@ -62,9 +63,10 @@ if __name__ == "__main__":
     
     for i in range(n_trials):
         
+        start_time = time.time()
         cl, cd, cm = run_pytsfoil(pytsfoil, airfoil_coordinates, output=i==n_trials-1)
-        
-        print(f'# {i+1} cl: {cl:.8f}, cd: {cd:.8f}, cm: {cm:.8f}')
+        end_time = time.time()
+        print(f'# {i+1} cl: {cl:.8f}, cd: {cd:.8f}, cm: {cm:.8f} | time = {end_time - start_time:.2f} seconds')
     
     pytsfoil.plot_all_results()
 
