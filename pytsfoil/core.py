@@ -8,6 +8,7 @@ Contains the core class for all shared data, responsible for:
 - Working directory management
 """
 
+import math
 import sys
 import os
 from pathlib import Path
@@ -183,3 +184,47 @@ class TSFoilCore:
             print(f"pyTSFoil output directory: {self.output_dir}")
             print()
 
+    def emach1(self, u: float, delta: float) -> float:
+        """
+        Compute local Mach number.
+        
+        Parameters
+        ----------
+        u : float
+            Local velocity
+        delta : float
+            Maximum thickness of airfoil
+            
+        Returns
+        -------
+        float
+            Local Mach number or similarity parameter
+        """
+        ak = tsf.common_data.ak
+        gam1 = tsf.common_data.gam1
+        phys = tsf.common_data.phys
+        simdef = tsf.common_data.simdef
+        emach = tsf.common_data.emach
+        
+        # Compute similarity parameter based on local velocity
+        ak1 = ak - gam1 * u
+        
+        if not phys:
+            # Return value of local similarity parameter
+            return ak1
+        else:
+            # Compute value of local Mach number and return
+            delrt2 = delta ** (2.0 / 3.0)
+            
+            if simdef == 1:  # Cole scaling
+                arg = 1.0 - delrt2 * ak1
+            elif simdef == 2:  # Spreiter scaling
+                arg = 1.0 - delrt2 * ak1 * emach ** (4.0 / 3.0)
+            elif simdef == 3:  # Krupp scaling
+                arg = 1.0 - delrt2 * ak1 * emach
+            else:
+                raise ValueError(f"SIMDEF {simdef} not supported in emach1")
+            
+            if arg > 0.0:
+                return math.sqrt(arg)
+            return 0.0

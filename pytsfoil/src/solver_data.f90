@@ -58,6 +58,7 @@ module solver_data
     logical :: ABORT1 = .false. ! input abort flag
 
     ! Public variables for solver_functions
+    !!!!!!!!!!!! COULD BE REMOVED !!!!!!!!!!!!
     real :: ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2, JET ! Far-field root parameters
     real :: B_COEF, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2   ! Vortex/doublet parameters
     real :: WSLP(N_MESH_POINTS,2)   ! Viscous wedge slopes

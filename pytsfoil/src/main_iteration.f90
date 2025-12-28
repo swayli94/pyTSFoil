@@ -5,7 +5,6 @@ module main_iteration
     implicit none
     private
 
-    public :: SOLVE
     public :: SYOR, RECIRC, REDUB, RESET
 
 contains
@@ -16,7 +15,6 @@ contains
     subroutine SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
         use common_data, only: X, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
         use common_data, only: AK, FCR, EPS, N_MESH_POINTS
-        use solver_functions, only: BCEND
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
         use solver_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD
@@ -187,211 +185,6 @@ contains
 
     end subroutine SYOR
 
-    ! Main iteration loop: solver, convergence, and flow updates
-    subroutine SOLVE()
-        use common_data, only: Y, AK, BCTYPE, NWDGE, UNIT_OUTPUT, IPRTER, MAXIT
-        use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
-        use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
-        use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
-        use solver_data, only: POLD, EMU, THETA
-        use solver_base, only: LIFT, PITCH
-        use solver_functions, only: VWEDGE, SETBC
-        implicit none
-        
-        integer :: ITER=0, MAXITM=0, KK=0, J=0, I=0, IK=0, JK=0, JINC=0, N=0, I1=0, I2=0
-        integer :: IRL = 0, JRL = 0         ! Location indices of maximum residual
-        integer :: IERROR = 0, JERROR = 0   ! Location indices of maximum error
-        integer, parameter :: NDUB = 25     ! Number of iterations between updating doublet strength
-
-        real :: ERROR = 0.0  ! Maximum error
-        real :: DCIRC = 0.0  ! circulation change
-        real :: BIGRL = 0.0  ! Maximum residual value
-        real :: WEP=0.0, CL_LOCAL=0.0, CM_LOCAL=0.0, ERCIRC=0.0, THA=0.0
-        real :: AM1(2,3)=0.0     ! Mach numbers upstream of shocks
-        real :: XSHK(2,3)=0.0    ! Shock x-locations
-        real :: THAMAX(2,3)=0.0  ! Maximum wedge angles
-        real :: ZETA(2,3)=0.0    ! Wedge length scales
-        integer :: NVWPRT(2)=0 ! Number of shocks on upper and lower surfaces
-        integer :: NISHK=0    ! Number of shocks
-
-        logical :: CONVERGED = .false.  ! convergence flag
-        logical :: OUTERR = .false.     ! outer iteration error
-        
-        
-        ! Initialize
-        ABORT1 = .false.
-        POLD = 0.0
-        EMU = 0.0
-                
-        ! Calculate maximum iterations based on refinement level
-        MAXITM = MAXIT
-        
-        ! Set relaxation parameter based on refinement level
-        KK = 3
-        WEP = WE(KK)
-        WI = 1.0 / WEP
-        
-        if (FLAG_OUTPUT == 1) then
-            ! Write header to output files
-            write(UNIT_OUTPUT, '(1H1)')
-
-            ! Write solver parameters
-            write(UNIT_OUTPUT, '(3X,"WE = ",F7.4,5X,"EPS = ",F8.4,5X,"MAXIT FOR THIS MESH = ",I4)') WEP, EPS, MAXITM
-            
-            ! Write iteration header (avoid line truncation by splitting into two lines)
-            write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR")')
-            write(UNIT_OUTPUT, '("   IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
-            write(*, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR")')
-            write(*, '("   IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
-        end if
-
-        ! Main iteration loop
-        do ITER = 1, MAXITM
-
-            ! Initialize EMU array
-            I1 = 1
-            I2 = 2
-            do J = JMIN, JMAX
-                POLD(J,I2) = P(J,IUP-1)
-                EMU(J,I2) = 0.0
-            end do
-            
-            ! Set EMU for subsonic flow
-            if (AK <= 0.0) then
-                do J = JMIN, JMAX
-                    EMU(J,I2) = C1(2)
-                end do
-            end if
-            
-            ! Set output flag for this iteration
-            OUTERR = .false.
-            if (mod(ITER, IPRTER) == 0) OUTERR = .true.
-            if (ITER == 1) OUTERR = .true.
-
-            ! Reset error tracking for this iteration
-            ERROR = 0.0
-            if (OUTERR) BIGRL = 0.0
-            
-            ! Update circulation-jump boundary
-            call RECIRC(DCIRC)
-            
-            ! Perform SOR sweep
-            call SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
-            
-            ! Update circulation for subsonic freestream flow
-            if (AK >= 0.0 .and. BCTYPE == 1) then
-                IK = IUP - IMIN
-                do I = IUP, IDOWN
-                    IK = IK + KSTEP
-                    JK = JBOT - JMIN
-                    do J = JBOT, JTOP
-                        JINC = KSTEP
-                        if (Y(J) < 0.0 .and. Y(J+1) > 0.0) JINC = 2 * KSTEP - 1
-                        JK = JK + JINC
-                        P(J,I) = P(J,I) + DCIRC * THETA(JK,IK)
-                    end do
-                end do
-            end if
-            
-            ! Update doublet strength every NDUB iterations
-            if (mod(ITER, NDUB) == 0) call REDUB()
-            
-            ! Reset boundary conditions
-            call RESET()
-            
-            ! Compute viscous wedge if enabled
-            if (NWDGE > 0) then
-                call VWEDGE(AM1, XSHK, THAMAX, ZETA, NVWPRT, NISHK)
-                call SETBC(1)
-            end if
-            
-            ! Print iteration results if needed
-            if (OUTERR .and. FLAG_OUTPUT == 1) then
-
-                CL_LOCAL = LIFT(CLFACT)
-                CM_LOCAL = PITCH(CMFACT)
-                ERCIRC = abs(DCIRC)
-                
-                write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
-                    ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
-                write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
-                    ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
-
-                ! Output viscous wedge quantities if enabled
-                if (NWDGE > 0) then
-                    
-                    write(UNIT_OUTPUT, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
-                    
-                    ! Upper surface shocks
-                    if (NVWPRT(1) > 0) then
-                        write(UNIT_OUTPUT, '(" UPPER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
-                        do N = 1, NVWPRT(1)                        
-                            if (AM1(1,N) > 1.0) then
-                                THA = THAMAX(1,N) * 57.29578  ! Convert to degrees
-                                write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(1,N), AM1(1,N), THA, ZETA(1,N)
-                            else
-                                write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
-                            end if
-                        end do
-                    end if
-                    
-                    ! Lower surface shocks
-                    if (NVWPRT(1) > 0) then
-                        write(UNIT_OUTPUT, '(" LOWER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
-                        do N = 1, NVWPRT(1)                        
-                            if (AM1(2,N) > 1.0) then
-                                THA = THAMAX(2,N) * 57.29578  ! Convert to degrees
-                                write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(2,N), AM1(2,N), THA, ZETA(2,N)
-                            else
-                                write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
-                            end if
-                        end do
-                    end if
-
-                    if (ITER == 1 .or. mod(ITER, IPRTER) == 0) then
-                        
-                        if (NISHK == 0) write(UNIT_OUTPUT, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
-
-                        write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X, &
-                            &"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
-
-                    end if
-                end if
-            end if
-            
-            ! Check convergence
-            if (ERROR <= CVERGE) then
-                CONVERGED = .true.
-                if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(//20X,"........SOLUTION CONVERGED........")')
-                    write(*,*) 'Solution converged after', ITER, 'iterations.'
-                end if
-                exit
-            end if
-            
-            ! Check for floating-point exceptions during iteration
-            ! call check_iteration_fp_exceptions(ITER)
-            
-            ! Check divergence
-            if (ERROR >= DVERGE) then
-                ABORT1 = .true.
-                if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(//20X,"******  SOLUTION DIVERGED  ******")')
-                    write(*,*) 'Solution diverged after', ITER, 'iterations.'
-                end if
-                exit
-            end if
-
-        end do
-        
-        ! Handle case where iteration limit is reached
-        if (.not. CONVERGED .and. .not. ABORT1 .and. FLAG_OUTPUT == 1) then
-            write(UNIT_OUTPUT, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
-            write(*,*) 'Iteration limit reached after', MAXITM, 'iterations.'
-        end if
-
-    end subroutine SOLVE
-
     ! Update circulation-jump boundary after Kutta or M divergence
     ! RECIRC computes:
     ! 1.) Jump in P at trailing edge = CIRCTE
@@ -521,5 +314,138 @@ contains
         end if
 
     end subroutine RESET
+
+    ! Apply boundary conditions on each i-line (upper/lower boundaries),
+    ! which modifies the DIAG and RHS vectors on each I line in the
+    ! appropriate way to include the boundary conditions at JBOT and JTOP.
+    ! Called by - SYOR.
+    subroutine BCEND(IVAL)    
+        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, UNIT_OUTPUT, POR, FLAG_OUTPUT
+        use solver_data, only: P, CYYD, CYYU, CIRCFF, FHINV, DIAG, RHS
+        implicit none
+        integer, intent(in) :: IVAL
+        
+        integer :: I=0, II=0
+        real :: DFACL=0.0, DFACU=0.0, RFACL=0.0, RFACU=0.0, PJMIN=0.0, PJMAX=0.0, TERM=0.0, RTK=0.0
+        logical :: apply_dirichlet=.false., apply_neumann=.false.
+        
+        I = IVAL
+        apply_dirichlet = .false.
+        apply_neumann = .false.
+        
+        ! Branch to appropriate address for BCTYPE
+        select case (BCTYPE)
+        
+        case (1)  
+            ! BCTYPE = 1, FREE AIR
+            ! Dirichlet boundary condition for subsonic freestream
+            if (AK > 0.0) return
+
+            ! Neumann boundary condition for supersonic freestream
+            RTK = sqrt(abs(AK))
+            DFACL = -CYYD(JBOT) * RTK * XDIFF(I)
+            DFACU = -CYYU(JTOP) * RTK * XDIFF(I)
+            RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
+            RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
+            apply_neumann = .true.
+            
+        case (2)  
+            ! BCTYPE = 2, SOLID WALL
+            ! Neumann boundary condition = 0.
+            ! No modification necessary to DIAG or RHS
+            return
+            
+        case (3)  
+            ! BCTYPE = 3, FREE JET
+            ! Dirichlet boundary condition
+            if (AK < 0.0) then
+                PJMIN = 0.0
+                PJMAX = 0.0
+            else
+                PJMIN = -0.75 * CIRCFF
+                PJMAX = -0.25 * CIRCFF
+            end if
+            apply_dirichlet = .true.
+            
+        case (4)  
+            ! BCTYPE = 4, IDEAL SLOTTED WALL
+            ! Neumann boundary condition
+            DFACL = -FHINV * CYYD(JBOT)
+            DFACU = -FHINV * CYYU(JTOP)
+            if (AK < 0.0) then
+                RFACL = DFACL * P(JBOT,I)
+                RFACU = DFACU * P(JTOP,I)
+            else
+                RFACL = DFACL * (0.75 * CIRCFF + P(JBOT,I))
+                RFACU = DFACU * (0.25 * CIRCFF + P(JTOP,I))
+            end if
+            apply_neumann = .true.
+            
+        case (5)  
+            ! BCTYPE = 5, POROUS/PERFORATED WALL
+            if (POR > 1.5) then
+                ! Dirichlet boundary condition for POR > 1.5
+                if (I /= IUP) return
+                ! Set values of P on boundary by integrating PX using
+                ! old values of potential
+                PJMIN = P(JMIN,IUP)
+                TERM = -0.5 / (POR * (Y(JMIN) - Y(JMIN+1)))
+                do II = IUP, IDOWN
+                    P(JMIN,II) = P(JMIN,II-1) - TERM * (X(II)-X(II-1)) * &
+                                (P(JMIN,II)+P(JMIN,II-1)-P(JMIN+1,II)-P(JMIN+1,II-1))
+                end do
+                PJMAX = P(JMAX,IUP)
+                TERM = 0.5 / (POR * (Y(JMAX) - Y(JMAX-1)))
+                do II = IUP, IDOWN
+                    P(JMAX,II) = P(JMAX,II-1) - TERM * (X(II) - X(II-1)) * &
+                                (P(JMAX,II)+P(JMAX,II-1)-P(JMAX-1,II)-P(JMAX-1,II-1))
+                end do
+                RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(P(JBOT-1,I)-PJMIN))
+                RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(P(JTOP+1,I)-PJMAX))
+                return
+            else
+                ! Neumann boundary condition for POR < 1.5
+                DFACL = -CYYD(JBOT) * POR * XDIFF(I)
+                DFACU = -CYYU(JTOP) * POR * XDIFF(I)
+                RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
+                RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
+                apply_neumann = .true.
+            end if
+            
+        case (6)  
+            ! BCTYPE = 6, GENERAL WALL BOUNDARY CONDITION
+            ! Difference equations for this boundary condition
+            ! have not yet been worked out. User must insert
+            ! information needed for calculation
+            if (FLAG_OUTPUT == 1) then
+                write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE BCEND', &
+                                            'BCTYPE=6 IS NOT USEABLE'
+            end if
+            stop
+                
+        case default
+            if (FLAG_OUTPUT == 1) then
+                write(UNIT_OUTPUT, *) 'ERROR: Invalid BCTYPE = ', BCTYPE
+            end if
+            stop
+                
+        end select
+        
+        ! Apply Dirichlet boundary conditions
+        if (apply_dirichlet) then
+            RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(PJMIN-P(JBOT-1,I)))
+            RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(PJMAX-P(JTOP+1,I)))
+            return
+        end if
+        
+        ! Apply Neumann boundary conditions
+        if (apply_neumann) then
+            DIAG(JBOT) = DIAG(JBOT) + DFACL
+            DIAG(JTOP) = DIAG(JTOP) + DFACU
+            RHS(JBOT) = RHS(JBOT) - RFACL + CYYD(JBOT)*P(JBOT-1,I)
+            RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
+        end if
+        
+    end subroutine BCEND
 
 end module main_iteration

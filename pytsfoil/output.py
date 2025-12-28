@@ -87,7 +87,7 @@ class OutputHandler:
                 for i in range(imin, imax + 1):
                     # Calculate flow variables
                     u = tsf.solver_base.px(i, j)  # Computes U = DP/DX at point I,J
-                    em = tsf.solver_functions.emach1(u, delta)  # Computes Mach number from U
+                    em = self.core.emach1(u, delta)  # Computes Mach number from U
                     cp_val = -2.0 * u * cpfact  # CPFACT is a scaling factor for pressure coefficient
                     
                     # Calculate flow type for points within the computational domain
@@ -214,7 +214,7 @@ class OutputHandler:
             
             # Store CPL value and compute Mach number
             cpl[i_py] = -2.0 * ul_p1 * cpfact
-            em1l[i_py] = tsf.solver_functions.emach1(ul_p1, delta)
+            em1l[i_py] = self.core.emach1(ul_p1, delta)
             if em1l[i_py] > 1.3:
                 iem = 1
             
@@ -227,7 +227,7 @@ class OutputHandler:
             
             # Store CPU value and compute Mach number
             cpu[i_py] = -2.0 * uu_p1 * cpfact
-            em1u[i_py] = tsf.solver_functions.emach1(uu_p1, delta)
+            em1u[i_py] = self.core.emach1(uu_p1, delta)
             if em1u[i_py] > 1.3:
                 iem = 1
         
