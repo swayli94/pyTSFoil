@@ -35,6 +35,7 @@ Example of SAFE usage (multiprocessing):
 '''
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Import refactored modules
 from .core import TSFoilCore
@@ -129,6 +130,8 @@ class PyTSFoil(object):
         self.set_mesh()
         
         self.compute_mesh_indices()
+        
+        self.compute_geometry_derivatives()
 
         self.run_fortran_solver()
         
@@ -156,28 +159,29 @@ class PyTSFoil(object):
         # For backward compatibility, print information
         self.mesh_handler.print_mesh_info()
     
-    def compute_mesh_indices(self):
+    def compute_mesh_indices(self) -> None:
         '''Compute mesh indices, including ILE and ITE, JLOW and JUP.'''
-        return self.mesh_handler.compute_mesh_indices()
+        self.mesh_handler.compute_mesh_indices()
+        
+    def compute_geometry_derivatives(self) -> None:
+        '''Compute the geometry derivatives.'''
+        self.geometry.compute_geometry_derivatives()
     
     def run_fortran_solver(self) -> None:
         '''Run the Fortran solver.'''
-        # First compute geometry derivatives
-        self.geometry.compute_geometry_derivatives()
-        # Then run solver
-        return self.solver.run_fortran_solver()
+        self.solver.run_fortran_solver()
         
-    def compute_data_summary(self):
+    def compute_data_summary(self) -> None:
         '''Compute the data summary.'''
-        return self.solver.compute_data_summary()
+        self.solver.compute_data_summary()
     
     def output_field(self) -> None:
         '''Output the field to a file in Tecplot format.'''
-        return self.output.output_field()
+        self.output.output_field()
     
     def output_shock(self) -> None:
         '''Output shock data.'''
-        return self.output.output_shock()
+        self.output.output_shock()
     
     def print_summary(self) -> None:
         '''Main print driver: prints configuration parameters and calls specialized subroutines.'''
@@ -193,92 +197,34 @@ class PyTSFoil(object):
         # Print results summary
         self.output.print_results_summary()
     
-    def plot_all_results(self, filename: str = 'tsfoil_results.png'):
+    def plot_all_results(self, filename: str = 'tsfoil_results.png') -> None:
         '''Plot all results.'''
-        return self.viz.plot_all_results(filename)
+        self.viz.plot_all_results(filename)
     
+
     # =============================================================
-    # New convenience methods
+    # Backward compatible methods
     # =============================================================
-    
-    def get_results_summary(self) -> dict:
-        '''
-        Get a comprehensive summary of computation results.
-        
-        Returns
-        -------
-        summary: dict
-            Dictionary containing all important results
-        '''
-        # Merge various information
-        summary = {}
-        summary.update(self.output.get_summary_info())
-        summary.update(self.geometry.get_airfoil_info())
-        summary.update(self.mesh_handler.get_mesh_info())
-        return summary
-    
-    def create_plots(self):
-        '''Create all available plots.'''
-        self.viz.plot_all_results()
-        self.viz.plot_pressure_coefficient()
-        self.viz.plot_airfoil_geometry()
-        self.viz.create_comprehensive_report()
-    
-    def quick_analysis(self, **config_updates):
-        '''
-        Run a complete analysis with optional configuration updates.
-        
-        Parameters
-        ----------
-        **config_updates
-            Configuration parameters to update before running
-        '''
-        if config_updates:
-            self.set_config(**config_updates)
-        
-        print("Starting TSFOIL analysis...")
-        self.run()
-        print("Analysis completed.")
-        
-        if self.config['flag_print_info']:
-            print("Creating visualization plots...")
-            self.create_plots()
-            print("All plots created.")
-    
-    # =============================================================
-    # Backward compatible static methods
-    # =============================================================
-    
-    @staticmethod 
-    def clustcos(n_points: int, a0=0.0079, a1=0.96, beta=1.0, index_point: int|None=None) -> np.ndarray:
-        '''Point distribution on x-axis [0, 1]. (More points at both ends)'''
-        from .utils import clustcos
-        return clustcos(n_points, a0, a1, beta, index_point)
-    
-    # =============================================================
-    # Re-implementation of original methods (for complete backward compatibility)
-    # =============================================================
-    
-    def compute_geometry_derivatives(self):
+
+    def compute_geometry_derivatives(self) -> None:
         '''Compute airfoil geometry's derivatives (equivalent to BODY)'''
-        return self.geometry.compute_geometry_derivatives()
+        self.geometry.compute_geometry_derivatives()
     
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """Compute drag coefficient by momentum integral method."""
-        return self.solver.compute_drag_by_momentum_integral(sonvel, yfact, delta)
+        self.solver.compute_drag_by_momentum_integral(sonvel, yfact, delta)
     
-    def _default_config(self):
+    def _default_config(self) -> None:
         '''Set the default configuration parameters.'''
-        # This method is now implemented in core, here just for backward compatibility
-        return self.core._default_config()
+        self.core._default_config()
         
-    def _plot_mach_distribution_y0(self, ax):
+    def _plot_mach_distribution_y0(self, ax: plt.Axes) -> None:
         '''Plot Mach number distribution on Y=0 line from cpxs.dat'''
-        return self.viz._plot_mach_distribution_y0(ax)
+        self.viz._plot_mach_distribution_y0(ax)
         
-    def _plot_mach_field(self, ax):
+    def _plot_mach_field(self, ax: plt.Axes) -> None:
         '''Plot Mach number field from field.dat'''
-        return self.viz._plot_mach_field(ax)
+        self.viz._plot_mach_field(ax)
 
 
 if __name__ == "__main__":
