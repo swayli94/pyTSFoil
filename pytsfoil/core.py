@@ -228,3 +228,124 @@ class TSFoilCore:
             if arg > 0.0:
                 return math.sqrt(arg)
             return 0.0
+
+    def px(self, i: int, j: int) -> float:
+        """
+        Compute U = DP/DX at point I,J
+        
+        Parameters
+        ----------
+        i : int
+            X index (1-based Fortran indexing)
+        j : int
+            Y index (1-based Fortran indexing)
+        
+        Returns
+        -------
+        float
+            Velocity component dP/dX at point (i,j)
+        """
+        imin = tsf.common_data.imin
+        imax = tsf.common_data.imax
+        xdiff = tsf.common_data.xdiff
+        p_arr = tsf.solver_data.p
+        
+        # Convert to 0-based indexing for array access
+        i0 = i - 1
+        j0 = j - 1
+        
+        if i == imin:
+            # Upstream boundary
+            return (1.5 * xdiff[i] * (p_arr[j0, i0 + 1] - p_arr[j0, i0]) -
+                    0.5 * xdiff[i + 1] * (p_arr[j0, i0 + 2] - p_arr[j0, i0 + 1]))
+        elif i == imax:
+            # Downstream boundary
+            return (1.5 * xdiff[i0] * (p_arr[j0, i0] - p_arr[j0, i0 - 1]) -
+                    0.5 * xdiff[i0 - 1] * (p_arr[j0, i0 - 1] - p_arr[j0, i0 - 2]))
+        else:
+            # Interior mesh point
+            pji = p_arr[j0, i0]
+            return 0.5 * (xdiff[i] * (p_arr[j0, i0 + 1] - pji) + 
+                         xdiff[i0] * (pji - p_arr[j0, i0 - 1]))
+
+    def py(self, i: int, j: int) -> float:
+        """
+        Compute V = DP/DY at point I,J
+        
+        Parameters
+        ----------
+        i : int
+            X index (1-based Fortran indexing)
+        j : int
+            Y index (1-based Fortran indexing)
+        
+        Returns
+        -------
+        float
+            Velocity component dP/dY at point (i,j)
+        """
+        jmin = tsf.common_data.jmin
+        jmax = tsf.common_data.jmax
+        jup = tsf.common_data.jup
+        jlow = tsf.common_data.jlow
+        ile = tsf.common_data.ile
+        ite = tsf.common_data.ite
+        ydiff = tsf.common_data.ydiff
+        alpha = tsf.common_data.alpha
+        fxu = tsf.common_data.fxu
+        fxl = tsf.common_data.fxl
+        p_arr = tsf.solver_data.p
+        pjump = tsf.solver_data.pjump
+        
+        # Convert to 0-based indexing for array access
+        i0 = i - 1
+        j0 = j - 1
+        jup0 = jup - 1
+        jlow0 = jlow - 1
+        
+        if j == jmin:
+            # I,J is on lower boundary. Use one sided derivative
+            return (1.5 * ydiff[j] * (p_arr[j0 + 1, i0] - p_arr[j0, i0]) -
+                    0.5 * ydiff[j + 1] * (p_arr[j0 + 2, i0] - p_arr[j0 + 1, i0]))
+        
+        elif j == jlow:
+            # I,J is on row of mesh points below airfoil
+            vminus = ydiff[j0] * (p_arr[j0, i0] - p_arr[j0 - 1, i0])
+            
+            if i < ile:
+                # I,J is ahead of airfoil
+                return 0.5 * ((p_arr[jup0, i0] - p_arr[jlow0, i0]) * ydiff[jup0] + vminus)
+            elif i > ite:
+                # I,J is behind airfoil
+                return 0.5 * ((p_arr[jup0, i0] - pjump[i0] - p_arr[jlow0, i0]) * ydiff[jup0] + vminus)
+            else:
+                # I,J is under airfoil. Use derivative boundary condition
+                ic = i - ile  # 0-based index for fxl
+                return 0.5 * (fxl[ic] - alpha + vminus)
+        
+        elif j == jup:
+            # I,J is on row of mesh points above airfoil
+            vplus = ydiff[j] * (p_arr[j0 + 1, i0] - p_arr[j0, i0])
+            
+            if i < ile:
+                # I,J is ahead of airfoil
+                return 0.5 * ((p_arr[jup0, i0] - p_arr[jlow0, i0]) * ydiff[jup0] + vplus)
+            elif i > ite:
+                # I,J is behind airfoil
+                return 0.5 * ((p_arr[jup0, i0] - pjump[i0] - p_arr[jlow0, i0]) * ydiff[jup0] + vplus)
+            else:
+                # I,J is over airfoil. Use derivative boundary condition
+                ic = i - ile  # 0-based index for fxu
+                return 0.5 * (vplus + fxu[ic] - alpha)
+        
+        elif j == jmax:
+            # I,J is on top row of mesh points. Use one sided formula
+            return (1.5 * ydiff[j0] * (p_arr[j0, i0] - p_arr[j0 - 1, i0]) -
+                    0.5 * ydiff[j0 - 1] * (p_arr[j0 - 1, i0] - p_arr[j0 - 2, i0]))
+        
+        else:
+            # I,J is an interior point
+            pji = p_arr[j0, i0]
+            return 0.5 * (ydiff[j] * (p_arr[j0 + 1, i0] - pji) + 
+                         ydiff[j0] * (pji - p_arr[j0 - 1, i0]))
+

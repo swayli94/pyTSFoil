@@ -35,45 +35,6 @@ class ViscousCorrection:
         """
         self.core = core
     
-    def px(self, i: int, j: int) -> float:
-        """
-        Compute U = DP/DX at point I,J
-        
-        Parameters
-        ----------
-        i : int
-            X index (1-based Fortran indexing)
-        j : int
-            Y index (1-based Fortran indexing)
-        
-        Returns
-        -------
-        float
-            Velocity component dP/dX at point (i,j)
-        """
-        imin = tsf.common_data.imin
-        imax = tsf.common_data.imax
-        xdiff = tsf.common_data.xdiff
-        p_arr = tsf.solver_data.p
-        
-        # Convert to 0-based indexing for array access
-        i0 = i - 1
-        j0 = j - 1
-        
-        if i == imin:
-            # Upstream boundary
-            return (1.5 * xdiff[i] * (p_arr[j0, i0 + 1] - p_arr[j0, i0]) -
-                    0.5 * xdiff[i + 1] * (p_arr[j0, i0 + 2] - p_arr[j0, i0 + 1]))
-        elif i == imax:
-            # Downstream boundary
-            return (1.5 * xdiff[i0] * (p_arr[j0, i0] - p_arr[j0, i0 - 1]) -
-                    0.5 * xdiff[i0 - 1] * (p_arr[j0, i0 - 1] - p_arr[j0, i0 - 2]))
-        else:
-            # Interior mesh point
-            pji = p_arr[j0, i0]
-            return 0.5 * (xdiff[i] * (p_arr[j0, i0 + 1] - pji) + 
-                         xdiff[i0] * (pji - p_arr[j0, i0 - 1]))
-
     def findsk(self, istart: int, iend: int, j: int, sonvel: float) -> int:
         """
         Find shock location along line J
@@ -95,12 +56,12 @@ class ViscousCorrection:
             Shock location index (negative if no shock found)
         """
         isk = istart - 1
-        u2 = self.px(isk, j)
+        u2 = tsf.solver_base.px(isk, j)
         
         while True:
             isk += 1
             u1 = u2
-            u2 = self.px(isk, j)
+            u2 = tsf.solver_base.px(isk, j)
             if u1 > sonvel and u2 <= sonvel:
                 return isk
             if isk >= iend:
@@ -218,12 +179,12 @@ class ViscousCorrection:
             nvwprt[m] += 1
             
             # Compute X position of shock by interpolation
-            v1 = self.px(isk - 1, j_surface)
-            xshk[m, n] = x_coords[isk - 2] + (sonvel - v1) / ((self.px(isk, j_surface) - v1) * xdiff[isk - 1])
+            v1 = tsf.solver_base.px(isk - 1, j_surface)
+            xshk[m, n] = x_coords[isk - 2] + (sonvel - v1) / ((tsf.solver_base.px(isk, j_surface) - v1) * xdiff[isk - 1])
             
             # Compute flow properties 3 points upstream
             isk3 = isk - 3
-            u = self.px(isk3, j_surface)
+            u = tsf.solver_base.px(isk3, j_surface)
             am1[m, n] = self.core.emach1(u, delta)
             am1sq = am1[m, n] ** 2
             

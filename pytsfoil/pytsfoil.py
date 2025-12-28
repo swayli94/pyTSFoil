@@ -173,7 +173,7 @@ class PyTSFoil(object):
         
     def compute_data_summary(self) -> None:
         '''Compute the data summary.'''
-        self.solver.compute_data_summary()
+        self.solver.post_process.compute_data_summary()
     
     def output_field(self) -> None:
         '''Output the field to a file in Tecplot format.'''
@@ -192,7 +192,7 @@ class PyTSFoil(object):
             sonvel = tsf.solver_data.sonvel
             yfact = tsf.solver_data.yfact
             delta = tsf.common_data.delta
-            self.solver.compute_drag_by_momentum_integral(sonvel, yfact, delta)
+            self.solver.post_process.compute_drag_by_momentum_integral(sonvel, yfact, delta)
         
         # Print results summary
         self.output.print_results_summary()
@@ -212,7 +212,7 @@ class PyTSFoil(object):
     
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """Compute drag coefficient by momentum integral method."""
-        self.solver.compute_drag_by_momentum_integral(sonvel, yfact, delta)
+        self.solver.post_process.compute_drag_by_momentum_integral(sonvel, yfact, delta)
     
     def _default_config(self) -> None:
         '''Set the default configuration parameters.'''
