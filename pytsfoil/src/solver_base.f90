@@ -8,7 +8,7 @@ module solver_base
     private
 
     ! Public functions
-    public :: PX, PY, DIFCOE, ANGLE
+    public :: PX, PY, ANGLE
     public :: LIFT, PITCH, FINDSK, CDCOLE
 
 contains

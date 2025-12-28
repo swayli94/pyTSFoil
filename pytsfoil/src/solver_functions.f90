@@ -5,7 +5,7 @@ module solver_functions
     implicit none
     private
 
-    public :: SETBC, BCEND, FARFLD, SCALE, EMACH1, VWEDGE
+    public :: SETBC, BCEND, EMACH1, VWEDGE
     
 contains
 

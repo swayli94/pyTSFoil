@@ -6,6 +6,7 @@ module main_iteration
     private
 
     public :: SOLVE
+    public :: SYOR, RECIRC, REDUB, RESET
 
 contains
 
