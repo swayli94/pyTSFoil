@@ -24,3 +24,6 @@ build/
 dist/
 __pycache__/
 .eggs
+
+
+backup/

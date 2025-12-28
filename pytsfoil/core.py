@@ -1,0 +1,185 @@
+"""
+TSFoil core data management module
+
+Contains the core class for all shared data, responsible for:
+- Data storage and management
+- Configuration parameter settings
+- Fortran module initialization
+- Working directory management
+"""
+
+import sys
+import os
+from pathlib import Path
+import numpy as np
+
+try:
+    import tsfoil_fortran as tsf
+except ImportError as e:
+    print("ERROR: Could not import tsfoil_fortran module!")
+    print(f"Import error: {e}")
+    print()
+    print("Make sure you have compiled the Fortran modules with f2py:")
+    print("  python3 pyTSFoil/compile_f2py.py")
+    sys.exit(1)
+
+
+class TSFoilCore:
+    """
+    TSFoil core data class that stores all shared data and configuration information.
+    
+    This class is the data center for all functional modules, through which you can access:
+    - Configuration parameters (config)
+    - Airfoil data (airfoil) 
+    - Mesh data (mesh)
+    - Computation results (data_summary)
+    """
+    
+    def __init__(self, airfoil_coordinates: np.ndarray|None = None,
+                 airfoil_file: str|None = None,
+                 work_dir: str|None = None,
+                 output_dir: str|None = None):
+        """
+        Initialize core data object
+        
+        Parameters
+        ----------
+        airfoil_coordinates: ndarray [n_points, 2] | None
+            Airfoil coordinate data
+        airfoil_file: str | None  
+            Airfoil geometry file path
+        work_dir: str | None
+            Working directory
+        output_dir: str | None
+            Output directory
+        """
+        # Core data structures
+        self.config = {}
+        self.airfoil = {'file': airfoil_file, 'coordinates': airfoil_coordinates}
+        self.mesh = {}
+        self.data_summary = {}
+
+        # Setup working directories
+        self._setup_directories(work_dir, output_dir)
+        
+        # Setup default configuration
+        self._default_config()
+    
+    def _setup_directories(self, work_dir: str|None, output_dir: str|None) -> None:
+        """Setup working directory and output directory"""
+        # Fortran output file directory (smry.out, tsfoil2.out)
+        if work_dir is None:
+            script_dir = Path(__file__).parent
+            parent_dir = script_dir.parent
+            os.chdir(parent_dir)
+        else:
+            os.chdir(work_dir)
+                        
+        self.work_dir = os.getcwd()
+        
+        # Python output file directory (cpxs.dat, field.dat)
+        if output_dir is None:
+            self.output_dir = self.work_dir
+        else:
+            self.output_dir = output_dir
+    
+    def _default_config(self) -> None:
+        """Setup default configuration parameters"""
+        # Default configuration parameters (user input parameters, corresponding to namelist /INP/ in Fortran)
+        # NU, NL, DELTA are set in set_airfoil()
+        # IMAXI, JMAXI are set in set_mesh()
+        self.config = {
+            'AK': 0.0,              # Free stream similarity parameter
+            'ALPHA': 0.0,           # Angle of attack
+            'BCTYPE': 1,            # Boundary condition type (1 = free air, 2 = wind tunnel)
+            'CVERGE': 0.00001,      # Convergence criterion
+            'DVERGE': 10.0,         # Divergence criterion  
+            'EMACH': 0.75,          # Mach number
+            'EPS': 0.2,             # Convergence tolerance
+            'FCR': 1,               # Whether to use fully conservative difference equations
+            'IPRTER': 100,          # Convergence history print interval
+            'KUTTA': 1,             # Whether to enforce Kutta condition
+            'MAXIT': 1000,          # Maximum number of iterations
+            'PHYS': 1,              # Physical coordinates vs similarity coordinates
+            'POR': 0.0,             # Porosity
+            'RIGF': 0.0,            # Rigidity factor for transonic effects
+            'SIMDEF': 3,            # Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
+            'WCIRC': 1.0,           # Weight for circulation jump at trailing edge (0.0-1.0)
+            'WE': [1.8, 1.9, 1.95], # SOR relaxation factors
+            'NWDGE': 0,             # Viscous wedge parameters (0 = no wedge, 1 = Murman wedge, 2 = Yoshihara wedge)
+            'REYNLD': 4.0E6,        # Reynolds number
+            'WCONST': 4.0,          # Wall constant for Murman wedge
+            'IFLAP': 0,             # Flap flag
+            'DELFLP': 0.0,          # Flap deflection angle
+            'FLPLOC': 0.77,         # Flap location
+            'n_point_x': 81,        # Grid points in x-direction (IMAXI)
+            'n_point_y': 60,        # Grid points in y-direction (JMAXI)
+            'n_point_airfoil': 51,  # Number of points on airfoil surface
+            
+            'flag_output': True,          # Write solver process to tsfoil2.out
+            'flag_output_summary': True,  # smry.out
+            'flag_output_shock': True,    # cpxs.dat
+            'flag_output_field': True,    # field.dat
+            
+            'flag_print_info': True,
+        }
+        
+        # Default parameters
+        self.skiprows: int = 1
+        self.x_scale: float = 5.0
+        self.y_scale: float = 4.0
+    
+    def set_config(self, **kwargs) -> None:
+        """
+        Set configuration parameters
+        
+        Parameters
+        ----------
+        **kwargs
+            Configuration parameter key-value pairs
+        """
+        for key, value in kwargs.items():
+            if key in self.config:
+                self.config[key] = value
+            else:
+                raise ValueError(f"Invalid configuration parameter: {key}")
+    
+    def initialize_data(self) -> None:
+        """Initialize data in Fortran module and Python module"""
+        # Initialize common data
+        tsf.common_data.initialize_common()
+        tsf.solver_data.initialize_solver_data()
+
+        # Check parameters
+        if self.config['EMACH'] < 0.5 or self.config['EMACH'] > 2.0:
+            raise ValueError("EMACH must be between 0.5 and 2.0")
+        if self.config['ALPHA'] < -9.0 or self.config['ALPHA'] > 9.0:
+            raise ValueError("ALPHA must be between -9.0 and 9.0")
+        if self.config['NWDGE'] > 0 and self.config['EMACH'] > 1.0:
+            raise ValueError("NWDGE must be 0 if EMACH <= 1.0")
+        
+        # Set AK=0 for physical coordinates
+        if self.config['PHYS'] == 1:
+            self.config['AK'] = 0.0
+            
+        # Constants
+        self.n_mesh_points = tsf.common_data.n_mesh_points
+        self.nmp_plus1 = tsf.common_data.nmp_plus1
+        self.nmp_plus2 = tsf.common_data.nmp_plus2
+        
+        # Apply self.config to common data
+        for key, value in self.config.items():
+            setattr(tsf.common_data, key.lower(), value)
+        
+        # Open output files
+        if self.config['flag_output']:
+            tsf.io_module.open_output_file()
+        if self.config['flag_output_summary']:
+            tsf.io_module.open_summary_file()
+
+        # Print working directory and output directory
+        if self.config['flag_print_info']:
+            print(f"pyTSFoil working directory: {self.work_dir}")
+            print(f"pyTSFoil output directory: {self.output_dir}")
+            print()
+
