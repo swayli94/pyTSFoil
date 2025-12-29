@@ -8,7 +8,10 @@ Responsible for mesh generation, setup and index calculation, including:
 """
 
 import numpy as np
+from scipy.interpolate import CubicSpline
+from scipy import integrate
 from .utils import clustcos
+from .core import TSFoilCore
 
 try:
     import tsfoil_fortran as tsf
@@ -19,7 +22,7 @@ except ImportError as e:
 class MeshHandler:
     """Mesh handler class"""
     
-    def __init__(self, core):
+    def __init__(self, core: TSFoilCore):
         """
         Initialize mesh handler
         
@@ -143,6 +146,135 @@ class MeshHandler:
         # Number of points on airfoil
         self.core.mesh['nfoil'] = self.core.mesh['ite'] - self.core.mesh['ile'] + 1
         tsf.common_data.nfoil = self.core.mesh['nfoil']
+    
+    def compute_geometry_derivatives(self) -> None:
+        """
+        Compute airfoil geometry derivatives (equivalent to Fortran BODY subroutine)
+        
+        This is a preprocessing step for the solver. It converts raw airfoil geometry
+        into boundary condition format required by the solver (especially surface slopes
+        fxu, fxl which are used directly for airfoil boundary conditions).
+        
+        Processing steps:
+            1. Cubic spline interpolation on upper/lower surfaces to get coordinates
+               (fu, fl) and slopes (fxu, fxl) at mesh x-coordinates
+            2. Compute airfoil cross-sectional area (volume) using Simpson's rule
+            3. Apply flap deflection correction if enabled (IFLAP != 0)
+            4. Compute camber and thickness distributions
+            5. Apply rigidity factor (RIGF) correction to surface slopes for 
+               improved accuracy on thick airfoils in transonic flow
+        
+        Inputs:
+            - Raw airfoil coordinates: xu, yu, xl, yl
+            - Mesh x-coordinates: xfoil (from set_mesh)
+            - Config parameters: PHYS, RIGF, IFLAP, DELFLP, FLPLOC
+        
+        Outputs (stored in tsf.common_data):
+            - fu, fl: Upper/lower surface y-coordinates at mesh points
+            - fxu, fxl: Upper/lower surface slopes (dy/dx) - key boundary condition input
+            - xfoil: Airfoil mesh x-coordinates
+            - camber, thick: Camber line and half-thickness distributions
+            - vol: Airfoil cross-sectional area
+        """
+        # Get data from common_data (Fortran module variables)
+        delta = self.core.airfoil['t_max']
+        rigf = self.core.config['RIGF']
+        
+        # Airfoil geometry coordinates
+        xu = self.core.airfoil['xu']
+        yu = self.core.airfoil['yu'] 
+        xl = self.core.airfoil['xl']
+        yl = self.core.airfoil['yl']
+        nu = xu.shape[0]
+        nl = xl.shape[0]
+        
+        # Mesh coordinates
+        xfoil = self.core.mesh['xx_airfoil']
+        nfoil = self.core.mesh['nfoil']
+        
+        # Flap parameters
+        iflap = self.core.config['IFLAP']
+        delflp = self.core.config['DELFLP']  
+        flploc = self.core.config['FLPLOC']
+        
+        # Scaling factor
+        delinv = 1.0
+        if self.core.config['PHYS'] == 1:
+            delinv = 1.0 / delta
+
+        # Upper surface cubic spline interpolation
+        # Calculate endpoint derivatives as boundary conditions
+        dy1_u = (yu[1] - yu[0]) / (xu[1] - xu[0])
+        dy2_u = (yu[nu-1] - yu[nu-2]) / (xu[nu-1] - xu[nu-2])
+        
+        # Create cubic spline with derivative boundary conditions
+        cs_upper = CubicSpline(xu, yu, bc_type=((1, dy1_u), (1, dy2_u)))
+        
+        # Interpolate upper surface at mesh x-coordinates
+        fu = cs_upper(xfoil) * delinv
+        fxu = cs_upper(xfoil, 1) * delinv
+        
+        # Lower surface cubic spline interpolation
+        dy1_l = (yl[1] - yl[0]) / (xl[1] - xl[0])
+        dy2_l = (yl[nl-1] - yl[nl-2]) / (xl[nl-1] - xl[nl-2])
+        
+        cs_lower = CubicSpline(xl, yl, bc_type=((1, dy1_l), (1, dy2_l)))
+        
+        # Interpolate lower surface at mesh x-coordinates
+        fl = cs_lower(xfoil) * delinv
+        fxl = cs_lower(xfoil, 1) * delinv
+        
+        # Compute volume using Simpson's rule
+        vol = integrate.simpson(y=fu-fl, x=xfoil)
+        
+        # Add flap deflection if any
+        if iflap != 0:
+            dflap = delflp / 57.29578  # Convert degrees to radians
+            sdflap = np.sin(dflap)
+            
+            # Find flap hinge point
+            ifp = 0
+            for i in range(nfoil):
+                if xfoil[i] >= flploc:
+                    ifp = i
+                    break
+            
+            # Apply flap deflection
+            for i in range(ifp, nfoil):
+                dely = (xfoil[i] - flploc) * sdflap * delinv
+                fu[i] = fu[i] - dely
+                fl[i] = fl[i] - dely
+                fxu[i] = fxu[i] - dflap * delinv
+                fxl[i] = fxl[i] - dflap * delinv
+        
+        # Compute camber and thickness
+        camber = 0.5 * (fu + fl)
+        thick = 0.5 * (fu - fl)
+        
+        # Apply rigidity factor correction to surface slopes
+        fxu = fxu / np.sqrt(1.0 + rigf * (delta * fxu)**2)
+        fxl = fxl / np.sqrt(1.0 + rigf * (delta * fxl)**2)
+        
+        # Store results in common_data arrays
+        tsf.common_data.vol = vol
+        
+        # Pad arrays to expected size
+        tsf.common_data.fu[:nfoil] = fu.astype(np.float32)
+        tsf.common_data.fl[:nfoil] = fl.astype(np.float32)
+        tsf.common_data.fxu[:nfoil] = fxu.astype(np.float32)
+        tsf.common_data.fxl[:nfoil] = fxl.astype(np.float32)
+        tsf.common_data.xfoil[:nfoil] = xfoil.astype(np.float32)
+        tsf.common_data.camber[:nfoil] = camber.astype(np.float32)
+        tsf.common_data.thick[:nfoil] = thick.astype(np.float32)
+        
+        # Print or log geometry (equivalent to PRBODY call)
+        if self.core.config['flag_print_info']:
+            print(f"Airfoil geometry computed successfully:")
+            print(f"  Number of points: {nfoil}")
+            print(f"  Volume: {vol:.6f}")
+            print(f"  Max thickness: {delta:.6f}")
+            if iflap != 0:
+                print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
     
     def get_mesh_info(self) -> dict:
         """

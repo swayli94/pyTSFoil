@@ -9,8 +9,7 @@ Responsible for airfoil geometry processing and computation, including:
 """
 
 import numpy as np
-from scipy.interpolate import CubicSpline
-from scipy import integrate
+from .core import TSFoilCore
 
 try:
     import tsfoil_fortran as tsf
@@ -21,7 +20,7 @@ except ImportError as e:
 class GeometryProcessor:
     """Geometry processor class"""
     
-    def __init__(self, core):
+    def __init__(self, core: TSFoilCore):
         """
         Initialize geometry processor
         
@@ -50,17 +49,17 @@ class GeometryProcessor:
         if self.core.airfoil['file'] is not None:
             x, y = np.loadtxt(self.core.airfoil['file'], skiprows=self.core.skiprows).T
         elif self.core.airfoil['coordinates'] is not None:
-            x = self.core.airfoil['coordinates'][:, 0]
-            y = self.core.airfoil['coordinates'][:, 1]
+            x : np.ndarray = self.core.airfoil['coordinates'][:, 0]
+            y : np.ndarray = self.core.airfoil['coordinates'][:, 1]
         else:
             raise ValueError("Either airfoil_file or airfoil_coordinates must be provided")
         
-        le_pos = x.argmin()
+        le_pos : int = x.argmin()
 
-        xu = x[:le_pos+1][::-1]
-        yu = y[:le_pos+1][::-1]
-        xl = x[le_pos:]
-        yl = y[le_pos:]
+        xu : np.ndarray = x[:le_pos+1][::-1]
+        yu : np.ndarray = y[:le_pos+1][::-1]
+        xl : np.ndarray = x[le_pos:]
+        yl : np.ndarray = y[le_pos:]
         
         # Interpolate airfoil and get maximum thickness (DELTA)
         x_interp = np.linspace(np.min(x), np.max(x), num=501)
@@ -85,114 +84,6 @@ class GeometryProcessor:
         tsf.common_data.xl[:len(xl)] = xl.astype(np.float32)
         tsf.common_data.yl[:len(yl)] = yl.astype(np.float32)
 
-    def compute_geometry_derivatives(self) -> None:
-        """
-        Compute airfoil geometry derivatives (equivalent to BODY)
-        
-        This function translates the Fortran BODY subroutine to Python using scipy.
-        It performs cubic spline interpolation on airfoil surfaces, computes volume,
-        handles flap deflection, and computes camber and thickness distributions.
-        """
-        # Get data from common_data (Fortran module variables)
-        delta = self.core.airfoil['t_max']
-        rigf = self.core.config['RIGF']
-        
-        # Airfoil geometry coordinates
-        xu = self.core.airfoil['xu']
-        yu = self.core.airfoil['yu'] 
-        xl = self.core.airfoil['xl']
-        yl = self.core.airfoil['yl']
-        nu = xu.shape[0]
-        nl = xl.shape[0]
-        
-        # Mesh coordinates
-        xfoil = self.core.mesh['xx_airfoil']
-        nfoil = self.core.mesh['nfoil']
-        
-        # Flap parameters
-        iflap = self.core.config['IFLAP']
-        delflp = self.core.config['DELFLP']  
-        flploc = self.core.config['FLPLOC']
-        
-        # Scaling factor
-        delinv = 1.0
-        if self.core.config['PHYS'] == 1:
-            delinv = 1.0 / delta
-
-        # Upper surface cubic spline interpolation
-        # Calculate endpoint derivatives as boundary conditions
-        dy1_u = (yu[1] - yu[0]) / (xu[1] - xu[0])
-        dy2_u = (yu[nu-1] - yu[nu-2]) / (xu[nu-1] - xu[nu-2])
-        
-        # Create cubic spline with derivative boundary conditions
-        cs_upper = CubicSpline(xu, yu, bc_type=((1, dy1_u), (1, dy2_u)))
-        
-        # Interpolate upper surface at mesh x-coordinates
-        fu = cs_upper(xfoil) * delinv
-        fxu = cs_upper(xfoil, 1) * delinv
-        
-        # Lower surface cubic spline interpolation
-        dy1_l = (yl[1] - yl[0]) / (xl[1] - xl[0])
-        dy2_l = (yl[nl-1] - yl[nl-2]) / (xl[nl-1] - xl[nl-2])
-        
-        cs_lower = CubicSpline(xl, yl, bc_type=((1, dy1_l), (1, dy2_l)))
-        
-        # Interpolate lower surface at mesh x-coordinates
-        fl = cs_lower(xfoil) * delinv
-        fxl = cs_lower(xfoil, 1) * delinv
-        
-        # Compute volume using Simpson's rule
-        vol = integrate.simpson(y=fu-fl, x=xfoil)
-        
-        # Add flap deflection if any
-        if iflap != 0:
-            dflap = delflp / 57.29578  # Convert degrees to radians
-            sdflap = np.sin(dflap)
-            
-            # Find flap hinge point
-            ifp = 0
-            for i in range(nfoil):
-                if xfoil[i] >= flploc:
-                    ifp = i
-                    break
-            
-            # Apply flap deflection
-            for i in range(ifp, nfoil):
-                dely = (xfoil[i] - flploc) * sdflap * delinv
-                fu[i] = fu[i] - dely
-                fl[i] = fl[i] - dely
-                fxu[i] = fxu[i] - dflap * delinv
-                fxl[i] = fxl[i] - dflap * delinv
-        
-        # Compute camber and thickness
-        camber = 0.5 * (fu + fl)
-        thick = 0.5 * (fu - fl)
-        
-        # Apply rigidity factor correction to surface slopes
-        fxu = fxu / np.sqrt(1.0 + rigf * (delta * fxu)**2)
-        fxl = fxl / np.sqrt(1.0 + rigf * (delta * fxl)**2)
-        
-        # Store results in common_data arrays
-        tsf.common_data.vol = vol
-        
-        # Pad arrays to expected size
-        tsf.common_data.fu[:nfoil] = fu.astype(np.float32)
-        tsf.common_data.fl[:nfoil] = fl.astype(np.float32)
-        tsf.common_data.fxu[:nfoil] = fxu.astype(np.float32)
-        tsf.common_data.fxl[:nfoil] = fxl.astype(np.float32)
-        tsf.common_data.xfoil[:nfoil] = xfoil.astype(np.float32)
-        tsf.common_data.camber[:nfoil] = camber.astype(np.float32)
-        tsf.common_data.thick[:nfoil] = thick.astype(np.float32)
-        
-        # Print or log geometry (equivalent to PRBODY call)
-        if self.core.config['flag_print_info']:
-            print(f"Airfoil geometry computed successfully:")
-            print(f"  Number of points: {nfoil}")
-            print(f"  Volume: {vol:.6f}")
-            print(f"  Max thickness: {delta:.6f}")
-            if iflap != 0:
-                print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
-    
     def get_airfoil_info(self) -> dict:
         """
         Get airfoil information summary

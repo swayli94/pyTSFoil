@@ -41,9 +41,12 @@ import matplotlib.pyplot as plt
 from .core import TSFoilCore
 from .mesh import MeshHandler
 from .geometry import GeometryProcessor
+from .viscous import ViscousCorrection
 from .solver import SolverManager
 from .output import OutputHandler
 from .visualization import Visualizer
+from .post_processing import PostProcessing
+from .pre_processing import PreProcessing
 
 try:
     import tsfoil_fortran as tsf
@@ -96,9 +99,18 @@ class PyTSFoil(object):
         # Functional modules
         self.mesh_handler = MeshHandler(self.core)
         self.geometry = GeometryProcessor(self.core)
-        self.solver = SolverManager(self.core)
+        
         self.output = OutputHandler(self.core)
         self.viz = Visualizer(self.core)
+        
+        self.viscous_correction = ViscousCorrection(self.core)
+        self.pre_processing = PreProcessing(self.core)
+        self.post_processing = PostProcessing(self.core)
+        
+        self.solver = SolverManager(core=self.core, 
+                            pre_processing=self.pre_processing,
+                            post_processing=self.post_processing,
+                            viscous_correction=self.viscous_correction)
         
         # For backward compatibility, expose some core attributes
         self.config = self.core.config
@@ -129,13 +141,9 @@ class PyTSFoil(object):
         
         self.set_mesh()
         
-        self.compute_mesh_indices()
+        self.pre_process()
         
-        self.compute_geometry_derivatives()
-
-        self.run_fortran_solver()
-        
-        self.compute_data_summary()
+        self.run_solver()
         
         self.print_summary()
     
@@ -150,31 +158,26 @@ class PyTSFoil(object):
     def set_airfoil(self) -> None:
         '''Read the airfoil geometry from a file, and set the airfoil geometry.'''
         self.geometry.set_airfoil()
-        # For backward compatibility, print information
         self.geometry.print_airfoil_info()
     
     def set_mesh(self) -> None:
-        '''Set the mesh coordinates.'''
+        '''Set the mesh coordinates and compute mesh indices.'''
         self.mesh_handler.set_mesh()
-        # For backward compatibility, print information
         self.mesh_handler.print_mesh_info()
-    
-    def compute_mesh_indices(self) -> None:
-        '''Compute mesh indices, including ILE and ITE, JLOW and JUP.'''
         self.mesh_handler.compute_mesh_indices()
-        
-    def compute_geometry_derivatives(self) -> None:
-        '''Compute the geometry derivatives.'''
-        self.geometry.compute_geometry_derivatives()
+        self.mesh_handler.compute_geometry_derivatives()
     
-    def run_fortran_solver(self) -> None:
+    def pre_process(self) -> None:
+        '''Pre-process the data.'''
+        self.pre_processing.apply_similarity_scaling()
+        self.pre_processing.setup_farfield_boundary()
+        self.pre_processing.compute_fd_coefficients()
+        self.pre_processing.setup_body_boundary()
+    
+    def run_solver(self) -> None:
         '''Run the Fortran solver.'''
-        self.solver.run_fortran_solver()
-        
-    def compute_data_summary(self) -> None:
-        '''Compute the data summary.'''
-        self.solver.post_process.compute_data_summary()
-    
+        self.solver.run_solver()
+            
     def output_field(self) -> None:
         '''Output the field to a file in Tecplot format.'''
         self.output.output_field()
@@ -185,6 +188,8 @@ class PyTSFoil(object):
     
     def print_summary(self) -> None:
         '''Main print driver: prints configuration parameters and calls specialized subroutines.'''
+        self.post_processing.compute_data_summary()
+        
         self.output.print_summary()
         
         # Momentum integral drag calculation
@@ -192,7 +197,7 @@ class PyTSFoil(object):
             sonvel = tsf.solver_data.sonvel
             yfact = tsf.solver_data.yfact
             delta = tsf.common_data.delta
-            self.solver.post_process.compute_drag_by_momentum_integral(sonvel, yfact, delta)
+            self.post_processing.compute_drag_by_momentum_integral(sonvel, yfact, delta)
         
         # Print results summary
         self.output.print_results_summary()
@@ -201,31 +206,6 @@ class PyTSFoil(object):
         '''Plot all results.'''
         self.viz.plot_all_results(filename)
     
-
-    # =============================================================
-    # Backward compatible methods
-    # =============================================================
-
-    def compute_geometry_derivatives(self) -> None:
-        '''Compute airfoil geometry's derivatives (equivalent to BODY)'''
-        self.geometry.compute_geometry_derivatives()
-    
-    def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
-        """Compute drag coefficient by momentum integral method."""
-        self.solver.post_process.compute_drag_by_momentum_integral(sonvel, yfact, delta)
-    
-    def _default_config(self) -> None:
-        '''Set the default configuration parameters.'''
-        self.core._default_config()
-        
-    def _plot_mach_distribution_y0(self, ax: plt.Axes) -> None:
-        '''Plot Mach number distribution on Y=0 line from cpxs.dat'''
-        self.viz._plot_mach_distribution_y0(ax)
-        
-    def _plot_mach_field(self, ax: plt.Axes) -> None:
-        '''Plot Mach number field from field.dat'''
-        self.viz._plot_mach_field(ax)
-
 
 if __name__ == "__main__":
     

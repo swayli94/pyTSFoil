@@ -1,5 +1,5 @@
 '''
-Post-process module for TSFoil solver
+Post-processing module for TSFoil solver.
 
 Responsible for computing aerodynamic coefficients, including:
 - Lift coefficient (CL)
@@ -9,7 +9,7 @@ Responsible for computing aerodynamic coefficients, including:
 
 import os
 import numpy as np
-
+from .core import TSFoilCore
 from .utils import (
     trap_integration,
     find_shock_location,
@@ -23,39 +23,12 @@ except ImportError as e:
     raise ImportError("tsfoil_fortran module not available") from e
 
 
-def trap(x_arr: np.ndarray, y_arr: np.ndarray) -> float:
-    """
-    Integrates Y DX by trapezoidal rule.
-    
-    Equivalent to Fortran TRAP subroutine in math_module.f90
-    
-    Parameters
-    ----------
-    x_arr : np.ndarray
-        X coordinates array
-    y_arr : np.ndarray  
-        Y values array
-        
-    Returns
-    -------
-    float
-        The integrated sum
-    """
-    n = len(x_arr)
-    sum_val = 0.0
-    for i in range(n - 1):
-        z = x_arr[i + 1] - x_arr[i]
-        w = y_arr[i + 1] + y_arr[i]
-        sum_val += z * w
-    return 0.5 * sum_val
+class PostProcessing:
+    """Post-processing class for computing aerodynamic coefficients"""
 
-
-class PostProcess:
-    """Post-process class for computing aerodynamic coefficients"""
-
-    def __init__(self, core):
+    def __init__(self, core: TSFoilCore):
         """
-        Initialize post-process class
+        Initialize post-processing class
         
         Parameters
         ----------
@@ -150,7 +123,7 @@ class PostProcess:
             k += 1
         
         # Integrate using trapezoidal rule
-        sum_val = trap(xi, arg)
+        sum_val = trap_integration(xi, arg, len(xi))
         
         # Calculate pitching moment
         # ARG(K) is the last element: arg[k-1] in 0-based indexing

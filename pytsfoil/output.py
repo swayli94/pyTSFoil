@@ -10,6 +10,7 @@ Responsible for various data output and printing, including:
 
 import os
 import numpy as np
+from .core import TSFoilCore
 
 try:
     import tsfoil_fortran as tsf
@@ -20,7 +21,7 @@ except ImportError as e:
 class OutputHandler:
     """Output handler class"""
     
-    def __init__(self, core):
+    def __init__(self, core: TSFoilCore):
         """
         Initialize output handler
         
@@ -304,7 +305,6 @@ class OutputHandler:
         yfact = tsf.solver_data.yfact
         vfact = tsf.solver_data.vfact
         sonvel = tsf.solver_data.sonvel
-        abort1 = tsf.solver_data.abort1
         
         # Write summary file
         if self.core.config['flag_output_summary']:
@@ -327,7 +327,6 @@ class OutputHandler:
                 f.write(f'# YFACT = {yfact:10.6f}\n')
                 f.write(f'# VFACT = {vfact:10.6f}\n')
                 f.write(f'# SONVEL = {sonvel:10.6f}\n')
-                f.write(f'# ABORT1 = {abort1:10.6f}\n')
                 f.write(f'# BCTYPE = {bctype:10.6f}\n')
                 f.write(f'# FCR = {fcr:10.6f}\n')
                 f.write(f'# KUTTA = {kutta:10.6f}\n')
