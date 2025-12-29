@@ -15,10 +15,7 @@ from .viscous import ViscousCorrection
 from .pre_processing import PreProcessing
 from .post_processing import PostProcessing
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    raise ImportError("tsfoil_fortran module not available") from e
+from ._fortran import tsf
 
 
 class SolverManager:

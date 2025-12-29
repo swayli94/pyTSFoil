@@ -48,16 +48,7 @@ from .visualization import Visualizer
 from .post_processing import PostProcessing
 from .pre_processing import PreProcessing
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    print("ERROR: Could not import tsfoil_fortran module!")
-    print(f"Import error: {e}")
-    print()
-    print("Make sure you have compiled the Fortran modules with f2py:")
-    print("  python3 pyTSFoil/compile_f2py.py")
-    import sys
-    sys.exit(1)
+from ._fortran import tsf
 
 
 class PyTSFoil(object):
@@ -194,10 +185,7 @@ class PyTSFoil(object):
         
         # Momentum integral drag calculation
         if 'cpstar' in self.core.data_summary:
-            sonvel = tsf.solver_data.sonvel
-            yfact = tsf.solver_data.yfact
-            delta = tsf.common_data.delta
-            self.post_processing.compute_drag_by_momentum_integral(sonvel, yfact, delta)
+            self.post_processing.compute_drag_by_momentum_integral()
         
         # Print results summary
         self.output.print_results_summary()

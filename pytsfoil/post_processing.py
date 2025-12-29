@@ -17,10 +17,7 @@ from .utils import (
     print_shock_information
 )
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    raise ImportError("tsfoil_fortran module not available") from e
+from ._fortran import tsf
 
 
 class PostProcessing:
@@ -145,22 +142,17 @@ class PostProcessing:
         self.core.data_summary['cm'] = self.pitch(cmfact)
         self.core.data_summary['cpstar'] = tsf.solver_data.cpstar
 
-    def compute_drag_by_momentum_integral(self, sonvel: float, yfact: float, delta: float) -> None:
+    def compute_drag_by_momentum_integral(self) -> None:
         """
         Compute drag coefficient by momentum integral method
         Integrate around a contour enclosing the body and along all shocks inside the contour
         
         This is a Python translation of the CDCOLE subroutine from solver_base.f90.
-        
-        Parameters
-        ----------
-        sonvel : float
-            Speed of sound
-        yfact : float  
-            Y-coordinate scaling factor
-        delta : float
-            Airfoil maximum thickness
         """
+        sonvel = tsf.solver_data.sonvel
+        yfact = tsf.solver_data.yfact
+        delta = tsf.common_data.delta
+        
         # Get required variables from Fortran modules
         x_coords = tsf.common_data.x
         y_coords = tsf.common_data.y
@@ -178,7 +170,7 @@ class PostProcessing:
         gam1 = tsf.common_data.gam1
         fxl = tsf.common_data.fxl
         fxu = tsf.common_data.fxu
-        
+
         # Get solver data
         cjup = tsf.solver_data.cjup
         cjup1 = tsf.solver_data.cjup1

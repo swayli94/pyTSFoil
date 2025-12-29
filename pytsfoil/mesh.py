@@ -13,10 +13,7 @@ from scipy import integrate
 from .utils import clustcos
 from .core import TSFoilCore
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    raise ImportError("tsfoil_fortran module not available") from e
+from ._fortran import tsf
 
 
 class MeshHandler:

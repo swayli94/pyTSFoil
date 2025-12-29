@@ -14,15 +14,7 @@ import os
 from pathlib import Path
 import numpy as np
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    print("ERROR: Could not import tsfoil_fortran module!")
-    print(f"Import error: {e}")
-    print()
-    print("Make sure you have compiled the Fortran modules with f2py:")
-    print("  python3 pyTSFoil/compile_f2py.py")
-    sys.exit(1)
+from ._fortran import tsf
 
 
 class TSFoilCore:

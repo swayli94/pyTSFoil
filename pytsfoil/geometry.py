@@ -11,10 +11,7 @@ Responsible for airfoil geometry processing and computation, including:
 import numpy as np
 from .core import TSFoilCore
 
-try:
-    import tsfoil_fortran as tsf
-except ImportError as e:
-    raise ImportError("tsfoil_fortran module not available") from e
+from ._fortran import tsf
 
 
 class GeometryProcessor:
