@@ -18,9 +18,12 @@ It solves the transonically-scaled perturbation potential and similarity variabl
 ## Features
 
 - **Fast CFD Analysis**: Direct Python interface to modernized Fortran TSFOIL2 solver
+- **Modular Architecture**: Well-organized components (core, mesh, geometry, solver, etc.) for maintainability and extensibility
 - **Flexible Input**: Support for airfoil coordinate files or numpy arrays
 - **Comprehensive Output**: Pressure distributions, flow fields, lift/drag coefficients
+- **Viscous Corrections**: Shock/boundary layer interaction corrections (Murman/Yoshihara methods)
 - **Visualization**: Built-in plotting capabilities for results analysis
+- **Parallel Computing**: Support for multi-process parallel analysis via `multiprocessing`
 - **Example Cases**: Includes RAE2822 airfoil test cases and demonstrations
 
 ## Installation
@@ -45,7 +48,7 @@ cd pyTSFoil
 pip install -e .
 
 # Or install from PyPI
-pip install pytsfoil>=0.2.1
+pip install pytsfoil>=0.3.0
 
 # Test installation
 python -c "import pytsfoil; print('✓ pytsfoil installed successfully')" || echo "pytsfoil failed to import"
@@ -100,13 +103,36 @@ cd = pytsfoil.data_summary['cd']
 
 ```text
 pyTSFoil/
-├── pytsfoil.py           # Main PyTSFoil class and CFD interface
-├── tsfoil_fortran.*      # Compiled Fortran module
-├── compile_f2py.py       # Fortran compilation script
-├── __init__.py           # Package initialization
-└── example/              # Example cases
-    ├── rae2822/          # Basic PyTSFoil usage example
-    └── rae2822_mp/       # Multi-process PyTSFoil usage example
+├── pytsfoil/                  # Main package directory
+│   ├── __init__.py            # Package initialization and auto-compilation
+│   ├── pytsfoil.py            # Main PyTSFoil class (user interface)
+│   ├── core.py                # Core data management and configuration
+│   ├── mesh.py                # Mesh generation and processing
+│   ├── geometry.py            # Airfoil geometry processing
+│   ├── solver.py              # Numerical solver management
+│   ├── pre_processing.py      # Boundary conditions and pre-processing
+│   ├── post_processing.py     # Aerodynamic coefficients computation
+│   ├── viscous.py             # Viscous correction for shock/BL interaction
+│   ├── output.py              # Data output (Tecplot format, etc.)
+│   ├── visualization.py       # Result visualization and plotting
+│   ├── utils.py               # Utility functions
+│   ├── _fortran.py            # Fortran module interface
+│   ├── compile_f2py.py        # Fortran compilation script
+│   ├── tsfoil_fortran.*       # Compiled Fortran module (.so/.pyd)
+│   ├── tsfoil_fortran.pyf     # f2py interface file
+│   ├── VERSION                # Version file
+│   └── src/                   # Fortran source files
+│       ├── common_data.f90    # Common data module
+│       ├── solver_data.f90    # Solver data module
+│       └── main_iteration.f90 # Main iteration routines
+├── example/                   # Example cases
+│   ├── rae2822/               # Basic PyTSFoil usage example
+│   └── rae2822_mp/            # Multi-process PyTSFoil usage example
+├── pyproject.toml             # Build configuration
+├── setup.py                   # Setup script
+├── MANIFEST.in                # Package manifest
+├── LICENSE                    # License file
+└── README.md                  # This file
 ```
 
 ## Important Notes

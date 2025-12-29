@@ -66,13 +66,7 @@ else:
 
 if _fortran_available:
     # Import refactored modules
-    from .core import TSFoilCore
-    from .mesh import MeshHandler
-    from .geometry import GeometryProcessor
-    from .solver import SolverManager
-    from .output import OutputHandler
-    from .visualization import Visualizer
-    from .utils import clustcos, trap_integration
+    from .utils import clustcos
     from .pytsfoil import PyTSFoil
 else:
     # Provide a stub class that shows helpful error message
@@ -85,22 +79,11 @@ else:
                 f"  python {Path(__file__).parent / 'compile_f2py.py'}"
             )
     
-    # Provide module stubs
-    TSFoilCore = None
-    MeshHandler = None 
-    GeometryProcessor = None
-    SolverManager = None
-    OutputHandler = None
-    Visualizer = None
-
 __version__ = (files(__package__) / "VERSION").read_text().strip()
 
-# Main interface is still PyTSFoil, other classes available for advanced users
+# Main interface is PyTSFoil, do not disclose other classes
 __all__ = [
     'PyTSFoil', '__version__',
-    # Modular components for advanced users
-    'TSFoilCore', 'MeshHandler', 'GeometryProcessor', 
-    'SolverManager', 'OutputHandler', 'Visualizer',
     # Utility functions
-    'clustcos', 'trap_integration'
+    'clustcos'
 ]
