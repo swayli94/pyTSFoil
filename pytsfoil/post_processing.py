@@ -10,12 +10,7 @@ Responsible for computing aerodynamic coefficients, including:
 import os
 import numpy as np
 from .core import TSFoilCore
-from .utils import (
-    trap_integration,
-    find_shock_location,
-    find_new_shock_location,
-    print_shock_information
-)
+from .utils import trap_integration
 
 from ._fortran import tsf
 
@@ -102,29 +97,23 @@ class PostProcessing:
         # Set XM to quarter chord
         xm = 0.25
         
-        # Build XI and ARG arrays (from ILE to ITE)
-        # Note: Fortran uses 1-based indexing
-        n_points = ite - ile + 1
-        xi = np.zeros(n_points)
-        arg = np.zeros(n_points)
+        # Build XI and ARG arrays using vectorized operations
+        # Note: Fortran uses 1-based indexing, convert to 0-based
+        i_indices = np.arange(ile - 1, ite)  # 0-based indices from ile-1 to ite-1
         
-        k = 0
-        for i_loop in range(ile, ite + 1):
-            # Convert to 0-based index for Python array access
-            i_idx = i_loop - 1
-            
-            ptop = cjup * p[jup - 1, i_idx] - cjup1 * p[jup, i_idx]
-            pbot = cjlow * p[jlow - 1, i_idx] - cjlow1 * p[jlow - 2, i_idx]
-            arg[k] = ptop - pbot
-            xi[k] = x[i_idx]
-            k += 1
+        # Vectorized computation of ptop and pbot
+        ptop = cjup * p[jup - 1, i_indices] - cjup1 * p[jup, i_indices]
+        pbot = cjlow * p[jlow - 1, i_indices] - cjlow1 * p[jlow - 2, i_indices]
+        arg = ptop - pbot
+        xi = x[i_indices]
         
-        # Integrate using trapezoidal rule
-        sum_val = trap_integration(xi, arg, len(xi))
+        # Integrate using trapezoidal rule (use numpy for efficiency)
+        # trap_integration(xi, arg, n) computes sum of (arg[i] + arg[i+1]) * (xi[i+1] - xi[i]) / 2
+        sum_val = np.trapz(arg, xi)
         
         # Calculate pitching moment
-        # ARG(K) is the last element: arg[k-1] in 0-based indexing
-        result_pitch = cmfact * ((1.0 - xm) * arg[k - 1] - sum_val) * (-2.0)
+        # arg[-1] is the last element
+        result_pitch = cmfact * ((1.0 - xm) * arg[-1] - sum_val) * (-2.0)
         
         return result_pitch
 
@@ -201,11 +190,11 @@ class PostProcessing:
             
             # Find bow shock wave
             istop = ile - 3
-            ibow = find_shock_location(iup, istop, jup, sonvel)
+            ibow = self._find_shock_location(iup, istop, jup, sonvel)
             
             if ibow < 0:
                 # Shock is too close to body to do contour integral
-                ule = tsf.solver_base.px(ile, jup)
+                ule = self.core.px(ile, jup)
                 cd = self._compute_drag_by_surface_pressure(cdfact)
                 
                 if self.core.config['flag_output_summary']:
@@ -229,7 +218,7 @@ class PostProcessing:
             for j in range(jstart, jmax + 1):
                 jt += 1
                 iskold = isk
-                isk = find_new_shock_location(iskold, j, sonvel)
+                isk = self._find_new_shock_location(iskold, j, sonvel)
                 if isk < 0:
                     break
             
@@ -240,7 +229,7 @@ class PostProcessing:
                 jj = jlow - j + jmin
                 jb -= 1
                 iskold = isk
-                isk = find_new_shock_location(iskold, jj, sonvel)
+                isk = self._find_new_shock_location(iskold, jj, sonvel)
                 if isk < 0:
                     break
             
@@ -249,7 +238,7 @@ class PostProcessing:
         
         # Downstream boundary
         id_downstream = (ite + imax) // 2
-        if tsf.solver_base.px(ite + 1, jup) >= sonvel:
+        if self.core.px(ite + 1, jup) >= sonvel:
             # Trailing edge is supersonic. Place downstream boundary ahead of trailing edge to avoid tail shock
             i = ite
             while x_coords[i - 1] > 0.75:  # Convert to 0-based indexing
@@ -267,8 +256,8 @@ class PostProcessing:
             l = 0
             for j in range(jb, jt + 1):
                 xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
-                u = tsf.solver_base.px(iu, j)
-                v = tsf.solver_base.py(iu, j)
+                u = self.core.px(iu, j)
+                v = self.core.py(iu, j)
                 arg[l] = ((ak - gam123 * u) * u * u - v * v) * 0.5
                 l += 1
             sum_val = trap_integration(xi, arg, l)
@@ -280,7 +269,7 @@ class PostProcessing:
         l = 0
         for i in range(iu, id_downstream + 1):
             xi[l] = x_coords[i - 1]  # Convert to 0-based indexing
-            arg[l] = -tsf.solver_base.px(i, jt) * tsf.solver_base.py(i, jt)
+            arg[l] = -self.core.px(i, jt) * self.core.py(i, jt)
             l += 1
         sum_val = trap_integration(xi, arg, l)
         cdtop = 2.0 * cdfact * sum_val
@@ -290,7 +279,7 @@ class PostProcessing:
         arg = np.zeros(n_mesh_points)
         l = 0
         for i in range(iu, id_downstream + 1):
-            arg[l] = tsf.solver_base.px(i, jb) * tsf.solver_base.py(i, jb)
+            arg[l] = self.core.px(i, jb) * self.core.py(i, jb)
             l += 1
         sum_val = trap_integration(xi, arg, l)
         cdbot = 2.0 * cdfact * sum_val
@@ -301,11 +290,11 @@ class PostProcessing:
         l = 0
         for j in range(jb, jt + 1):
             xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
-            u = tsf.solver_base.px(id_downstream, j)
+            u = self.core.px(id_downstream, j)
             # If flow is supersonic, use backward difference formula
             if u > sonvel:
-                u = tsf.solver_base.px(id_downstream - 1, j)
-            v = tsf.solver_base.py(id_downstream, j)
+                u = self.core.px(id_downstream - 1, j)
+            v = self.core.py(id_downstream, j)
             arg[l] = ((gam123 * u - ak) * u * u + v * v) * 0.5
             l += 1
         
@@ -322,8 +311,8 @@ class PostProcessing:
             for i in range(id_downstream, ilim + 1):
                 ib = i - ile + 1
                 xi[l] = x_coords[i - 1]  # Convert to 0-based indexing
-                uu = cjup * tsf.solver_base.px(i, jup) - cjup1 * tsf.solver_base.px(i, jup + 1)
-                ul = cjlow * tsf.solver_base.px(i, jlow) - cjlow1 * tsf.solver_base.px(i, jlow - 1)
+                uu = cjup * self.core.px(i, jup) - cjup1 * self.core.px(i, jup + 1)
+                ul = cjlow * self.core.px(i, jlow) - cjlow1 * self.core.px(i, jlow - 1)
                 arg[l] = -uu * fxu[ib - 1] + ul * fxl[ib - 1]  # Convert to 0-based indexing
                 l += 1
             sum_val = trap_integration(xi, arg, l)
@@ -346,22 +335,21 @@ class PostProcessing:
             isk = ibow
             for j in range(jb, jt + 1):
                 iskold = isk
-                isk = find_new_shock_location(iskold, j, sonvel)
+                isk = self._find_new_shock_location(iskold, j, sonvel)
                 xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
-                arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
+                arg[l] = (self.core.px(isk + 1, j) - self.core.px(isk - 2, j))**3
                 l += 1
             sum_val = trap_integration(xi, arg, l)
             cdsk = -gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
-            print_shock_information(xi, arg, l, nshock, cdsk, lprt1, 
-                                  self.core.output_dir, self.core.config['flag_output_summary'])
+            self._print_shock_information(xi, arg, l, nshock, cdsk, lprt1)
         
         # Integrate along shocks above airfoil
         istart = ile
         
         # Loop to find and process all shocks above airfoil
         while True:
-            isk = find_shock_location(istart, ite, jup, sonvel)
+            isk = self._find_shock_location(istart, ite, jup, sonvel)
             if isk < 0:
                 break  # No more shocks found
             
@@ -373,15 +361,15 @@ class PostProcessing:
             arg = np.zeros(n_mesh_points)
             l = 1
             xi[0] = 0.0
-            arg[0] = (cjup * (tsf.solver_base.px(isk + 1, jup) - tsf.solver_base.px(isk - 2, jup)) -
-                     cjup1 * (tsf.solver_base.px(isk + 1, jup + 1) - tsf.solver_base.px(isk - 2, jup + 1)))**3
+            arg[0] = (cjup * (self.core.px(isk + 1, jup) - self.core.px(isk - 2, jup)) -
+                     cjup1 * (self.core.px(isk + 1, jup + 1) - self.core.px(isk - 2, jup + 1)))**3
             
             for j in range(jup, jt + 1):
                 xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
-                arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
+                arg[l] = (self.core.px(isk + 1, j) - self.core.px(isk - 2, j))**3
                 iskold = isk
                 jsk = j + 1
-                isk = find_new_shock_location(iskold, jsk, sonvel)
+                isk = self._find_new_shock_location(iskold, jsk, sonvel)
                 if isk < 0:
                     break
                 if isk > id_downstream:
@@ -395,8 +383,7 @@ class PostProcessing:
             sum_val = trap_integration(xi, arg, l)
             cdsk = -gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
-            print_shock_information(xi, arg, l, nshock, cdsk, lprt1,
-                                  self.core.output_dir, self.core.config['flag_output_summary'])
+            self._print_shock_information(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
                 lprt2 = 1
         
@@ -405,7 +392,7 @@ class PostProcessing:
         
         # Loop to find and process all shocks below airfoil
         while True:
-            isk = find_shock_location(istart, ite, jlow, sonvel)
+            isk = self._find_shock_location(istart, ite, jlow, sonvel)
             if isk < 0:
                 break  # No more shocks found
             
@@ -417,16 +404,16 @@ class PostProcessing:
             arg = np.zeros(n_mesh_points)
             l = 1
             xi[0] = 0.0
-            arg[0] = (cjlow * (tsf.solver_base.px(isk + 1, jlow) - tsf.solver_base.px(isk - 2, jlow)) -
-                     cjlow1 * (tsf.solver_base.px(isk + 1, jlow - 1) - tsf.solver_base.px(isk - 2, jlow - 1)))**3
+            arg[0] = (cjlow * (self.core.px(isk + 1, jlow) - self.core.px(isk - 2, jlow)) -
+                     cjlow1 * (self.core.px(isk + 1, jlow - 1) - self.core.px(isk - 2, jlow - 1)))**3
             
             for jj in range(jb, jlow + 1):
                 j = jlow + jb - jj
                 xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
-                arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
+                arg[l] = (self.core.px(isk + 1, j) - self.core.px(isk - 2, j))**3
                 iskold = isk
                 jsk = j - 1
-                isk = find_new_shock_location(iskold, jsk, sonvel)
+                isk = self._find_new_shock_location(iskold, jsk, sonvel)
                 if isk < 0:
                     break
                 if isk > id_downstream:
@@ -440,8 +427,7 @@ class PostProcessing:
             sum_val = trap_integration(xi, arg, l)
             cdsk = -gam1 / 6.0 * (-sum_val)
             cdwave += cdsk
-            print_shock_information(xi, arg, l, nshock, cdsk, lprt1,
-                                  self.core.output_dir, self.core.config['flag_output_summary'])
+            self._print_shock_information(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
                 lprt2 = 1
         
@@ -509,8 +495,8 @@ class PostProcessing:
         
         for i in range(ile, ite + 1):
             k += 1
-            pxup = cjup * tsf.solver_base.px(i, jup) - cjup1 * tsf.solver_base.px(i, jup + 1)
-            pxlow = cjlow * tsf.solver_base.px(i, jlow) - cjlow1 * tsf.solver_base.px(i, jlow - 1)
+            pxup = cjup * self.core.px(i, jup) - cjup1 * self.core.px(i, jup + 1)
+            pxlow = cjlow * self.core.px(i, jlow) - cjlow1 * self.core.px(i, jlow - 1)
             arg[k] = fxu[k - 1] * pxup - fxl[k - 1] * pxlow
             xi[k] = x_coords[i - 1]  # Convert to 0-based indexing
         
@@ -520,3 +506,126 @@ class PostProcessing:
         
         sum_val = trap_integration(xi, arg, k + 1)
         return -sum_val * cdfact_in * 2.0
+
+    def _find_shock_location(self, istart: int, iend: int, j_line: int, son_vel: float) -> int:
+        """
+        Find shock location on line J between ISTART and IEND
+        
+        Parameters
+        ----------  
+        istart: int
+            Starting i index
+        iend: int
+            Ending i index
+        j_line: int
+            j line index
+        son_vel: float
+            Speed of sound
+            
+        Returns
+        -------
+        isk: int
+            Shock location index, returns negative value if not found
+        """
+        isk = istart - 1
+        u2 = self.core.px(isk, j_line)
+        
+        while True:
+            isk += 1
+            u1 = u2
+            u2 = self.core.px(isk, j_line)
+            if u1 > son_vel and u2 <= son_vel:
+                break
+            if isk >= iend:
+                isk = -iend
+                break
+        return isk
+
+    def _find_new_shock_location(self, iskold: int, j_line: int, son_vel: float) -> int:
+        """
+        Find new shock location based on initial guess
+        
+        Parameters
+        ----------
+        iskold: int  
+            Old shock location
+        j_line: int
+            j line index
+        son_vel: float
+            Speed of sound
+            
+        Returns  
+        -------
+        isknew: int
+            New shock location, returns negative value if not found
+        """
+        i2 = iskold + 2
+        isknew = iskold - 3
+        u2 = self.core.px(isknew, j_line)
+        
+        while True:
+            isknew += 1
+            u1 = u2
+            u2 = self.core.px(isknew, j_line)
+            if u1 > son_vel and u2 <= son_vel:
+                break
+            if isknew >= i2:
+                isknew = -isknew
+                break
+        return isknew
+
+    def _print_shock_information(self, xi_arr: np.ndarray, arg_arr: np.ndarray, l_points: int, 
+                                 nshock: int, cdsk: float, lprt1: int) -> None:
+        """
+        Print shock information (Python version of PRTSK function)
+        
+        Parameters
+        ----------
+        xi_arr: np.ndarray
+            xi coordinate array
+        arg_arr: np.ndarray
+            Parameter array
+        l_points: int
+            Number of points
+        nshock: int
+            Shock number
+        cdsk: float
+            Wave drag for this shock
+        lprt1: int
+            Print flag
+        """
+        if not self.core.config['flag_output_summary']:
+            return
+        
+        cdfact = tsf.solver_data.cdfact
+        gam1 = tsf.common_data.gam1
+        yfact = tsf.solver_data.yfact
+        delta = tsf.common_data.delta
+        
+        cdycof = -cdfact * gam1 / (6.0 * yfact)
+        poycof = delta**2 * gam1 * (gam1 - 1.0) / 12.0
+            
+        with open(os.path.join(self.core.output_dir, "smry.out"), 'a') as f:
+            # Write header only for the first shock
+            if nshock == 1:
+                f.write('0\n')
+                f.write(' INVISCID WAKE PROFILES FOR INDIVIDUAL SHOCK WAVES WITHIN MOMENTUM CONTOUR\n')
+            
+            # Write shock information
+            f.write('\n')  # blank line
+            f.write(f'SHOCK{nshock:3d}\n')
+            f.write(f' WAVE DRAG FOR THIS SHOCK={cdsk:12.6f}\n')
+            f.write(f'      Y         CD(Y)        PO/POINF\n')
+            
+            # Write shock profile data
+            for k in range(l_points):
+                yy = xi_arr[k] * yfact
+                cdy = cdycof * arg_arr[k]
+                poy = 1.0 + poycof * arg_arr[k]
+                f.write(f' {yy:12.8f}{cdy:12.8f}{poy:12.8f}\n')
+            
+            # Write footer if shock extends outside contour
+            if lprt1 == 1:
+                f.write('\n')  # blank line
+                f.write(' SHOCK WAVE EXTENDS OUTSIDE CONTOUR\n')
+                f.write(' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK\n')

@@ -84,7 +84,7 @@ class OutputHandler:
             for j in range(jmin, jmax + 1):
                 for i in range(imin, imax + 1):
                     # Calculate flow variables
-                    u = tsf.solver_base.px(i, j)  # Computes U = DP/DX at point I,J
+                    u = self.core.px(i, j)  # Computes U = DP/DX at point I,J
                     em = self.core.emach1(u, delta)  # Computes Mach number from U
                     cp_val = -2.0 * u * cpfact  # CPFACT is a scaling factor for pressure coefficient
                     
@@ -204,11 +204,11 @@ class OutputHandler:
             i_py = i_p1 - 1
             
             # Calculate UL_P1
-            ul_p1 = cjlow * tsf.solver_base.px(i_p1, jlow) - cjlow1 * tsf.solver_base.px(i_p1, jlow - 1)
+            ul_p1 = cjlow * self.core.px(i_p1, jlow) - cjlow1 * self.core.px(i_p1, jlow - 1)
             if i_p1 > ite:
-                ul_p1 = cj01 * tsf.solver_base.px(i_p1, jup) + cj02 * tsf.solver_base.px(i_p1, jlow)
+                ul_p1 = cj01 * self.core.px(i_p1, jup) + cj02 * self.core.px(i_p1, jlow)
             if i_p1 < ile:
-                ul_p1 = cj01 * tsf.solver_base.px(i_p1, jup) + cj02 * tsf.solver_base.px(i_p1, jlow)
+                ul_p1 = cj01 * self.core.px(i_p1, jup) + cj02 * self.core.px(i_p1, jlow)
             
             # Store CPL value and compute Mach number
             cpl[i_py] = -2.0 * ul_p1 * cpfact
@@ -217,7 +217,7 @@ class OutputHandler:
                 iem = 1
             
             # Calculate UU_P1
-            uu_p1 = cjup * tsf.solver_base.px(i_p1, jup) - cjup1 * tsf.solver_base.px(i_p1, jup + 1)
+            uu_p1 = cjup * self.core.px(i_p1, jup) - cjup1 * self.core.px(i_p1, jup + 1)
             if i_p1 > ite:
                 uu_p1 = ul_p1
             if i_p1 < ile:

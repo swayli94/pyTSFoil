@@ -56,12 +56,12 @@ class ViscousCorrection:
             Shock location index (negative if no shock found)
         """
         isk = istart - 1
-        u2 = tsf.solver_base.px(isk, j)
+        u2 = self.core.px(isk, j)
         
         while True:
             isk += 1
             u1 = u2
-            u2 = tsf.solver_base.px(isk, j)
+            u2 = self.core.px(isk, j)
             if u1 > sonvel and u2 <= sonvel:
                 return isk
             if isk >= iend:
@@ -179,12 +179,12 @@ class ViscousCorrection:
             nvwprt[m] += 1
             
             # Compute X position of shock by interpolation
-            v1 = tsf.solver_base.px(isk - 1, j_surface)
-            xshk[m, n] = x_coords[isk - 2] + (sonvel - v1) / ((tsf.solver_base.px(isk, j_surface) - v1) * xdiff[isk - 1])
+            v1 = self.core.px(isk - 1, j_surface)
+            xshk[m, n] = x_coords[isk - 2] + (sonvel - v1) / ((self.core.px(isk, j_surface) - v1) * xdiff[isk - 1])
             
             # Compute flow properties 3 points upstream
             isk3 = isk - 3
-            u = tsf.solver_base.px(isk3, j_surface)
+            u = self.core.px(isk3, j_surface)
             am1[m, n] = self.core.emach1(u, delta)
             am1sq = am1[m, n] ** 2
             

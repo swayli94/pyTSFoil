@@ -48,8 +48,6 @@ from .visualization import Visualizer
 from .post_processing import PostProcessing
 from .pre_processing import PreProcessing
 
-from ._fortran import tsf
-
 
 class PyTSFoil(object):
     '''

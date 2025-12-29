@@ -234,7 +234,6 @@ contains
     subroutine REDUB()
         use common_data, only: Y, IMIN, IMAX, JMIN, JMAX, N_MESH_POINTS
         use common_data, only: GAM1, XDIFF, BCTYPE, VOL
-        use math_module, only: TRAP
         use solver_data, only: P, CIRCFF, DUB
         implicit none
         
@@ -320,7 +319,7 @@ contains
     ! appropriate way to include the boundary conditions at JBOT and JTOP.
     ! Called by - SYOR.
     subroutine BCEND(IVAL)    
-        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, UNIT_OUTPUT, POR, FLAG_OUTPUT
+        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, POR
         use solver_data, only: P, CYYD, CYYU, CIRCFF, FHINV, DIAG, RHS
         implicit none
         integer, intent(in) :: IVAL
@@ -417,16 +416,12 @@ contains
             ! Difference equations for this boundary condition
             ! have not yet been worked out. User must insert
             ! information needed for calculation
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE BCEND', &
+            write(*, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE BCEND', &
                                             'BCTYPE=6 IS NOT USEABLE'
-            end if
             stop
                 
         case default
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, *) 'ERROR: Invalid BCTYPE = ', BCTYPE
-            end if
+            write(*, *) 'ERROR: Invalid BCTYPE = ', BCTYPE
             stop
                 
         end select
@@ -447,5 +442,25 @@ contains
         end if
         
     end subroutine BCEND
+
+    ! Integrates Y DX by trapezoidal rule
+    subroutine TRAP(X_arr, Y_arr, N, SUM)
+        implicit none
+        integer, intent(in) :: N
+        real, intent(in) :: X_arr(N), Y_arr(N)
+        real, intent(out) :: SUM
+        integer :: I_loop=0, NM1=0
+        real :: Z=0.0, W=0.0
+        
+        SUM = 0.0
+        NM1 = N - 1
+        do I_loop = 1, NM1
+            Z = X_arr(I_loop+1) - X_arr(I_loop)
+            W = Y_arr(I_loop+1) + Y_arr(I_loop)
+            SUM = SUM + Z*W
+        end do
+        SUM = 0.5*SUM
+
+    end subroutine TRAP
 
 end module main_iteration

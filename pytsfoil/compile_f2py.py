@@ -149,10 +149,7 @@ def main():
         fortran_files = [
             "common_data.f90",
             "solver_data.f90", 
-            "math_module.f90",
-            "solver_base.f90",
             "main_iteration.f90",
-            "io_module.f90"
         ]
         
         check_files_exist(fortran_files)

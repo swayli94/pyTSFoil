@@ -124,10 +124,30 @@ class SolverManager:
             do_circ_update = True
         else:
             do_circ_update = False
+            j_idx = i_idx = jk_idx = ik_idx = None  # Avoid UnboundLocalError
         
         # Precompute slice indices
         j_slice = slice(jmin - 1, jmax)  # Python 0-based slice for J range
         i2 = 1  # Fixed index for I2 (0-based)
+        
+        # Cache Fortran function references to avoid repeated attribute lookups
+        _recirc = tsf.main_iteration.recirc
+        _syor = tsf.main_iteration.syor
+        _redub = tsf.main_iteration.redub
+        _reset = tsf.main_iteration.reset
+        
+        # Cache method references
+        _compute_vwedge = self.viscous_correction.compute_vwedge if nwdge > 0 else None
+        _setup_body_boundary = self.pre_processing.setup_body_boundary if nwdge > 0 else None
+        _lift = self.post_processing.lift
+        _pitch = self.post_processing.pitch
+        
+        # Precompute conditions
+        do_vwedge = nwdge > 0
+        do_output = flag_output == 1
+        ak_subsonic = ak <= 0.0
+        c1_val = c1_arr[1] if ak_subsonic else None  # C1(2) -> c1[1]
+        iup_m2 = iup - 2  # Precompute iup-2 index
         
         # Main iteration loop
         converged = False
@@ -137,23 +157,21 @@ class SolverManager:
             
             # Initialize EMU and POLD arrays using vectorized operations
             # Fortran: POLD(JMIN:JMAX, I2) = P(JMIN:JMAX, IUP-1), EMU(JMIN:JMAX, I2) = 0.0
-            pold_arr[j_slice, i2] = p_arr[j_slice, iup - 2]
+            pold_arr[j_slice, i2] = p_arr[j_slice, iup_m2]
             emu_arr[j_slice, i2] = 0.0
             
             # Set EMU for subsonic flow (vectorized)
-            if ak <= 0.0:
-                emu_arr[j_slice, i2] = c1_arr[1]  # C1(2) -> c1[1]
+            if ak_subsonic:
+                emu_arr[j_slice, i2] = c1_val
             
             # Set output flag for this iteration
             outerr = (iter_num % iprter == 0) or (iter_num == 1)
             
             # Update circulation-jump boundary
-            dcirc = tsf.main_iteration.recirc()
+            dcirc = _recirc()
             
             # Perform SOR sweep
-            i1_fortran = 1
-            i2_fortran = 2
-            result = tsf.main_iteration.syor(i1_fortran, i2_fortran, outerr)
+            result = _syor(1, 2, outerr)
             bigrl, irl, jrl, ierror, jerror, error = result[0], result[1], result[2], result[3], result[4], result[5]
             
             # Update circulation for subsonic freestream flow (vectorized)
@@ -163,28 +181,29 @@ class SolverManager:
             
             # Update doublet strength every NDUB iterations
             if iter_num % NDUB == 0:
-                tsf.main_iteration.redub()
+                _redub()
             
             # Reset boundary conditions
-            tsf.main_iteration.reset()
+            _reset()
             
             # Compute viscous wedge if enabled
-            am1 = xshk = thamax = zeta = nvwprt = nishk = None
-            if nwdge > 0:
-                am1, xshk, thamax, zeta, nvwprt, nishk = self.viscous_correction.compute_vwedge()
-                self.pre_processing.setup_body_boundary(update_only=True)
+            if do_vwedge:
+                am1, xshk, thamax, zeta, nvwprt, nishk = _compute_vwedge()
+                _setup_body_boundary(update_only=True)
+            else:
+                am1 = xshk = thamax = zeta = nvwprt = nishk = None
             
             # Print iteration results if needed
-            if outerr and flag_output == 1:
-                cl_local = self.post_processing.lift(clfact)
-                cm_local = self.post_processing.pitch(cmfact)
+            if outerr and do_output:
+                cl_local = _lift(clfact)
+                cm_local = _pitch(cmfact)
                 ercirc = abs(dcirc)
                 
                 print(f" {iter_num:4d}{cl_local:10.5f}{cm_local:10.5f}{ierror:5d}{jerror:5d}{error:13.4e}"
                       f"{irl:4d}{jrl:4d}{bigrl:13.4e}{ercirc:13.4e}")
                 
                 # Output viscous wedge quantities if enabled
-                if nwdge > 0 and nvwprt is not None:
+                if do_vwedge and nvwprt is not None:
                     print("          COMPUTED VISCOUS WEDGE QUANTITIES")
                     
                     # Upper surface shocks
@@ -215,7 +234,7 @@ class SolverManager:
             # Check convergence
             if error <= cverge:
                 converged = True
-                if flag_output == 1:
+                if do_output:
                     print(f"\n\n                    ........SOLUTION CONVERGED........")
                     print(f"Solution converged after {iter_num} iterations.")
                 break
@@ -223,12 +242,12 @@ class SolverManager:
             # Check divergence
             if error >= dverge:
                 abort1 = True
-                if flag_output == 1:
+                if do_output:
                     print(f"\n\n                    ******  SOLUTION DIVERGED  ******")
                     print(f"Solution diverged after {iter_num} iterations.")
                 break
         
         # Handle case where iteration limit is reached
-        if not converged and not abort1 and flag_output == 1:
+        if not converged and not abort1 and do_output:
             print(f"\n\n                    ******  ITERATION LIMIT REACHED  ******")
             print(f"Iteration limit reached after {maxitm} iterations.")
