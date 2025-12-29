@@ -21,9 +21,6 @@ module common_data
 
     real, parameter :: GAM = 1.4            ! Specific heat ratio
     real, parameter :: GAM1 = GAM + 1.0     ! gamma + 1
-    real, parameter :: PI = 3.14159265      ! pi
-    real, parameter :: HALFPI = 1.570796325 ! 1/2 pi
-    real, parameter :: TWOPI = 6.28318531   ! 2 pi
 
     ! ------------------------------------------------
     ! User-input parameters

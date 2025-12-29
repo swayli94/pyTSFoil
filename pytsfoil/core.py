@@ -164,12 +164,6 @@ class TSFoilCore:
         for key, value in self.config.items():
             setattr(tsf.common_data, key.lower(), value)
         
-        # Open output files
-        if self.config['flag_output']:
-            tsf.io_module.open_output_file()
-        if self.config['flag_output_summary']:
-            tsf.io_module.open_summary_file()
-
         # Print working directory and output directory
         if self.config['flag_print_info']:
             print(f"pyTSFoil working directory: {self.work_dir}")

@@ -53,10 +53,6 @@ module solver_data
     ! COM13: coefficient scaling factors
     real :: CDFACT = 0.0, CLFACT = 0.0, CMFACT = 0.0, CPFACT = 0.0, CPSTAR = 0.0
 
-
-    ! Control flags and refinement (from /COM3/)
-    logical :: ABORT1 = .false. ! input abort flag
-
     ! Public variables for solver_functions
     !!!!!!!!!!!! COULD BE REMOVED !!!!!!!!!!!!
     real :: ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2, JET ! Far-field root parameters
@@ -129,9 +125,7 @@ contains
         CMFACT = 0.0
         CPFACT = 0.0
         CPSTAR = 0.0
-    
-        ABORT1 = .false.
-    
+
         ALPHA0 = 0.0
         ALPHA1 = 0.0
         ALPHA2 = 0.0

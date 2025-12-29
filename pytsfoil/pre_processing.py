@@ -31,8 +31,8 @@ class PreProcessing:
         jmax = tsf.common_data.jmax
         
         # Get constants
-        pi = tsf.common_data.pi
-        twopi = tsf.common_data.twopi
+        pi = np.pi
+        twopi = 2.0 * np.pi
         ak = tsf.common_data.ak
         
         # Get mesh coordinates (as numpy arrays)
@@ -210,9 +210,9 @@ class PreProcessing:
         jmin = tsf.common_data.jmin
         jmax = tsf.common_data.jmax
         bctype = tsf.common_data.bctype
-        pi = tsf.common_data.pi
-        twopi = tsf.common_data.twopi
-        halfpi = tsf.common_data.halfpi
+        pi = np.pi
+        twopi = 2.0 * np.pi
+        halfpi = 0.5 * np.pi
         f = tsf.common_data.f
         h = tsf.common_data.h
         por = tsf.common_data.por
