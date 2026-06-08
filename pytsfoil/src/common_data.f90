@@ -144,45 +144,6 @@ contains
 
     end subroutine initialize_common
 
-    ! Fatal error - write message to screen and stop
-    subroutine INPERR(I_ERROR_CODE)
-        implicit none
-        integer, intent(in) :: I_ERROR_CODE
-
-        if (FLAG_OUTPUT /= 1) then
-            stop
-        end if
-
-        select case (I_ERROR_CODE)
-        case (1)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'IMAX OR JMAX IS GREATER THAN N_MESH_POINTS, NOT ALLOWED.'
-        case (2)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'X MESH POINTS NOT MONOTONIC INCREASING.'
-        case (3)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'Y MESH POINTS NOT MONOTONIC INCREASING.'
-        case (4)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'MACH NUMBER NOT IN PERMITTED RANGE. (.5,2.0)'
-        case (5)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'ALPHA NOT IN PERMITTED RANGE. (-9.0, 9.0)'
-        case (6)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
-        case (8)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'
-        case default
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'UNKNOWN ERROR CODE.'
-        end select
-
-        stop
-    end subroutine INPERR
-
     ! Helper subroutine for convergence error reporting
     subroutine report_convergence_error(subroutine_name, variable_name, iteration_number)
         implicit none

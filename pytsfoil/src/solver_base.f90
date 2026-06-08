@@ -8,7 +8,7 @@ module solver_base
     private
 
     ! Public functions
-    public :: TRAP, PX, PY, DIFCOE, ANGLE
+    public :: TRAP, PX, PY, DIFCOE
     public :: LIFT, PITCH, FINDSK
 
 contains
@@ -235,33 +235,6 @@ contains
         CYYBLD = CYYBLC
 
     end subroutine DIFCOE
-
-    ! Compute the angle THETA at each mesh point
-    subroutine ANGLE()
-        use common_data, only: IMIN, IMAX, JMIN, JMAX, X, Y
-        use common_data, only: PI, TWOPI, AK
-        use solver_data, only: THETA, XSING
-        implicit none
-        integer :: I, J
-        real :: XX=0.0, YY=0.0, R=0.0, ATN=0.0, Q=0.0, R2PI=0.0
-        real :: RTK=0.0
-        
-        R2PI = 1.0 / TWOPI
-        RTK = sqrt(abs(AK))
-        
-        do I = IMIN, IMAX
-            XX = X(I) - XSING
-            do J = JMIN, JMAX
-                YY = Y(J) * RTK
-                R = sqrt(Y(J)**2 + XX*XX)
-                ATN = atan2(YY, XX)
-                Q = PI - sign(PI, YY)
-                THETA(J,I) = -(ATN + Q) * R2PI
-                if (R <= 1.0) THETA(J,I) = THETA(J,I) * R
-            end do
-        end do
-
-    end subroutine ANGLE
 
     ! Computes lift coefficient from jump in P at trailing edge
     function LIFT(CLFACT_in) result(result_lift)

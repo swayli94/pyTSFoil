@@ -614,7 +614,8 @@ class PyTSFoil(object):
             self._cpstar = float(-2.0 * sonvel * cpfact)
 
     def compute_far_field_bc(self) -> None:
-        '''Compute far-field boundary conditions for outer boundaries (equivalent to FARFLD).
+        '''
+        Compute far-field boundary conditions for outer boundaries (equivalent to FARFLD).
 
         Subsonic asymptotic forms for doublet and vortex located at X=0.5, Y=0.
         Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
@@ -657,7 +658,16 @@ class PyTSFoil(object):
         tsf.solver_data.vup[jmin - 1:jmax] = (-(np.arctan2(yj, xu_bc) + q) * coef1).astype(np.float32)
         tsf.solver_data.vdown[jmin - 1:jmax] = (-(np.arctan2(yj, xd_bc) + q) * coef1).astype(np.float32)
 
-        tsf.solver_base.angle()
+        # Compute THETA(J,I) = angle at each mesh point (replaces Fortran ANGLE subroutine)
+        yj_raw = y_coords[jmin - 1:jmax].astype(np.float64)
+        yj_scaled = (yj_raw * rtk)[:, np.newaxis]    # (nj, 1)
+        xp_2d = xp[np.newaxis, :]                     # (1, ni)
+        r = np.sqrt(yj_raw[:, np.newaxis]**2 + xp_2d**2)
+        atn = np.arctan2(yj_scaled, xp_2d)
+        q_theta = np.pi - np.copysign(np.pi, yj_scaled)
+        theta_2d = -(atn + q_theta) * coef1
+        theta_2d = np.where(r <= 1.0, theta_2d * r, theta_2d)
+        tsf.solver_data.theta[jmin - 1:jmax, imin - 1:imax] = theta_2d.astype(np.float32)
 
     def compute_data_summary(self):
         '''
