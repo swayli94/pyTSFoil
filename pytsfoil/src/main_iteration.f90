@@ -385,7 +385,7 @@ contains
     ! 3.) Jump in P along slit Y=0, X > 1 by linear interpolation between CIRCTE and CIRCFF
     subroutine RECIRC(DCIRC)
         use common_data, only: X, IMAX, ITE, JUP, JLOW
-        use common_data, only: CLSET, KUTTA, WCIRC
+        use common_data, only: WCIRC
         use solver_data, only: P, PJUMP, CLFACT, CIRCFF
         use solver_data, only: CIRCTE, CJUP, CJUP1, CJLOW, CJLOW1
         implicit none
@@ -402,15 +402,7 @@ contains
         
         ! Compute far field circulation
         CIRCO = CIRCFF
-        if (KUTTA) then
-            CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC
-        else
-            CIRCFF = 0.5*CLSET/CLFACT
-        end if
-        
-        ! Fix jump in P at airfoil trailing edge if KUTTA=.FALSE.
-        ! and lift of airfoil exceeds CLSET
-        if (.not. KUTTA) CIRCTE = CIRCFF
+        CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC
         DCIRC = CIRCTE - CTEOLD
         
         ! Set jump in P along Y = 0, X > 1 by linear interpolation

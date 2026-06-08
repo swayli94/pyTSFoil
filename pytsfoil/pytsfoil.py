@@ -2,7 +2,6 @@
 This is a python interface for TSFOIL.
 
 The wind tunnel option is not implemented.
-The 'CLSET' option is not implemented.
 
 Note
 ------
@@ -175,7 +174,6 @@ class PyTSFoil(object):
             'EPS': 0.2,             # Convergence tolerance
             'FCR': 1,               # Whether difference equations are fully conservative (True)
             'IPRTER': 100,          # Print interval for convergence history
-            'KUTTA': 1,             # Whether Kutta condition is enforced (True)
             'MAXIT': 1000,          # Maximum number of iterations
             'POR': 0.0,             # Porosity
             'RIGF': 0.0,            # Rigidity factor for transonic effects
@@ -1356,7 +1354,6 @@ class PyTSFoil(object):
         simdef = tsf.common_data.simdef
         bctype = tsf.common_data.bctype
         fcr = tsf.common_data.fcr
-        kutta = tsf.common_data.kutta
         emach = tsf.common_data.emach
         delta = tsf.common_data.delta
         ak = tsf.common_data.ak
@@ -1396,7 +1393,6 @@ class PyTSFoil(object):
                 f.write(f'# ABORT1 = {abort1:10.6f}\n')
                 f.write(f'# BCTYPE = {bctype:10.6f}\n')
                 f.write(f'# FCR = {fcr:10.6f}\n')
-                f.write(f'# KUTTA = {kutta:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
                 f.write(f'# SCALED POR = {tsf.common_data.por:10.6f}\n')
 
@@ -1424,11 +1420,7 @@ class PyTSFoil(object):
                 else:
                     f.write('0 DIFFERENCE EQUATIONS ARE NOT CONSERVATIVE AT SHOCK.\n')
                 
-                # Print Kutta condition information
-                if kutta:
-                    f.write('0 KUTTA CONDITION IS ENFORCED.\n')
-                else:
-                    f.write('0 LIFT COEFFICIENT SPECIFIED BY USER.\n')
+                f.write('0 KUTTA CONDITION IS ENFORCED.\n')
         
         # Print shock and mach number on Y=0 line
         self.output_shock()

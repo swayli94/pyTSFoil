@@ -223,3 +223,27 @@ logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
 
 通过 RAE2822 算例（`example/rae2822/run_pytsfoil.py`）验证：CL = 0.631，与重构前一致。`SCALED POR=    0.00000` 正确输出。
 
+### 6. 删除不必要的功能 (5)
+
+#### 任务描述
+
+变量 `CLSET` 和 `KUTTA` 的功能是互斥的吗？不再需要 `CLSET`，凡是使用 `CLSET` 的地方都删除。
+删除 `CLSET` 变量后，检查 `KUTTA` 是否还有存在的必要，如果没有，则删除 `KUTTA` 变量。
+以上删除操作在 Fortran 和 Python 中都进行。
+
+#### 完成情况
+
+`CLSET` 和 `KUTTA` 功能互斥：`KUTTA=.true.` 时强制 Kutta 条件，`CLSET` 完全不使用；`KUTTA=.false.` 时升力由 `CLSET` 指定。由于 Python 接口从未暴露 `CLSET`（模块文档已注明"not implemented"），删除 `CLSET` 后 `KUTTA=.false.` 分支失去意义，因此两者均可删除。
+
+**Fortran 修改：**
+- `src/common_data.f90`：删除 `CLSET` 和 `KUTTA` 声明及初始化。
+- `src/main_iteration.f90`（`RECIRC` 子程序）：删除 `CLSET, KUTTA` 的 `use` 引用，将 `if (KUTTA) ... else ...` 分支简化为直接执行 `CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC`。
+
+**Python 修改（`pytsfoil.py`）：**
+- 删除模块文档中 `CLSET` 相关说明。
+- 删除 `config` 字典中的 `'KUTTA': 1`。
+- 删除 `print_summary` 中 `kutta` 变量的读取和写出，将 Kutta 条件打印改为无条件输出。
+
+#### 测试情况
+
+重新编译成功，运行 RAE2822 算例结果不变（CL=0.63149, CD=0.00371, CM=-0.14269）。

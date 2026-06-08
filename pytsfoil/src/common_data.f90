@@ -31,7 +31,6 @@ module common_data
 
     real :: EMACH = 0.75    ! Mach number
     real :: ALPHA = 0.0     ! Angle of attack
-    real :: CLSET = 0.0     ! Lift coefficient set-point
 
     integer :: BCTYPE = 1   ! Boundary condition identifiers (1 = free air, 2 = tunnel)
 
@@ -43,7 +42,6 @@ module common_data
     integer :: IMAXI = 0, JMAXI = 0 ! User-input maximum number of X/Y-direction grid points
     real :: XIN(NMP_plus2) = 0.0, YIN(NMP_plus2) = 0.0  ! User-input mesh coordinate arrays
     
-    logical :: KUTTA = .true. ! Whether Kutta condition is enforced
     logical :: FCR = .true.   ! Whether difference equations are fully conservative
 
     integer :: NWDGE = 0    ! Viscous wedge parameters (0 = no wedge, 1 = Murman wedge, 2 = Yoshihara wedge)
@@ -133,8 +131,7 @@ contains
         
         EMACH = 0.75
         ALPHA = 0.0
-        CLSET = 0.0
-    
+
         BCTYPE = 1
     
         NU = 0
@@ -150,7 +147,6 @@ contains
         XIN = 0.0
         YIN = 0.0
         
-        KUTTA = .true.
         FCR = .true.
     
         NWDGE = 0
