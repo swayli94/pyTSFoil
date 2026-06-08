@@ -99,3 +99,35 @@ This branch is to modify the Fortran source code to:
 
 求解器在达到迭代上限（9999 次）时终止，这对于该算例是正常现象（跨音速收敛较慢）。数值结果与原始代码一致——本次修改仅涉及 I/O 输出路径，不影响任何数值计算逻辑。
 
+### 2. 删除不必要的功能 (2)
+
+#### 任务描述
+
+检查 `solver_base.f90` 中的 `CDCOLE`，如果不再使用，就删掉它。
+以及 `CDCOLE` 里面调用的一些函数，如果他们在其他地方也没有被调用，也删掉他们。
+
+#### 完成情况
+
+**`solver_base.f90`**
+
+- 删除 `CDCOLE` 子程序（动量积分法阻力，277 行）：Python 已有等价实现 `cdcole_python()`，Fortran 版本完全冗余。
+- 删除 `DRAG` 函数（表面压力积分阻力，33 行）：仅被 `CDCOLE` 调用，随 `CDCOLE` 一并删除。
+- 删除 `NEWISK` 子程序（冲击波追踪，29 行）：注释已标注仅被 `CDCOLE` 调用，随 `CDCOLE` 一并删除。
+- 保留 `FINDSK` 子程序：虽在 `CDCOLE` 中被调用，但同样被 `solver_functions.f90` 中的 `VWEDGE` 使用，不可删除。
+- `public` 声明中删除 `CDCOLE`，保留 `FINDSK`。
+
+#### 测试情况
+
+**编译**
+
+使用 conda 环境 `pytsfoil`（Python 3.12），运行 `python pytsfoil/compile_f2py.py` 编译成功，无错误。
+
+**运行示例**
+
+运行 `example/rae2822/run_pytsfoil.py`，三次运行结果完全一致，与任务 1 基准一致：
+
+```
+# 1 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 2 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 3 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+```
