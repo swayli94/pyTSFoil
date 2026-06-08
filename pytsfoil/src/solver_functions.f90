@@ -25,7 +25,7 @@ contains
         use common_data, only: PHYS, EMACH, SIMDEF
         use common_data, only: AK, ALPHA, GAM1
         use common_data, only: YIN, JMIN, JMAX, DELTA, H, POR
-        use common_data, only: INPERR, UNIT_OUTPUT, FLAG_OUTPUT
+        use common_data, only: INPERR, FLAG_OUTPUT
         use solver_data, only: CPSTAR, CPFACT, CLFACT, CDFACT, CMFACT, YFACT, VFACT, SONVEL
         implicit none
         real :: EMACH2=0.0, BETA=0.0, DELRT1=0.0, DELRT2=0.0
@@ -85,9 +85,7 @@ contains
                 VFACT = DELTA * 57.295779
                 
             case default
-                if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE SCALE', ' INVALID SIMDEF VALUE'
-                end if
+                write(*, '(A, /, A)') 'ABNORMAL STOP IN SUBROUTINE SCALE', ' INVALID SIMDEF VALUE'
                 stop
 
             end select
@@ -102,7 +100,7 @@ contains
             H = H / YFACT
             POR = POR * YFACT
             if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT,'(//10X,11HSCALED POR=,F10.5)') POR
+                write(*,'(//10X,A,F10.5)') 'SCALED POR=', POR
             end if
 
             ! Scale angle of attack
@@ -184,7 +182,7 @@ contains
     ! appropriate way to include the boundary conditions at JBOT and JTOP.
     ! Called by - SYOR.
     subroutine BCEND(IVAL)    
-        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, UNIT_OUTPUT, POR, FLAG_OUTPUT
+        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, POR, FLAG_OUTPUT
         use solver_data, only: P, CYYD, CYYU, CIRCFF, FHINV, DIAG, RHS
         implicit none
         integer, intent(in) :: IVAL
@@ -276,21 +274,16 @@ contains
                 apply_neumann = .true.
             end if
             
-        case (6)  
+        case (6)
             ! BCTYPE = 6, GENERAL WALL BOUNDARY CONDITION
             ! Difference equations for this boundary condition
             ! have not yet been worked out. User must insert
             ! information needed for calculation
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, '(A, /, A)') '1ABNORMAL STOP IN SUBROUTINE BCEND', &
-                                            'BCTYPE=6 IS NOT USEABLE'
-            end if
+            write(*, '(A, /, A)') 'ABNORMAL STOP IN SUBROUTINE BCEND', 'BCTYPE=6 IS NOT USEABLE'
             stop
-                
+
         case default
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, *) 'ERROR: Invalid BCTYPE = ', BCTYPE
-            end if
+            write(*, '(A,I0)') 'ABNORMAL STOP IN SUBROUTINE BCEND: Invalid BCTYPE = ', BCTYPE
             stop
                 
         end select
@@ -315,7 +308,7 @@ contains
     ! Compute far-field boundary conditions for outer boundaries
     subroutine FARFLD()
         use common_data, only: AK, X, Y, IMIN, IMAX, JMIN, JMAX, BCTYPE, PI, TWOPI, HALFPI
-        use common_data, only: F, H, POR, UNIT_OUTPUT, FLAG_OUTPUT
+        use common_data, only: F, H, POR, FLAG_OUTPUT
         use solver_data, only: XSING, FHINV
         use solver_data, only: B_COEF, OMEGA0, OMEGA1, OMEGA2, JET, PSI0, PSI1, PSI2
         use solver_data, only: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
@@ -463,16 +456,11 @@ contains
             RTKPOR = RTK / POR
             call DROOTS()
             call VROOTS()
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, '(A)') '1ABNORMAL STOP IN SUBROUTINE FARFLD'
-                write(UNIT_OUTPUT, '(A)') ' BCTYPE=6 IS NOT USEABLE'
-            end if
+            write(*, '(A, /, A)') 'ABNORMAL STOP IN SUBROUTINE FARFLD', ' BCTYPE=6 IS NOT USEABLE'
             stop
 
         case default
-            if (FLAG_OUTPUT == 1) then
-                write(UNIT_OUTPUT, '(A,I0)') 'FARFLD: Invalid BCTYPE = ', BCTYPE
-            end if
+            write(*, '(A,I0)') 'ABNORMAL STOP IN SUBROUTINE FARFLD: Invalid BCTYPE = ', BCTYPE
             stop
         
         end select
@@ -525,7 +513,7 @@ contains
     ! Computes local similarity parameter or local Mach number
     ! Called by - VWEDGE, PRINT_SHOCK, OUTPUT_FIELD
     function EMACH1(U, DELTA) result(result_emach)
-        use common_data, only: AK, GAM1, PHYS, EMACH, UNIT_OUTPUT, SIMDEF, FLAG_OUTPUT
+        use common_data, only: AK, GAM1, PHYS, EMACH, SIMDEF, FLAG_OUTPUT
         implicit none
         real, intent(in) :: U         ! Local velocity
         real, intent(in) :: DELTA     ! Maximum thickness of airfoil
@@ -550,9 +538,7 @@ contains
             else if (SIMDEF == 3) then ! Krupp scaling
                 ARG = 1.0 - DELRT2*AK1*EMACH
             else
-                if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(A, /, A, I3)') '1ABNORMAL STOP IN SUBROUTINE EMACH1', ' SIMDEF not supported', SIMDEF
-                end if
+                write(*, '(A, /, A, I3)') 'ABNORMAL STOP IN SUBROUTINE EMACH1', ' SIMDEF not supported', SIMDEF
                 stop
             end if
         

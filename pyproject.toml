@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=6.0", "pytest-cov", "black", "flake8"]
+dev = ["pytest>=6.0", "pytest-cov", "black", "flake8", "meson>=1.0", "meson-python>=0.12.0", "ninja"]
 modeling = ["cst-modeling3d"]
 
 [project.urls]

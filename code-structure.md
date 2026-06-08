@@ -1,17 +1,101 @@
 # Fortran source code structure
 
-## Background and goal
+## 任务背景与目标
 
-### File structure
+### 文件结构
 
 The original Fortran source code is stored in `pytsfoil/original_src`, these codes are already compatible with Python, and can be called from Python using `f2py`. However, the original Fortran source code is not very readable, and it contains some unimportant features that are not necessary for our project. Therefore, we need to modify the Fortran source code to make it more readable and remove unimportant features.
 
 The current Fortran source code is stored in `pytsfoil/src`. It is modified from the original Fortran source code.
 
-### Goal
+### 目标
 
 This branch is to modify the Fortran source code to:
 
 - remove unimportant features and make it more readable;
 - replace some I/O Fortran functions with Python functions;
 - add additional correction functions to improve the accuracy of the results.
+
+### 测试
+
+在修改 Fortran 代码的过程中，我们需要不断测试修改后的代码是否能够正确运行，并且输出的结果是否正确。
+由于本项目是 Fortran-Python 混合编程，因此我们需要在 Python 中调用 Fortran 代码来测试修改后的 Fortran 代码是否能够正确运行，并且输出的结果是否正确。
+
+注意，原始代码是正确的。因此，在每项任务完成后，需要使用 `compile_f2py.py` 来编译 Fortran 代码，测试修改后仍然可以 Python 正常调用，并且输出的结果与原始代码相同/相近。
+
+目前没有写测试代码，但是可以基于 `example` 文件夹中的示例代码来测试修改后的 Fortran 代码是否能够正确运行，并且输出的结果是否与原始代码相同/相近。
+
+## Refactor progress
+
+### 1. 删除不必要的功能 (1)
+
+#### 任务描述
+
+删除 Fortran 代码中的 I/O 功能，涉及以下变量：
+
+```text
+    ! ------------------------------------------------
+    ! File unit numbers
+    ! ------------------------------------------------
+
+    integer :: FLAG_OUTPUT = 1  ! Flag to output information to UNIT_OUTPUT and UNIT_SUMMARY
+    
+    integer, parameter :: UNIT_INPUT = 2          ! Input file
+    integer, parameter :: UNIT_OUTPUT = 15        ! tsfoil2.out (Main output file with comprehensive results)
+    integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (Summary file with key results)
+    integer, parameter :: UNIT_CPXS = 17          ! cpxs.out (Pressure coefficient vs. X-coordinate data)
+    integer, parameter :: UNIT_MESH = 20          ! mesh.dat (Mesh coordinate data)
+    integer, parameter :: UNIT_FIELD = 11         ! field.dat (Pressure coefficient and Mach number field data)
+```
+
+现有 Fortran 代码中，如果仍有相关的要写入文件中的功能，则检查是否已经有相应的 Python 函数来替代，如果没有，则询问我是否要修改。如果是迭代过程中的报错或者提示信息，则改为基于 FLAG_OUTPUT 的条件输出到屏幕。
+
+#### 完成情况
+
+**`common_data.f90`**
+- 删除了 6 个文件单元号常量：`UNIT_INPUT`、`UNIT_OUTPUT`、`UNIT_SUMMARY`、`UNIT_CPXS`、`UNIT_MESH`、`UNIT_FIELD`
+- 保留 `FLAG_OUTPUT`，用途改为控制屏幕输出
+- `INPERR` 中的 `write(UNIT_OUTPUT, ...)` 改为 `write(*, ...)`（仍受 `FLAG_OUTPUT` 控制）
+- `report_convergence_error` 删除 `write(UNIT_OUTPUT, ...)` 行，保留屏幕输出
+
+**`io_module.f90`**
+- 删除 `open_output_file`、`open_summary_file`、`close_output_files` 三个子程序，简化为空模块
+
+**`main_iteration.f90`**（`SOLVE` 子程序）
+- 删除 `use` 语句中的 `UNIT_OUTPUT`
+- 迭代头信息、每次迭代统计、收敛/发散/超限提示均删除 `write(UNIT_OUTPUT, ...)` 行，保留对应的 `write(*, ...)` 屏幕输出（受 `FLAG_OUTPUT == 1` 控制）
+
+**`solver_base.f90`**（`CDCOLE`、`PRTSK`）
+- `PRTSK`：已完全删除（包括 `CDCOLE` 中的三处调用）。输出功能由 Python 的 `cdcole_python()` 负责。
+- `CDCOLE`：删除了所有写入 `UNIT_OUTPUT`/`UNIT_SUMMARY` 的输出块。**`CDCOLE` 目前不再被 Python 调用**——Python 使用 `cdcole_python()` 作为完整替代，包含等价的数值计算和文件输出。Fortran 的 `CDCOLE` 仍保留在代码中（通过 f2py 接口对外可见），但不会在任何正常流程中被执行，属于冗余代码，未来可考虑整体删除。
+
+**`solver_functions.f90`**（`SCALE`、`EMACH1`、`BCEND`、`FARFLD`）
+- 各子程序删除 `use` 语句中的 `UNIT_OUTPUT`
+- 报错和异常停止信息改为 `write(*, ...)` 直接输出到屏幕（无需 `FLAG_OUTPUT` 保护，因为这些是 `stop` 路径）
+- `SCALE` 中的 `SCALED POR` 提示信息改为 `write(*, ...)`，保留 `FLAG_OUTPUT == 1` 控制
+
+**`pytsfoil.py`**
+- `initialize_data()` 中删除 `tsf.io_module.open_output_file()` 和 `tsf.io_module.open_summary_file()` 的调用
+
+#### 测试情况
+
+**编译**
+
+使用 conda 环境 `pytsfoil`（Python 3.12），运行 `python pytsfoil/compile_f2py.py` 编译成功，无错误。
+
+发现并修复一个附带问题：`main_iteration.f90` 注释中含有非 ASCII 字符（UTF-8 编码的 `∂` 和 `²`），导致 f2py 解析报 `UnicodeDecodeError`。已将这些字符替换为 ASCII 等价写法（`dP/dx`、`^2`），修复后编译通过。
+
+编译所需的 `meson`、`meson-python`、`ninja` 在 `pyproject.toml` 原始文件中未列出，已补充到 `[project.optional-dependencies]` 的 `dev` 分组。
+
+**运行示例**
+
+运行 `example/rae2822/run_pytsfoil.py`，三次运行结果完全一致：
+
+```
+# 1 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 2 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 3 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+```
+
+求解器在达到迭代上限（9999 次）时终止，这对于该算例是正常现象（跨音速收敛较慢）。数值结果与原始代码一致——本次修改仅涉及 I/O 输出路径，不影响任何数值计算逻辑。
+

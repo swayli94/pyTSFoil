@@ -152,8 +152,7 @@ def main():
             "math_module.f90",
             "solver_base.f90",
             "solver_functions.f90",
-            "main_iteration.f90",
-            "io_module.f90"
+            "main_iteration.f90"
         ]
         
         check_files_exist(fortran_files)

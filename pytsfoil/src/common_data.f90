@@ -105,17 +105,10 @@ module common_data
     
     
     ! ------------------------------------------------
-    ! File unit numbers
+    ! Output control
     ! ------------------------------------------------
 
-    integer :: FLAG_OUTPUT = 1  ! Flag to output information to UNIT_OUTPUT and UNIT_SUMMARY
-    
-    integer, parameter :: UNIT_INPUT = 2          ! Input file
-    integer, parameter :: UNIT_OUTPUT = 15        ! tsfoil2.out (Main output file with comprehensive results)
-    integer, parameter :: UNIT_SUMMARY = 16       ! smry.out (Summary file with key results)
-    integer, parameter :: UNIT_CPXS = 17          ! cpxs.out (Pressure coefficient vs. X-coordinate data)
-    integer, parameter :: UNIT_MESH = 20          ! mesh.dat (Mesh coordinate data)
-    integer, parameter :: UNIT_FIELD = 11         ! field.dat (Pressure coefficient and Mach number field data)
+    integer :: FLAG_OUTPUT = 1  ! Flag to print iteration info to screen
 
 contains
 
@@ -206,45 +199,45 @@ contains
 
     end subroutine initialize_common
 
-    ! Fatal error - write message and stop
+    ! Fatal error - write message to screen and stop
     subroutine INPERR(I_ERROR_CODE)
         implicit none
         integer, intent(in) :: I_ERROR_CODE
-        
+
         if (FLAG_OUTPUT /= 1) then
             stop
         end if
 
         select case (I_ERROR_CODE)
         case (1)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'IMAX OR JMAX IS GREATER THAN N_MESH_POINTS, NOT ALLOWED.'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'IMAX OR JMAX IS GREATER THAN N_MESH_POINTS, NOT ALLOWED.'
         case (2)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'X MESH POINTS NOT MONOTONIC INCREASING.'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'X MESH POINTS NOT MONOTONIC INCREASING.'
         case (3)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'Y MESH POINTS NOT MONOTONIC INCREASING.'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'Y MESH POINTS NOT MONOTONIC INCREASING.'
         case (4)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER NOT IN PERMITTED RANGE. (.5,2.0)'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'MACH NUMBER NOT IN PERMITTED RANGE. (.5,2.0)'
         case (5)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'ALPHA NOT IN PERMITTED RANGE. (-9.0, 9.0)'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'ALPHA NOT IN PERMITTED RANGE. (-9.0, 9.0)'
         case (6)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
         case (7)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'AK=0. VALUE OF AK MUST BE INPUT SINCE PHYS=F.'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'AK=0. VALUE OF AK MUST BE INPUT SINCE PHYS=F.'
         case (8)
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'
         case default
-            write(UNIT_OUTPUT, '(A)') ' '
-            write(UNIT_OUTPUT, '(5X,A)') 'UNKNOWN ERROR CODE.'
+            write(*, '(A)') ' '
+            write(*, '(5X,A)') 'UNKNOWN ERROR CODE.'
         end select
-        
+
         stop
     end subroutine INPERR
 
@@ -253,13 +246,11 @@ contains
         implicit none
         character(len=*), intent(in) :: subroutine_name, variable_name
         integer, intent(in) :: iteration_number
-        
+
         write(*,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name
         write(*,'(A,A,I0)') 'NON-CONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
-        write(UNIT_OUTPUT,'(A,A)') 'ABNORMAL STOP IN SUBROUTINE ', subroutine_name  
-        write(UNIT_OUTPUT,'(A,A,I0)') 'NON-CONVERGENCE OF ITERATION FOR ', variable_name, iteration_number
         stop
-        
+
     end subroutine report_convergence_error
 
 end module common_data
