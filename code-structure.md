@@ -131,3 +131,51 @@ This branch is to modify the Fortran source code to:
 # 2 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
 # 3 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
 ```
+
+### 3. 删除不必要的功能 (3)
+
+#### 任务描述
+
+删除 Fortran 代码中的 Flap 功能，涉及以下变量：
+
+```
+    ! Flap parameters (Optional)
+    integer :: IFLAP = 0      ! Flap flag
+    real :: DELFLP = 0.0      ! Flap deflection angle  
+    real :: FLPLOC = 0.77     ! Flap location
+```
+
+现有 Fortran 代码中，应该没有 Flap 功能的相关代码了，如果还有相关的代码，则删除它。
+检查 Python 代码中是否还有 Flap 功能的相关代码。如果有，向我解释一下。
+
+#### 完成情况
+
+**`pytsfoil/src/common_data.f90`**
+
+Flap 变量仅在两处出现：变量声明块（`IFLAP`、`DELFLP`、`FLPLOC`）和 `reset_common_data` 子程序中的赋初值。在其余所有 Fortran 源文件中均未被读取或计算使用，因此直接删除两处。
+
+**Python 代码中的 Flap 功能（`pytsfoil/pytsfoil.py`）**
+
+Python 侧保留了完整的 Flap 实现，属于已 Python-ify 的功能：
+
+- **配置**：`config` 字典中存储 `IFLAP`、`DELFLP`、`FLPLOC` 三个参数，默认值与原 Fortran 一致（`IFLAP=0` 表示无 Flap）。
+- **几何变形**：在 `get_profile()` 方法中，当 `iflap != 0` 时，对 `flploc` 之后的翼型坐标施加线性扭转（上下表面斜率修正 + y 坐标偏移），模拟襟翼偏转。
+- **输出**：运行时若有 Flap 则打印偏角和铰链位置。
+
+这三个参数不需要传入 Fortran，因为几何坐标的 Flap 变形完全在 Python 中完成，Fortran 求解器直接接收变形后的翼型。
+
+#### 测试情况
+
+**编译**
+
+使用 conda 环境 `pytsfoil`（Python 3.12），运行 `python pytsfoil/compile_f2py.py` 编译成功，无错误。
+
+**运行示例**
+
+运行 `example/rae2822/run_pytsfoil.py`，三次运行结果完全一致，与任务 2 基准一致：
+
+```
+# 1 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 2 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+# 3 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
+```

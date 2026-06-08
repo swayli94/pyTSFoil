@@ -71,12 +71,6 @@ module common_data
     real :: F = 0.0
     real :: H = 0.0
 
-    ! Flap parameters (Optional)
-    integer :: IFLAP = 0      ! Flap flag
-    real :: DELFLP = 0.0      ! Flap deflection angle  
-    real :: FLPLOC = 0.77     ! Flap location
-
-
     ! ------------------------------------------------
     ! Mesh and geometry parameters and arrays
     ! ------------------------------------------------
@@ -181,10 +175,6 @@ contains
         DVERGE = 10.0
         F = 0.0
         H = 0.0
-    
-        IFLAP = 0
-        DELFLP = 0.0
-        FLPLOC = 0.77
 
         X = 0.0
         Y = 0.0
