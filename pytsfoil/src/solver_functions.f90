@@ -18,8 +18,8 @@ contains
     ! FXLBC for use in subroutine SYOR.
     subroutine SETBC(IJUMP)
         use common_data, only: IMIN, IMAX, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT
-        use common_data, only: ILE, ITE, FXL, FXU, POR
-        use common_data, only: AK, ALPHA, BCTYPE
+        use common_data, only: ILE, ITE, FXL, FXU
+        use common_data, only: AK, ALPHA
         use solver_data, only: CYYBLU, CYYBUD, FXLBC, FXUBC, WSLP
         implicit none
         integer, intent(in) :: IJUMP
@@ -35,9 +35,7 @@ contains
             IDOWN = IMAX - 1 + INT
             
             JINT = 0
-            if (BCTYPE == 1 .and. AK > 0.0) JINT = 1
-            if (BCTYPE == 3) JINT = 1
-            if (BCTYPE == 5 .and. POR > 1.5) JINT = 1
+            if (AK > 0.0) JINT = 1
             JBOT = JMIN + JINT
             JTOP = JMAX - JINT
         end if
@@ -68,332 +66,87 @@ contains
     ! which modifies the DIAG and RHS vectors on each I line in the
     ! appropriate way to include the boundary conditions at JBOT and JTOP.
     ! Called by - SYOR.
-    subroutine BCEND(IVAL)    
-        use common_data, only: X, Y, IUP, IDOWN, JMIN, JMAX, JTOP, JBOT, AK, XDIFF, BCTYPE, POR, FLAG_OUTPUT
-        use solver_data, only: P, CYYD, CYYU, CIRCFF, FHINV, DIAG, RHS
+    subroutine BCEND(IVAL)
+        use common_data, only: JMIN, JMAX, JTOP, JBOT, AK, XDIFF
+        use solver_data, only: P, CYYD, CYYU, DIAG, RHS
         implicit none
         integer, intent(in) :: IVAL
-        
-        integer :: I=0, II=0
-        real :: DFACL=0.0, DFACU=0.0, RFACL=0.0, RFACU=0.0, PJMIN=0.0, PJMAX=0.0, TERM=0.0, RTK=0.0
-        logical :: apply_dirichlet=.false., apply_neumann=.false.
-        
+
+        integer :: I=0
+        real :: DFACL=0.0, DFACU=0.0, RFACL=0.0, RFACU=0.0, RTK=0.0
+
         I = IVAL
-        apply_dirichlet = .false.
-        apply_neumann = .false.
-        
-        ! Branch to appropriate address for BCTYPE
-        select case (BCTYPE)
-        
-        case (1)  
-            ! BCTYPE = 1, FREE AIR
-            ! Dirichlet boundary condition for subsonic freestream
-            if (AK > 0.0) return
 
-            ! Neumann boundary condition for supersonic freestream
-            RTK = sqrt(abs(AK))
-            DFACL = -CYYD(JBOT) * RTK * XDIFF(I)
-            DFACU = -CYYU(JTOP) * RTK * XDIFF(I)
-            RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
-            RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
-            apply_neumann = .true.
-            
-        case (2)  
-            ! BCTYPE = 2, SOLID WALL
-            ! Neumann boundary condition = 0.
-            ! No modification necessary to DIAG or RHS
-            return
-            
-        case (3)  
-            ! BCTYPE = 3, FREE JET
-            ! Dirichlet boundary condition
-            if (AK < 0.0) then
-                PJMIN = 0.0
-                PJMAX = 0.0
-            else
-                PJMIN = -0.75 * CIRCFF
-                PJMAX = -0.25 * CIRCFF
-            end if
-            apply_dirichlet = .true.
-            
-        case (4)  
-            ! BCTYPE = 4, IDEAL SLOTTED WALL
-            ! Neumann boundary condition
-            DFACL = -FHINV * CYYD(JBOT)
-            DFACU = -FHINV * CYYU(JTOP)
-            if (AK < 0.0) then
-                RFACL = DFACL * P(JBOT,I)
-                RFACU = DFACU * P(JTOP,I)
-            else
-                RFACL = DFACL * (0.75 * CIRCFF + P(JBOT,I))
-                RFACU = DFACU * (0.25 * CIRCFF + P(JTOP,I))
-            end if
-            apply_neumann = .true.
-            
-        case (5)  
-            ! BCTYPE = 5, POROUS/PERFORATED WALL
-            if (POR > 1.5) then
-                ! Dirichlet boundary condition for POR > 1.5
-                if (I /= IUP) return
-                ! Set values of P on boundary by integrating PX using
-                ! old values of potential
-                PJMIN = P(JMIN,IUP)
-                TERM = -0.5 / (POR * (Y(JMIN) - Y(JMIN+1)))
-                do II = IUP, IDOWN
-                    P(JMIN,II) = P(JMIN,II-1) - TERM * (X(II)-X(II-1)) * &
-                                (P(JMIN,II)+P(JMIN,II-1)-P(JMIN+1,II)-P(JMIN+1,II-1))
-                end do
-                PJMAX = P(JMAX,IUP)
-                TERM = 0.5 / (POR * (Y(JMAX) - Y(JMAX-1)))
-                do II = IUP, IDOWN
-                    P(JMAX,II) = P(JMAX,II-1) - TERM * (X(II) - X(II-1)) * &
-                                (P(JMAX,II)+P(JMAX,II-1)-P(JMAX-1,II)-P(JMAX-1,II-1))
-                end do
-                RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(P(JBOT-1,I)-PJMIN))
-                RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(P(JTOP+1,I)-PJMAX))
-                return
-            else
-                ! Neumann boundary condition for POR < 1.5
-                DFACL = -CYYD(JBOT) * POR * XDIFF(I)
-                DFACU = -CYYU(JTOP) * POR * XDIFF(I)
-                RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
-                RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
-                apply_neumann = .true.
-            end if
-            
-        case (6)
-            ! BCTYPE = 6, GENERAL WALL BOUNDARY CONDITION
-            ! Difference equations for this boundary condition
-            ! have not yet been worked out. User must insert
-            ! information needed for calculation
-            write(*, '(A, /, A)') 'ABNORMAL STOP IN SUBROUTINE BCEND', 'BCTYPE=6 IS NOT USEABLE'
-            stop
+        ! FREE AIR: Dirichlet boundary condition for subsonic freestream
+        if (AK > 0.0) return
 
-        case default
-            write(*, '(A,I0)') 'ABNORMAL STOP IN SUBROUTINE BCEND: Invalid BCTYPE = ', BCTYPE
-            stop
-                
-        end select
-        
-        ! Apply Dirichlet boundary conditions
-        if (apply_dirichlet) then
-            RHS(JBOT) = RHS(JBOT) - (CYYD(JBOT)*(PJMIN-P(JBOT-1,I)))
-            RHS(JTOP) = RHS(JTOP) - (CYYU(JTOP)*(PJMAX-P(JTOP+1,I)))
-            return
-        end if
-        
-        ! Apply Neumann boundary conditions
-        if (apply_neumann) then
-            DIAG(JBOT) = DIAG(JBOT) + DFACL
-            DIAG(JTOP) = DIAG(JTOP) + DFACU
-            RHS(JBOT) = RHS(JBOT) - RFACL + CYYD(JBOT)*P(JBOT-1,I)
-            RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
-        end if
-        
+        ! Neumann boundary condition for supersonic freestream
+        RTK = sqrt(abs(AK))
+        DFACL = -CYYD(JBOT) * RTK * XDIFF(I)
+        DFACU = -CYYU(JTOP) * RTK * XDIFF(I)
+        RFACL = DFACL * (P(JMIN,I) - P(JMIN,I-1))
+        RFACU = DFACU * (P(JMAX,I) - P(JMAX,I-1))
+
+        DIAG(JBOT) = DIAG(JBOT) + DFACL
+        DIAG(JTOP) = DIAG(JTOP) + DFACU
+        RHS(JBOT) = RHS(JBOT) - RFACL + CYYD(JBOT)*P(JBOT-1,I)
+        RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
+
     end subroutine BCEND
 
     ! Compute far-field boundary conditions for outer boundaries
     subroutine FARFLD()
-        use common_data, only: AK, X, Y, IMIN, IMAX, JMIN, JMAX, BCTYPE, PI, TWOPI, HALFPI
-        use common_data, only: F, H, POR, FLAG_OUTPUT
-        use solver_data, only: XSING, FHINV
-        use solver_data, only: B_COEF, OMEGA0, OMEGA1, OMEGA2, JET, PSI0, PSI1, PSI2
+        use common_data, only: AK, X, Y, IMIN, IMAX, JMIN, JMAX, PI, TWOPI
+        use solver_data, only: XSING
         use solver_data, only: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
-        use solver_data, only: RTKPOR
-        use solver_data, only: ALPHA0, ALPHA1, ALPHA2, BETA0, BETA1, BETA2
         use solver_base, only: ANGLE
         implicit none
         integer :: I=0, J=0
         real :: YT=0.0, YB=0.0, XU_BC=0.0, XD_BC=0.0, YT2=0.0, YB2=0.0, XU2=0.0, XD2=0.0, COEF1=0.0, COEF2=0.0
-        real :: XP=0.0, XP2=0.0, YJ=0.0, YJ2=0.0, Q=0.0, ARG0=0.0, ARG1=0.0, ARG2=0.0
-        real :: EXARG0=0.0, EXARG1=0.0, EXARG2=0.0, TERM=0.0
+        real :: XP=0.0, XP2=0.0, YJ=0.0, YJ2=0.0, Q=0.0
         real :: RTK=0.0
 
-        ! Test for supersonic or subsonic freestream
-        if (AK <= 0.0) then
-            ! Supersonic freestream
-            if (F /= 0.0 .and. H /= 0.0) then
-                FHINV = 1.0 / (F * H)
-            else
-                FHINV = 1.0
-            end if
-            ! For supersonic case, upstream boundary conditions correspond to uniform
-            ! undisturbed flow. Downstream boundary required to be supersonic.
-            ! Top and bottom boundaries use simple wave solution.
-            return
-        end if
+        ! Supersonic freestream: upstream/downstream = uniform flow, top/bottom = simple wave
+        if (AK <= 0.0) return
 
         RTK = sqrt(abs(AK))
 
-        ! Subsonic freestream
-        ! Functional form of the potential on outer boundaries is prescribed.
-        ! Equations represent asymptotic form for doublet and vortex in free air
-        ! and wind tunnel environment. Doublet and vortex are located at X=XSING, Y=0.
-        ! Actual boundary values are set in subroutines RECIRC and REDUB where the 
-        ! functional forms are multiplied by the vortex and doublet strengths.
-        ! The boundary conditions are calculated herein for the input X and Y mesh 
-        ! and values are deleted for the coarse mesh in subroutine SETBC.
+        ! FREE AIR boundary conditions
+        ! Subsonic asymptotic forms for doublet and vortex located at X=XSING, Y=0.
+        ! Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
+        YT = Y(JMAX) * RTK
+        YB = Y(JMIN) * RTK
+        XU_BC = X(IMIN) - XSING
+        XD_BC = X(IMAX) - XSING
+        YT2 = YT * YT
+        YB2 = YB * YB
+        XU2 = XU_BC * XU_BC
+        XD2 = XD_BC * XD_BC
+        COEF1 = 1.0 / TWOPI
+        COEF2 = 1.0 / (TWOPI * RTK)
 
-        ! Set default values for tunnel wall parameters
-        B_COEF = 0.0
-        OMEGA0 = 1.0
-        OMEGA1 = 1.0
-        OMEGA2 = 1.0
-        JET = 0.0
-        PSI0 = 1.0
-        PSI1 = 1.0
-        PSI2 = 1.0
+        ! Doublet and vortex terms on top and bottom boundaries
+        do I = IMIN, IMAX
+            XP = X(I) - XSING
+            XP2 = XP * XP
+            DTOP(I) = XP / (XP2 + YT2) * COEF2
+            DBOT(I) = XP / (XP2 + YB2) * COEF2
+            VTOP(I) = -atan2(YT, XP) * COEF1
+            VBOT(I) = -(atan2(YB, XP) + TWOPI) * COEF1
+        end do
 
-        ! Branch to appropriate formulas depending on BCTYPE
-        select case (BCTYPE)
-        case (1)
-            ! BCTYPE = 1: FREE AIR BOUNDARY CONDITION
-            ! Set boundary ordinates
-            YT = Y(JMAX) * RTK
-            YB = Y(JMIN) * RTK
-            XU_BC = X(IMIN) - XSING
-            XD_BC = X(IMAX) - XSING
-            YT2 = YT * YT
-            YB2 = YB * YB
-            XU2 = XU_BC * XU_BC
-            XD2 = XD_BC * XD_BC
-            COEF1 = 1.0 / TWOPI
-            COEF2 = 1.0 / (TWOPI * RTK)
+        ! Doublet and vortex terms on upstream and downstream boundaries
+        do J = JMIN, JMAX
+            YJ = Y(J) * RTK
+            YJ2 = YJ * YJ
+            DUP(J) = XU_BC / (XU2 + YJ2) * COEF2
+            DDOWN(J) = XD_BC / (XD2 + YJ2) * COEF2
+            Q = PI - sign(PI, YJ)
+            VUP(J) = -(atan2(YJ, XU_BC) + Q) * COEF1
+            VDOWN(J) = -(atan2(YJ, XD_BC) + Q) * COEF1
+        end do
 
-            ! Compute doublet and vortex terms on top and bottom boundaries
-            do I = IMIN, IMAX
-                XP = X(I) - XSING
-                XP2 = XP * XP
-                DTOP(I) = XP / (XP2 + YT2) * COEF2
-                DBOT(I) = XP / (XP2 + YB2) * COEF2
-                VTOP(I) = -atan2(YT, XP) * COEF1
-                VBOT(I) = -(atan2(YB, XP) + TWOPI) * COEF1
-            end do
-
-            ! Compute doublet and vortex terms on upstream and downstream boundaries
-            do J = JMIN, JMAX
-                YJ = Y(J) * RTK
-                YJ2 = YJ * YJ
-                DUP(J) = XU_BC / (XU2 + YJ2) * COEF2
-                DDOWN(J) = XD_BC / (XD2 + YJ2) * COEF2
-                Q = PI - sign(PI, YJ)
-                VUP(J) = -(atan2(YJ, XU_BC) + Q) * COEF1
-                VDOWN(J) = -(atan2(YJ, XD_BC) + Q) * COEF1
-            end do
-            
-            if (AK > 0.0) then
-                call ANGLE()
-            end if
-            return
-
-        case (2)
-            ! BCTYPE = 2: SOLID WALL TUNNEL
-            POR = 0.0
-            ! Set constants for doublet solution
-            B_COEF = 0.5
-            ALPHA0 = PI
-            ALPHA1 = PI
-            ALPHA2 = PI
-            ! Set constants for vortex solution
-            BETA0 = HALFPI
-            BETA1 = HALFPI
-            BETA2 = HALFPI
-
-        case (3)
-            ! BCTYPE = 3: FREE JET
-            F = 0.0
-            RTKPOR = 0.0
-            ! Set constants for doublet solution
-            ALPHA0 = HALFPI
-            ALPHA1 = HALFPI
-            ALPHA2 = HALFPI
-            ! Set constants for vortex solution
-            JET = 0.5
-            BETA0 = 0.0
-            BETA1 = 0.0
-            BETA2 = 0.0
-
-        case (4)
-            ! BCTYPE = 4: IDEAL SLOTTED WALL
-            RTKPOR = 0.0
-            FHINV = 1.0 / (F * H)
-            ! Set constants for doublet solution
-            call DROOTS()
-            ! Set constants for vortex solution
-            JET = 0.5
-            call VROOTS()
-
-        case (5)
-            ! BCTYPE = 5: IDEAL PERFORATED/POROUS WALL
-            F = 0.0
-            RTKPOR = RTK / POR
-            ! Set constants for doublet solution
-            ALPHA0 = HALFPI - atan(-RTKPOR)
-            ALPHA1 = ALPHA0
-            ALPHA2 = ALPHA0
-            ! Set constants for vortex solution
-            BETA0 = atan(RTKPOR)
-            BETA1 = BETA0
-            BETA2 = BETA1
-
-        case (6)
-            ! BCTYPE = 6: GENERAL HOMOGENEOUS WALL BOUNDARY CONDITION
-            ! Boundary condition is not operable yet in finite difference subroutines.
-            ! Far field solution has been derived and is included here for future use
-            RTKPOR = RTK / POR
-            call DROOTS()
-            call VROOTS()
-            write(*, '(A, /, A)') 'ABNORMAL STOP IN SUBROUTINE FARFLD', ' BCTYPE=6 IS NOT USEABLE'
-            stop
-
-        case default
-            write(*, '(A,I0)') 'ABNORMAL STOP IN SUBROUTINE FARFLD: Invalid BCTYPE = ', BCTYPE
-            stop
-        
-        end select
-
-        ! Compute functional forms for upstream and downstream boundary conditions
-        ! for doublet and vortex (for tunnel wall cases only - BCTYPE 2,3,4,5,6)
-        if (BCTYPE /= 1) then
-
-            XU_BC = (X(IMIN) - XSING) / (RTK * H)
-            XD_BC = (X(IMAX) - XSING) / (RTK * H)
-
-            ! Doublet terms
-            COEF1 = 0.5 / AK / H
-            ARG0 = ALPHA0
-            ARG1 = PI - ALPHA1
-            ARG2 = TWOPI - ALPHA2
-            EXARG0 = exp(-ARG0 * XD_BC)
-            EXARG1 = exp(ARG1 * XU_BC)
-            EXARG2 = exp(ARG2 * XU_BC)
-
-            do J = JMIN, JMAX
-                YJ = Y(J) / H
-                DDOWN(J) = COEF1 * (B_COEF + OMEGA0 * cos(YJ * ARG0) * EXARG0)
-                DUP(J) = -COEF1 * ((1.0 - B_COEF) * OMEGA1 * cos(YJ * ARG1) * EXARG1 + &
-                                    OMEGA2 * cos(YJ * ARG2) * EXARG2)
-            end do
-
-            ! Vortex terms
-            ARG0 = BETA0
-            ARG1 = PI + BETA1
-            ARG2 = PI - BETA2
-            EXARG0 = exp(-ARG0 * XD_BC)
-            EXARG1 = exp(-ARG1 * XD_BC)
-            EXARG2 = exp(ARG2 * XU_BC)
-
-            do J = JMIN, JMAX
-                YJ = Y(J) / H
-                TERM = YJ
-                if (JET == 0.0) TERM = sin(YJ * ARG0) / ARG0
-                VDOWN(J) = -0.5 * (1.0 - sign(1.0, YJ) + (1.0 - JET) * PSI0 * TERM * EXARG0 + &
-                                PSI1 * sin(YJ * ARG1) * EXARG1 / ARG1)
-                TERM = 0.0
-                if (JET /= 0.0) TERM = JET * YJ / (1.0 + F)
-                VUP(J) = -0.5 * (1.0 - TERM - PSI2 * sin(YJ * ARG2) * EXARG2 / ARG2)
-            end do
-        end if
+        if (AK > 0.0) call ANGLE()
 
     end subroutine FARFLD
 
@@ -595,155 +348,5 @@ contains
             wedge_angle = 0.5 * (atan(TDM) + atan(TDS))
         end if
     end function WANGLE
-
-    ! Compute constants ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2
-    ! Used in formula for doublet in slotted wind tunnel with subsonic freestream
-    subroutine DROOTS
-        use common_data, only: HALFPI, PI, TWOPI, report_convergence_error, F
-        use solver_data, only: RTKPOR
-        use solver_data, only: ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2
-        implicit none
-        real :: ERROR_LOCAL=0.00001, TEMP=0.0, Q=0.0, DALPHA=0.0
-        integer :: I=0
-        logical :: converged=.false.
-        integer :: MAX_ITERATIONS = 100
-        
-        ERROR_LOCAL = 0.00001
-        
-        ! Compute ALPHA0
-        ALPHA0 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = ALPHA0
-            Q = F*TEMP - RTKPOR
-            ALPHA0 = HALFPI - atan(Q)
-            DALPHA = abs(ALPHA0 - TEMP)
-            if (DALPHA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('DROOTS', 'ALPHA', 0)
-        end if
-        
-        ! Compute ALPHA1
-        ALPHA1 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = ALPHA1
-            Q = F*(TEMP - PI) - RTKPOR
-            ALPHA1 = HALFPI - atan(Q)
-            DALPHA = abs(ALPHA1 - TEMP)
-            if (DALPHA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('DROOTS', 'ALPHA', 1)
-        end if
-        
-        ! Compute ALPHA2
-        ALPHA2 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = ALPHA2
-            Q = F*(TEMP - TWOPI) - RTKPOR
-            ALPHA2 = HALFPI - atan(Q)
-            DALPHA = abs(ALPHA2 - TEMP)
-            if (DALPHA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('DROOTS', 'ALPHA', 2)
-        end if
-        
-        ! Compute OMEGA0, OMEGA1, OMEGA2
-        TEMP = 1.0 / tan(ALPHA0)
-        OMEGA0 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        TEMP = 1.0 / tan(ALPHA1)
-        OMEGA1 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        TEMP = 1.0 / tan(ALPHA2)
-        OMEGA2 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        
-    end subroutine DROOTS
-
-    ! Compute constants BETA0, BETA1, BETA2, PSI0, PSI1, PSI2
-    ! Used in formula for vortex in slotted wind tunnel with subsonic freestream
-    subroutine VROOTS
-        use common_data, only: PI, report_convergence_error, F
-        use solver_data, only: PSI0, PSI1, PSI2, RTKPOR
-        use solver_data, only: BETA0, BETA1, BETA2
-        implicit none
-        real :: ERROR_LOCAL=0.00001, TEMP=0.0, Q=0.0, DBETA=0.0
-        integer :: I=0
-        logical :: converged=.false.
-        integer :: MAX_ITERATIONS = 100
-        
-        ERROR_LOCAL = 0.00001
-        
-        ! Calculate BETA0
-        BETA0 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = BETA0
-            Q = -F*TEMP + RTKPOR
-            BETA0 = atan(Q)
-            DBETA = abs(TEMP - BETA0)
-            if (DBETA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('VROOTS', 'BETA', 0)
-        end if
-        
-        ! Calculate BETA1  
-        BETA1 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = BETA1
-            Q = -F*(TEMP + PI) + RTKPOR
-            BETA1 = atan(Q)
-            DBETA = abs(BETA1 - TEMP)
-            if (DBETA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('VROOTS', 'BETA', 1)
-        end if
-        
-        ! Calculate BETA2
-        BETA2 = 0.0
-        converged = .false.
-        do I = 1, MAX_ITERATIONS
-            TEMP = BETA2
-            Q = -F*(TEMP - PI) + RTKPOR
-            BETA2 = atan(Q)
-            DBETA = abs(BETA2 - TEMP)
-            if (DBETA < ERROR_LOCAL) then
-                converged = .true.
-                exit
-            end if
-        end do
-        if (.not. converged) then
-            call report_convergence_error('VROOTS', 'BETA', 2)
-        end if
-        
-        ! Compute PSI0, PSI1, PSI2
-        TEMP = tan(BETA0)
-        PSI0 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        TEMP = tan(BETA1)
-        PSI1 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        TEMP = tan(BETA2)
-        PSI2 = 1.0 / (1.0 + F/(1.0 + TEMP*TEMP))
-        
-    end subroutine VROOTS
 
 end module solver_functions

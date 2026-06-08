@@ -167,12 +167,10 @@ class PyTSFoil(object):
         self.config = {
             'AK': 0.0,              # Free stream similarity parameter
             'ALPHA': 0.0,           # Angle of attack
-            'BCTYPE': 1,            # Boundary condition identifiers (1 = free air, 2 = tunnel)
             'CVERGE': 0.00001,      # Error criterion for convergence
             'DVERGE': 10.0,         # Error criterion for divergence
             'EMACH': 0.75,          # Mach number
             'EPS': 0.2,             # Convergence tolerance
-            'FCR': 1,               # Whether difference equations are fully conservative (True)
             'IPRTER': 100,          # Print interval for convergence history
             'MAXIT': 1000,          # Maximum number of iterations
             'POR': 0.0,             # Porosity
@@ -279,14 +277,7 @@ class PyTSFoil(object):
         self.airfoil['xl'] = xl
         self.airfoil['yl'] = yl
         
-        tsf.common_data.nu = xu.shape[0]
-        tsf.common_data.nl = xl.shape[0]
         tsf.common_data.delta = np.float32(t_max)
-        
-        tsf.common_data.xu[:len(xu)] = xu.astype(np.float32)
-        tsf.common_data.yu[:len(yu)] = yu.astype(np.float32)
-        tsf.common_data.xl[:len(xl)] = xl.astype(np.float32)
-        tsf.common_data.yl[:len(yl)] = yl.astype(np.float32)
 
     def set_mesh(self) -> None:
         '''
@@ -545,14 +536,8 @@ class PyTSFoil(object):
         # Store results in common_data arrays
         tsf.common_data.vol = vol
         
-        # Pad arrays to expected size
-        tsf.common_data.fu[:nfoil] = fu.astype(np.float32)
-        tsf.common_data.fl[:nfoil] = fl.astype(np.float32)
         tsf.common_data.fxu[:nfoil] = fxu.astype(np.float32)
         tsf.common_data.fxl[:nfoil] = fxl.astype(np.float32)
-        tsf.common_data.xfoil[:nfoil] = xfoil.astype(np.float32)
-        tsf.common_data.camber[:nfoil] = camber.astype(np.float32)
-        tsf.common_data.thick[:nfoil] = thick.astype(np.float32)
         
         # Print or log geometry (equivalent to PRBODY call)
         if self.config['flag_print_info']:
@@ -610,8 +595,7 @@ class PyTSFoil(object):
         yfaciv = np.float32(1.0 / yfact)
         tsf.common_data.yin[:jmax] *= yfaciv
 
-        # Scale tunnel height, porosity, angle of attack
-        tsf.common_data.h = np.float32(float(tsf.common_data.h) / yfact)
+        # Scale porosity, angle of attack
         por_scaled = float(tsf.common_data.por) * yfact
         tsf.common_data.por = np.float32(por_scaled)
         if int(tsf.common_data.flag_output) == 1:
@@ -1352,8 +1336,6 @@ class PyTSFoil(object):
         '''
         # Get required variables from Fortran modules
         simdef = tsf.common_data.simdef
-        bctype = tsf.common_data.bctype
-        fcr = tsf.common_data.fcr
         emach = tsf.common_data.emach
         delta = tsf.common_data.delta
         ak = tsf.common_data.ak
@@ -1391,8 +1373,6 @@ class PyTSFoil(object):
                 f.write(f'# VFACT = {vfact:10.6f}\n')
                 f.write(f'# SONVEL = {sonvel:10.6f}\n')
                 f.write(f'# ABORT1 = {abort1:10.6f}\n')
-                f.write(f'# BCTYPE = {bctype:10.6f}\n')
-                f.write(f'# FCR = {fcr:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
                 f.write(f'# SCALED POR = {tsf.common_data.por:10.6f}\n')
 
@@ -1406,20 +1386,8 @@ class PyTSFoil(object):
                 elif simdef == 3:
                     f.write('0 DEFINITION OF SIMILARITY PARAMETERS BY KRUPP\n')
                 
-                # Print boundary condition information
-                if bctype == 1:
-                    f.write('0 BOUNDARY CONDITION FOR FREE AIR\n')
-                elif bctype == 2:
-                    f.write('0 BOUNDARY CONDITION FOR SOLID WALL\n')
-                elif bctype == 3:
-                    f.write('0 BOUNDARY CONDITION FOR FREE JET\n')
-                
-                # Print difference equation information
-                if fcr:
-                    f.write('0 DIFFERENCE EQUATIONS ARE FULLY CONSERVATIVE.\n')
-                else:
-                    f.write('0 DIFFERENCE EQUATIONS ARE NOT CONSERVATIVE AT SHOCK.\n')
-                
+                f.write('0 BOUNDARY CONDITION FOR FREE AIR\n')
+                f.write('0 DIFFERENCE EQUATIONS ARE FULLY CONSERVATIVE.\n')
                 f.write('0 KUTTA CONDITION IS ENFORCED.\n')
         
         # Print shock and mach number on Y=0 line

@@ -247,3 +247,82 @@ logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
 #### 测试情况
 
 重新编译成功，运行 RAE2822 算例结果不变（CL=0.63149, CD=0.00371, CM=-0.14269）。
+
+### 7. 删除不必要的功能 (6)
+
+#### 任务描述
+
+变量 `BCTYPE` 始终为 `1`，变量 `FCR` 始终为 `.true.`，
+并删除相关的条件分支代码，然后删除变量 `BCTYPE`, `FCR`（Fortran 和 Python 中都删除）。
+删除后，检查 `F` 和 `H` 变量是否在其他地方被调用，如果没有被调用，则删除它们。
+如果调用了，他们起什么作用。
+
+```
+    integer :: BCTYPE = 1   ! Boundary condition identifiers (1 = free air, 2 = tunnel)
+    logical :: FCR = .true.   ! Whether difference equations are fully conservative
+
+    ! Wall/tunnel constants (Optional)
+    real :: F = 0.0
+    real :: H = 0.0
+```
+
+进一步检查一下 `common_data`, `solver_data` 等模块中是否还有其他未使用的变量，
+如果有，按照上述方法删除它们。
+
+#### 完成情况
+
+已完成。删除了 `BCTYPE`、`FCR`、`F`、`H` 四个变量：
+
+- `common_data.f90`：删除声明和 `initialize_common` 中的初始化
+- `solver_functions.f90`：
+  - `SETBC`：三条 JINT 条件简化为一条 `if (AK > 0.0) JINT = 1`
+  - `BCEND`：整个 `select case (BCTYPE)` 替换为直接的 FREE AIR 逻辑（约 120 行 → 约 20 行）
+  - `FARFLD`：整个 `select case (BCTYPE)` 和 tunnel 块（`if (BCTYPE /= 1)`）替换为 FREE AIR 逻辑；超音速分支简化为 `FHINV = 1.0; return`
+  - 删除 `DROOTS` 和 `VROOTS` 子程序（仅被 BCTYPE=4,6 调用）
+- `main_iteration.f90`：
+  - `SYOR`：删除 `if (.not. FCR)` 块
+  - `SOLVE`：`if (AK >= 0.0 .and. BCTYPE == 1)` → `if (AK >= 0.0)`
+  - `REDUB`：`if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001)` → `if (abs(CIRCFF) >= 0.0001)`
+  - `RESET`：`if (BCTYPE == 1)` 条件去掉，顶底边界始终更新
+- `pytsfoil.py`：删除 `config` 中 `BCTYPE`/`FCR` 条目，删除 `H` 缩放，简化 `print_summary` 输出
+
+`F` 和 `H` 仅在 BCTYPE=2~6 的 tunnel 分支和 `DROOTS`/`VROOTS` 中使用，删除 tunnel 代码后它们完全未被使用，故一并删除。
+
+#### 测试情况
+
+重新编译成功，`rae2822` 算例运行结果（CL=0.631, CD=0.00371, CM=-0.143）与重构前一致。
+
+### 8. 删除未使用变量 (1)
+
+#### 任务描述
+
+进一步检查 `common_data` 和 `solver_data` 模块中是否还有其他未使用的变量，如有则删除。
+
+#### 完成情况
+
+**`common_data.f90` 删除的变量（仅被写入、从未被读取）：**
+- `NU, NL` — 仅由 Python `set_airfoil()` 写入，Fortran 和 Python 均未读取
+- `XL, XU, YL, YU` — 仅由 Python `set_airfoil()` 写入，Fortran 和 Python 均未读取
+- `CAMBER, THICK, XFOIL` — 仅由 Python `compute_geometry_derivatives()` 写入，Fortran 和 Python 均未读取
+- `FU, FL` — 仅由 Python `compute_geometry_derivatives()` 写入，Fortran 和 Python 均未读取
+- 以上变量同步删除了 `initialize_common()` 中的初始化语句
+- `pytsfoil.py` 中对应的 `tsf.common_data.*` 写入语句一并删除
+
+**`solver_data.f90` 删除的变量（tunnel-only，FARFLD 重构后完全未被使用）：**
+- `FHINV` — 原用于 BCEND case 4 和 FARFLD 隧道块，重构后仅被写入（`FHINV = 1.0`）但从未被读取
+- `ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2, JET` — 仅被 FARFLD tunnel 分支（已删除）和 DROOTS（已删除）使用
+- `B_COEF, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2` — 同上
+- `RTKPOR` — 同上
+- 以上变量同步删除了 `initialize_solver_data()` 中的初始化语句
+
+**`solver_functions.f90` 对应简化：**
+- `FARFLD`：从 use 语句中删除 `FHINV`，超音速分支 `FHINV = 1.0; return` 简化为 `return`
+
+**保留的变量（经确认仍有实际用途）：**
+- `YFACT, VFACT`：由 Python `compute_scale()` 写入后在多处读取（`cdcole_python`、`compute_data_summary`、`print_summary`）
+- `RIGF`：Python `compute_geometry_derivatives()` 中用于计算刚性修正
+- `FXL, FXU`：Fortran `SETBC`、`solver_base.ANGLE` 中实际使用
+
+#### 测试情况
+
+重新编译成功，`rae2822` 算例运行结果（CL=0.63149, CD=0.00371, CM=-0.14269）与重构前完全一致。

@@ -32,18 +32,11 @@ module common_data
     real :: EMACH = 0.75    ! Mach number
     real :: ALPHA = 0.0     ! Angle of attack
 
-    integer :: BCTYPE = 1   ! Boundary condition identifiers (1 = free air, 2 = tunnel)
-
-    integer :: NU = 0, NL = 0 ! Number of lower/upper surface data points
-    real :: XL(N_MESH_POINTS) = 0.0, XU(N_MESH_POINTS) = 0.0 ! Airfoil X-coordinates
-    real :: YL(N_MESH_POINTS) = 0.0, YU(N_MESH_POINTS) = 0.0 ! Airfoil Y-coordinates
     real :: DELTA = 0.0       ! Maximum thickness of airfoil (set to zero to raise error)
 
     integer :: IMAXI = 0, JMAXI = 0 ! User-input maximum number of X/Y-direction grid points
     real :: XIN(NMP_plus2) = 0.0, YIN(NMP_plus2) = 0.0  ! User-input mesh coordinate arrays
     
-    logical :: FCR = .true.   ! Whether difference equations are fully conservative
-
     integer :: NWDGE = 0    ! Viscous wedge parameters (0 = no wedge, 1 = Murman wedge, 2 = Yoshihara wedge)
     integer :: SIMDEF = 3   ! Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
 
@@ -64,10 +57,6 @@ module common_data
     real :: CVERGE = 0.00001    ! Error criterion for convergence
     real :: DVERGE = 10.0       ! Error criterion for divergence
 
-    ! Wall/tunnel constants (Optional)
-    real :: F = 0.0
-    real :: H = 0.0
-
     ! ------------------------------------------------
     ! Mesh and geometry parameters and arrays
     ! ------------------------------------------------
@@ -86,11 +75,6 @@ module common_data
     ! Airfoil arrays
     real :: VOL = 0.0
     integer :: NFOIL = 0  ! Number of points on airfoil
-    real :: CAMBER(N_MESH_POINTS) = 0.0 ! Airfoil camber
-    real :: THICK(N_MESH_POINTS) = 0.0 ! Airfoil thickness
-    real :: XFOIL(N_MESH_POINTS) = 0.0 ! Airfoil X-coordinate
-    real :: FU(N_MESH_POINTS) = 0.0 ! Upper surface interpolation
-    real :: FL(N_MESH_POINTS) = 0.0 ! Lower surface interpolation
     real :: FXU(N_MESH_POINTS) = 0.0 ! Derivative of upper surface to X-coordinate
     real :: FXL(N_MESH_POINTS) = 0.0 ! Derivative of lower surface to X-coordinate
     
@@ -132,14 +116,6 @@ contains
         EMACH = 0.75
         ALPHA = 0.0
 
-        BCTYPE = 1
-    
-        NU = 0
-        NL = 0
-        XL = 0.0
-        XU = 0.0
-        YL = 0.0
-        YU = 0.0
         DELTA = 0.0
     
         IMAXI = 0
@@ -147,8 +123,6 @@ contains
         XIN = 0.0
         YIN = 0.0
         
-        FCR = .true.
-    
         NWDGE = 0
         SIMDEF = 3
     
@@ -167,8 +141,6 @@ contains
         WE = [1.8, 1.9, 1.95]
         CVERGE = 0.00001
         DVERGE = 10.0
-        F = 0.0
-        H = 0.0
 
         X = 0.0
         Y = 0.0
@@ -177,9 +149,6 @@ contains
     
         VOL = 0.0
         NFOIL = 0
-        CAMBER = 0.0
-        THICK = 0.0
-        XFOIL = 0.0
 
     end subroutine initialize_common
 

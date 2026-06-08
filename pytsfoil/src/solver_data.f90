@@ -16,7 +16,6 @@ module solver_data
     integer, parameter :: KSTEP = 1 ! Step size for circulation-jump boundary update
 
     real :: CIRCFF = 0.0    ! Circulation at far field boundary
-    real :: FHINV = 0.0     ! Inverse of Froude number
     real :: SONVEL = 0.0    ! Sonic velocity
     real :: DUB = 0.0       ! doublet strength
 
@@ -57,11 +56,7 @@ module solver_data
     ! Control flags and refinement (from /COM3/)
     logical :: ABORT1 = .false. ! input abort flag
 
-    ! Public variables for solver_functions
-    real :: ALPHA0, ALPHA1, ALPHA2, OMEGA0, OMEGA1, OMEGA2, JET ! Far-field root parameters
-    real :: B_COEF, BETA0, BETA1, BETA2, PSI0, PSI1, PSI2   ! Vortex/doublet parameters
     real :: WSLP(N_MESH_POINTS,2)   ! Viscous wedge slopes
-    real :: RTKPOR = 0.0
 
 contains
 
@@ -71,7 +66,6 @@ contains
         P = 0.0
         THETA = 0.0
         CIRCFF = 0.0
-        FHINV = 0.0
         SONVEL = 0.0
         DUB = 0.0
     
@@ -130,24 +124,8 @@ contains
         CPSTAR = 0.0
     
         ABORT1 = .false.
-    
-        ALPHA0 = 0.0
-        ALPHA1 = 0.0
-        ALPHA2 = 0.0
-        OMEGA0 = 0.0
-        OMEGA1 = 0.0
-        OMEGA2 = 0.0
-        JET = 0.0
-        B_COEF = 0.0
-        BETA0 = 0.0
-        BETA1 = 0.0
-        BETA2 = 0.0
-        PSI0 = 0.0
-        PSI1 = 0.0
-        PSI2 = 0.0
         WSLP = 0.0
-        RTKPOR = 0.0
-        
+
     end subroutine initialize_solver_data
 
 end module solver_data

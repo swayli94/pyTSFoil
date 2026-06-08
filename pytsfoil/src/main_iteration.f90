@@ -14,7 +14,7 @@ contains
     ! CALLED BY - SOLVE.
     subroutine SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
         use common_data, only: X, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
-        use common_data, only: AK, FCR, EPS, N_MESH_POINTS
+        use common_data, only: AK, EPS, N_MESH_POINTS
         use solver_functions, only: BCEND
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
@@ -50,12 +50,6 @@ contains
             do J = JBOT, JTOP
                 if (VC(J) < 0.0) EMU(J,I1) = VC(J)
             end do
-            
-            if (.not. FCR) then
-                do J = JBOT, JTOP
-                    EMU(J,I2) = EMU(J,I1)
-                end do
-            end if
             
             ! Compute elements of matrix
             do J = JBOT, JTOP
@@ -188,7 +182,7 @@ contains
 
     ! Main iteration loop: solver, convergence, and flow updates
     subroutine SOLVE()
-        use common_data, only: Y, AK, BCTYPE, NWDGE, IPRTER, MAXIT
+        use common_data, only: Y, AK, NWDGE, IPRTER, MAXIT
         use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
         use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
         use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
@@ -270,7 +264,7 @@ contains
             call SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
             
             ! Update circulation for subsonic freestream flow
-            if (AK >= 0.0 .and. BCTYPE == 1) then
+            if (AK >= 0.0) then
                 IK = IUP - IMIN
                 do I = IUP, IDOWN
                     IK = IK + KSTEP
@@ -418,7 +412,7 @@ contains
     ! For other flows, the nonlinear contribution is added.
     subroutine REDUB()
         use common_data, only: Y, IMIN, IMAX, JMIN, JMAX, N_MESH_POINTS
-        use common_data, only: GAM1, XDIFF, BCTYPE, VOL
+        use common_data, only: GAM1, XDIFF, VOL
         use math_module, only: TRAP
         use solver_data, only: P, CIRCFF, DUB
         implicit none
@@ -429,7 +423,7 @@ contains
         real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
         
         ! For lifting free air flows with circulation, set doublet strength equal to model volume
-        if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
+        if (abs(CIRCFF) >= 0.0001) then
             DUB = VOL
             return
         end if
@@ -473,7 +467,7 @@ contains
     ! Updates far field boundary conditions for subsonic freestream flows.
     ! CALLED BY - SOLVE.
     subroutine RESET()
-        use common_data, only: IMIN, IMAX, JMIN, JMAX, JUP, BCTYPE
+        use common_data, only: IMIN, IMAX, JMIN, JMAX, JUP
         use solver_data, only: P, CIRCFF, DUB, KSTEP
         use solver_data, only: DUP, DDOWN, DTOP, DBOT, VUP, VDOWN, VTOP, VBOT
         implicit none
@@ -489,14 +483,12 @@ contains
         end do
 
         ! Update boundary conditions on top and bottom
-        if (BCTYPE == 1) then
-            K = IMIN - KSTEP
-            do I = IMIN, IMAX
-                K = K + KSTEP
-                P(JMIN,I) = CIRCFF*VBOT(K) + DUB*DBOT(K)
-                P(JMAX,I) = CIRCFF*VTOP(K) + DUB*DTOP(K)
-            end do
-        end if
+        K = IMIN - KSTEP
+        do I = IMIN, IMAX
+            K = K + KSTEP
+            P(JMIN,I) = CIRCFF*VBOT(K) + DUB*DBOT(K)
+            P(JMAX,I) = CIRCFF*VTOP(K) + DUB*DTOP(K)
+        end do
 
     end subroutine RESET
 
