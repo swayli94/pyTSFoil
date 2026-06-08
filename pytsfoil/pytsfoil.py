@@ -142,7 +142,7 @@ class PyTSFoil(object):
         Run the Fortran solver.
         '''
         # Scale variables to similarity form
-        tsf.solver_functions.scale()
+        self.compute_scale()
 
         # Set far field boundary conditions
         tsf.solver_functions.farfld()
@@ -570,6 +570,85 @@ class PyTSFoil(object):
             if iflap != 0:
                 print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
     
+    def compute_scale(self) -> None:
+        '''Scale physical variables to transonic similarity variables (CPFACT, CLFACT, CDFACT, CMFACT, YFACT, VFACT).'''
+        phys = self.config['PHYS'] == 1
+        emach = float(tsf.common_data.emach)
+        delta = float(tsf.common_data.delta)
+        simdef = self.config['SIMDEF']
+        gam1 = float(tsf.common_data.gam1)
+
+        if not phys:
+            cpfact = clfact = cdfact = cmfact = yfact = vfact = 1.0
+        else:
+            emach2 = emach * emach
+            beta = 1.0 - emach2
+            delrt1 = delta ** (1.0 / 3.0)
+            delrt2 = delta ** (2.0 / 3.0)
+
+            if simdef == 1:  # Cole scaling
+                ak = beta / delrt2
+                yfact = 1.0 / delrt1
+                cpfact = delrt2
+                clfact = delrt2
+                cdfact = delrt2 * delta
+                cmfact = delrt2
+                vfact = delta * 57.295779
+            elif simdef == 2:  # Spreiter scaling
+                emroot = emach ** (2.0 / 3.0)
+                ak = beta / (delrt2 * emroot * emroot)
+                yfact = 1.0 / (delrt1 * emroot)
+                cpfact = delrt2 / emroot
+                clfact = cpfact
+                cmfact = cpfact
+                cdfact = cpfact * delta
+                vfact = delta * 57.295779
+            elif simdef == 3:  # Krupp scaling
+                ak = beta / (delrt2 * emach)
+                yfact = 1.0 / (delrt1 * emach ** 0.5)
+                cpfact = delrt2 / (emach ** 0.75)
+                clfact = cpfact
+                cmfact = cpfact
+                cdfact = cpfact * delta
+                vfact = delta * 57.295779
+            else:
+                raise ValueError(f'SCALE: Invalid SIMDEF value: {simdef}')
+
+            tsf.common_data.ak = np.float32(ak)
+
+            # Scale Y mesh (Fortran JMIN=1..JMAX, Python 0-indexed: yin[0:jmax])
+            jmax = int(tsf.common_data.jmax)
+            yfaciv = np.float32(1.0 / yfact)
+            tsf.common_data.yin[:jmax] *= yfaciv
+
+            # Scale tunnel height, porosity, angle of attack
+            tsf.common_data.h = np.float32(float(tsf.common_data.h) / yfact)
+            por_scaled = float(tsf.common_data.por) * yfact
+            tsf.common_data.por = np.float32(por_scaled)
+            if int(tsf.common_data.flag_output) == 1:
+                print(f'          SCALED POR= {por_scaled:10.5f}')
+
+            tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
+
+        tsf.solver_data.cpfact = np.float32(cpfact)
+        tsf.solver_data.clfact = np.float32(clfact)
+        tsf.solver_data.cdfact = np.float32(cdfact)
+        tsf.solver_data.cmfact = np.float32(cmfact)
+        tsf.solver_data.yfact = np.float32(yfact)
+        tsf.solver_data.vfact = np.float32(vfact)
+
+        ak_val = float(tsf.common_data.ak)
+        if ak_val == 0.0:
+            raise ValueError('AK=0. Value of AK must be input since PHYS=F.')
+
+        if abs(gam1) <= 0.0001:
+            tsf.solver_data.sonvel = np.float32(1.0)
+            tsf.solver_data.cpstar = np.float32(0.0)
+        else:
+            sonvel = ak_val / gam1
+            tsf.solver_data.sonvel = np.float32(sonvel)
+            tsf.solver_data.cpstar = np.float32(-2.0 * sonvel * cpfact)
+
     def compute_data_summary(self):
         '''
         Compute the data summary.

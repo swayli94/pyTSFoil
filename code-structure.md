@@ -179,3 +179,25 @@ Python 侧保留了完整的 Flap 实现，属于已 Python-ify 的功能：
 # 2 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
 # 3 cl: 0.63149023, cd: 0.00371013, cm: -0.14269204
 ```
+
+### 4. 重构功能 (1)
+
+#### 任务描述
+
+重构`solver_functions.f90` 中的 `SCALE` 子程序，在 Python 中实现相关功能。
+另外，检查 `PHYS`, `SIMDEF` 变量是否在其他地方被调用，如果没有被调用，则删除它们。
+如果调用了，他们起什么作用。
+
+#### 完成情况
+
+1. **`SCALE` 已 Python 化**：在 `pytsfoil.py` 中新增 `compute_scale()` 方法，完整实现三种相似律定标（Cole/Spreiter/Krupp）及 `PHYS=False` 的单位传递路径。结果通过 f2py 写回 Fortran 模块变量（`tsf.solver_data.cpfact/clfact/cdfact/cmfact/yfact/vfact/sonvel/cpstar`，以及 `tsf.common_data.ak/yin/h/por/alpha`）。
+2. `run_fortran_solver()` 中的 `tsf.solver_functions.scale()` 调用替换为 `self.compute_scale()`。
+3. `solver_functions.f90` 中删除 `SCALE` 子程序及其头注释，从 `public` 列表移除。
+
+**`PHYS` 和 `SIMDEF` 的作用**：这两个变量**不能删除**，仍在多处使用：
+- `PHYS`：控制输入是物理量还是相似律变量。Python 层 `compute_geometry_derivatives()` 用它判断是否对 `delinv` 缩放（`pytsfoil.py:496`）；Fortran 层 `EMACH1` 也依赖它（`solver_functions.f90:526`）。
+- `SIMDEF`：指定相似律类型（1=Cole，2=Spreiter，3=Krupp）。同样被 `EMACH1` 引用（`solver_functions.f90:534`）。两者均作为 `self.config` 的标准参数，通过配置循环写入 Fortran 公共数据模块。
+
+#### 测试情况
+
+通过 RAE2822 算例（`example/rae2822/run_pytsfoil.py`）验证：CL = 0.631，与重构前一致。`SCALED POR=    0.00000` 正确输出。
