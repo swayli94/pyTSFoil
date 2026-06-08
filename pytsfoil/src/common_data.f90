@@ -43,7 +43,6 @@ module common_data
     integer :: IMAXI = 0, JMAXI = 0 ! User-input maximum number of X/Y-direction grid points
     real :: XIN(NMP_plus2) = 0.0, YIN(NMP_plus2) = 0.0  ! User-input mesh coordinate arrays
     
-    logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
     logical :: KUTTA = .true. ! Whether Kutta condition is enforced
     logical :: FCR = .true.   ! Whether difference equations are fully conservative
 
@@ -151,7 +150,6 @@ contains
         XIN = 0.0
         YIN = 0.0
         
-        PHYS = .true.
         KUTTA = .true.
         FCR = .true.
     
@@ -217,9 +215,6 @@ contains
         case (6)
             write(*, '(A)') ' '
             write(*, '(5X,A)') 'DELTA NOT IN PERMITTED RANGE. ( 0.0, 1.0)'
-        case (7)
-            write(*, '(A)') ' '
-            write(*, '(5X,A)') 'AK=0. VALUE OF AK MUST BE INPUT SINCE PHYS=F.'
         case (8)
             write(*, '(A)') ' '
             write(*, '(5X,A)') 'MACH NUMBER IS NOT LESS THAN 1.0 FOR VISCOUS WEDGE INCLUSION'

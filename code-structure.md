@@ -201,3 +201,25 @@ Python 侧保留了完整的 Flap 实现，属于已 Python-ify 的功能：
 #### 测试情况
 
 通过 RAE2822 算例（`example/rae2822/run_pytsfoil.py`）验证：CL = 0.631，与重构前一致。`SCALED POR=    0.00000` 正确输出。
+
+### 5. 删除不必要的功能 (4)
+
+#### 任务描述
+
+变量 `PHYS` 始终为 `.true.`，并删除相关的条件分支代码，然后删除变量 `PHYS`
+（Fortran 和 Python 中都删除）。
+
+```
+logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
+```
+
+#### 完成情况
+
+- `common_data.f90`：删除 `PHYS` 声明、reset 赋值、以及 `INPERR` 中 case (7) 的错误信息。
+- `solver_functions.f90`：从 `use` 语句中删除 `PHYS`，并删除 `EMACH1` 函数中的 `if (.not. PHYS)` 死代码分支，保留并展开 `else` 中的物理坐标路径。
+- `pytsfoil.py`：删除 `config` 中的 `'PHYS': 1`；将 `AK = 0.0` 赋值和 `delinv = 1.0 / delta` 改为无条件执行；展开 `compute_scale` 中的 `if not phys` 死代码分支并移除 `ak_val == 0.0` 检查；删除 `output_airfoil` 和 `print_summary` 中的 `phys = tsf.common_data.phys`，将 `if iem == 1 and phys` 简化为 `if iem == 1`，删除输出文件中的 `# PHYS` 行并将 `if phys` 分支改为直接输出物理坐标信息。
+
+#### 测试情况
+
+通过 RAE2822 算例（`example/rae2822/run_pytsfoil.py`）验证：CL = 0.631，与重构前一致。`SCALED POR=    0.00000` 正确输出。
+

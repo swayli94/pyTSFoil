@@ -177,7 +177,6 @@ class PyTSFoil(object):
             'IPRTER': 100,          # Print interval for convergence history
             'KUTTA': 1,             # Whether Kutta condition is enforced (True)
             'MAXIT': 1000,          # Maximum number of iterations
-            'PHYS': 1,              # Physical (True) vs similarity (False)
             'POR': 0.0,             # Porosity
             'RIGF': 0.0,            # Rigidity factor for transonic effects
             'SIMDEF': 3,            # Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
@@ -222,9 +221,7 @@ class PyTSFoil(object):
         if self.config['NWDGE'] > 0 and self.config['EMACH'] > 1.0:
             raise ValueError("NWDGE must be 0 if EMACH <= 1.0")
         
-        # Set AK=0 for physical coordinates
-        if self.config['PHYS'] == 1:
-            self.config['AK'] = 0.0
+        self.config['AK'] = 0.0
             
         # Constants
         self.n_mesh_points = tsf.common_data.n_mesh_points
@@ -492,9 +489,7 @@ class PyTSFoil(object):
         flploc = self.config['FLPLOC']
         
         # Scaling factor
-        delinv = 1.0
-        if self.config['PHYS'] == 1:
-            delinv = 1.0 / delta
+        delinv = 1.0 / delta
 
         # Upper surface cubic spline interpolation
         # Calculate derivatives at endpoints for boundary conditions
@@ -572,63 +567,59 @@ class PyTSFoil(object):
     
     def compute_scale(self) -> None:
         '''Scale physical variables to transonic similarity variables (CPFACT, CLFACT, CDFACT, CMFACT, YFACT, VFACT).'''
-        phys = self.config['PHYS'] == 1
         emach = float(tsf.common_data.emach)
         delta = float(tsf.common_data.delta)
         simdef = self.config['SIMDEF']
         gam1 = float(tsf.common_data.gam1)
 
-        if not phys:
-            cpfact = clfact = cdfact = cmfact = yfact = vfact = 1.0
+        emach2 = emach * emach
+        beta = 1.0 - emach2
+        delrt1 = delta ** (1.0 / 3.0)
+        delrt2 = delta ** (2.0 / 3.0)
+
+        if simdef == 1:  # Cole scaling
+            ak = beta / delrt2
+            yfact = 1.0 / delrt1
+            cpfact = delrt2
+            clfact = delrt2
+            cdfact = delrt2 * delta
+            cmfact = delrt2
+            vfact = delta * 57.295779
+        elif simdef == 2:  # Spreiter scaling
+            emroot = emach ** (2.0 / 3.0)
+            ak = beta / (delrt2 * emroot * emroot)
+            yfact = 1.0 / (delrt1 * emroot)
+            cpfact = delrt2 / emroot
+            clfact = cpfact
+            cmfact = cpfact
+            cdfact = cpfact * delta
+            vfact = delta * 57.295779
+        elif simdef == 3:  # Krupp scaling
+            ak = beta / (delrt2 * emach)
+            yfact = 1.0 / (delrt1 * emach ** 0.5)
+            cpfact = delrt2 / (emach ** 0.75)
+            clfact = cpfact
+            cmfact = cpfact
+            cdfact = cpfact * delta
+            vfact = delta * 57.295779
         else:
-            emach2 = emach * emach
-            beta = 1.0 - emach2
-            delrt1 = delta ** (1.0 / 3.0)
-            delrt2 = delta ** (2.0 / 3.0)
+            raise ValueError(f'SCALE: Invalid SIMDEF value: {simdef}')
 
-            if simdef == 1:  # Cole scaling
-                ak = beta / delrt2
-                yfact = 1.0 / delrt1
-                cpfact = delrt2
-                clfact = delrt2
-                cdfact = delrt2 * delta
-                cmfact = delrt2
-                vfact = delta * 57.295779
-            elif simdef == 2:  # Spreiter scaling
-                emroot = emach ** (2.0 / 3.0)
-                ak = beta / (delrt2 * emroot * emroot)
-                yfact = 1.0 / (delrt1 * emroot)
-                cpfact = delrt2 / emroot
-                clfact = cpfact
-                cmfact = cpfact
-                cdfact = cpfact * delta
-                vfact = delta * 57.295779
-            elif simdef == 3:  # Krupp scaling
-                ak = beta / (delrt2 * emach)
-                yfact = 1.0 / (delrt1 * emach ** 0.5)
-                cpfact = delrt2 / (emach ** 0.75)
-                clfact = cpfact
-                cmfact = cpfact
-                cdfact = cpfact * delta
-                vfact = delta * 57.295779
-            else:
-                raise ValueError(f'SCALE: Invalid SIMDEF value: {simdef}')
+        tsf.common_data.ak = np.float32(ak)
 
-            tsf.common_data.ak = np.float32(ak)
+        # Scale Y mesh (Fortran JMIN=1..JMAX, Python 0-indexed: yin[0:jmax])
+        jmax = int(tsf.common_data.jmax)
+        yfaciv = np.float32(1.0 / yfact)
+        tsf.common_data.yin[:jmax] *= yfaciv
 
-            # Scale Y mesh (Fortran JMIN=1..JMAX, Python 0-indexed: yin[0:jmax])
-            jmax = int(tsf.common_data.jmax)
-            yfaciv = np.float32(1.0 / yfact)
-            tsf.common_data.yin[:jmax] *= yfaciv
+        # Scale tunnel height, porosity, angle of attack
+        tsf.common_data.h = np.float32(float(tsf.common_data.h) / yfact)
+        por_scaled = float(tsf.common_data.por) * yfact
+        tsf.common_data.por = np.float32(por_scaled)
+        if int(tsf.common_data.flag_output) == 1:
+            print(f'          SCALED POR= {por_scaled:10.5f}')
 
-            # Scale tunnel height, porosity, angle of attack
-            tsf.common_data.h = np.float32(float(tsf.common_data.h) / yfact)
-            por_scaled = float(tsf.common_data.por) * yfact
-            tsf.common_data.por = np.float32(por_scaled)
-            if int(tsf.common_data.flag_output) == 1:
-                print(f'          SCALED POR= {por_scaled:10.5f}')
-
-            tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
+        tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
 
         tsf.solver_data.cpfact = np.float32(cpfact)
         tsf.solver_data.clfact = np.float32(clfact)
@@ -638,9 +629,6 @@ class PyTSFoil(object):
         tsf.solver_data.vfact = np.float32(vfact)
 
         ak_val = float(tsf.common_data.ak)
-        if ak_val == 0.0:
-            raise ValueError('AK=0. Value of AK must be input since PHYS=F.')
-
         if abs(gam1) <= 0.0001:
             tsf.solver_data.sonvel = np.float32(1.0)
             tsf.solver_data.cpstar = np.float32(0.0)
@@ -820,8 +808,7 @@ class PyTSFoil(object):
         # Get configuration parameters
         delta = tsf.common_data.delta
         emach = tsf.common_data.emach
-        phys = tsf.common_data.phys
-        
+
         # Initialize variables
         iem = 0
         cj01 = -y_coords[jlow-1] / (y_coords[jup-1] - y_coords[jlow-1])  # Convert to 0-based indexing
@@ -881,7 +868,7 @@ class PyTSFoil(object):
                     return
                 
                 # Mach number warning
-                if iem == 1 and phys:
+                if iem == 1:
                     f.write('0 ***** CAUTION *****\n')
                     f.write(' MAXIMUM MACH NUMBER EXCEEDS 1.3\n')
                     f.write(' SHOCK JUMPS IN ERROR IF UPSTREAM NORMAL MACH NUMBER GREATER THAN 1.3\n')
@@ -1366,7 +1353,6 @@ class PyTSFoil(object):
         Translates the PRINT subroutine from io_module.f90
         '''
         # Get required variables from Fortran modules
-        phys = tsf.common_data.phys
         simdef = tsf.common_data.simdef
         bctype = tsf.common_data.bctype
         fcr = tsf.common_data.fcr
@@ -1411,15 +1397,10 @@ class PyTSFoil(object):
                 f.write(f'# BCTYPE = {bctype:10.6f}\n')
                 f.write(f'# FCR = {fcr:10.6f}\n')
                 f.write(f'# KUTTA = {kutta:10.6f}\n')
-                f.write(f'# PHYS = {phys:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
                 f.write(f'# SCALED POR = {tsf.common_data.por:10.6f}\n')
 
-                # Print similarity/physical variables information
-                if phys:
-                    f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
-                else:
-                    f.write('0 PRINTOUT IN SIMILARITY VARIABLES.\n')
+                f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
                 
                 # Print similarity parameter definition
                 if simdef == 1:

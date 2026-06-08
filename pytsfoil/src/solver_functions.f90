@@ -400,7 +400,7 @@ contains
     ! Computes local similarity parameter or local Mach number
     ! Called by - VWEDGE, PRINT_SHOCK, OUTPUT_FIELD
     function EMACH1(U, DELTA) result(result_emach)
-        use common_data, only: AK, GAM1, PHYS, EMACH, SIMDEF, FLAG_OUTPUT
+        use common_data, only: AK, GAM1, EMACH, SIMDEF, FLAG_OUTPUT
         implicit none
         real, intent(in) :: U         ! Local velocity
         real, intent(in) :: DELTA     ! Maximum thickness of airfoil
@@ -410,29 +410,22 @@ contains
         ! Compute similarity parameter based on local velocity
         AK1 = AK - GAM1*U
         
-        if (.not. PHYS) then
-            ! Return value of local similarity parameter
-            result_emach = AK1
-            
+        ! Compute value of local Mach number and return
+        DELRT2 = DELTA**(2.0/3.0)
+
+        if (SIMDEF == 1) then ! Cole scaling
+            ARG = 1.0 - DELRT2*AK1
+        else if (SIMDEF == 2) then ! Spreiter scaling
+            ARG = 1.0 - DELRT2*AK1*EMACH**(4.0/3.0)
+        else if (SIMDEF == 3) then ! Krupp scaling
+            ARG = 1.0 - DELRT2*AK1*EMACH
         else
-            ! Compute value of local Mach number and return
-            DELRT2 = DELTA**(2.0/3.0)
-        
-            if (SIMDEF == 1) then ! Cole scaling
-                ARG = 1.0 - DELRT2*AK1
-            else if (SIMDEF == 2) then ! Spreiter scaling
-                ARG = 1.0 - DELRT2*AK1*EMACH**(4.0/3.0)
-            else if (SIMDEF == 3) then ! Krupp scaling
-                ARG = 1.0 - DELRT2*AK1*EMACH
-            else
-                write(*, '(A, /, A, I3)') 'ABNORMAL STOP IN SUBROUTINE EMACH1', ' SIMDEF not supported', SIMDEF
-                stop
-            end if
-        
-            result_emach = 0.0
-            if (ARG > 0.0) result_emach = sqrt(ARG)
-        
+            write(*, '(A, /, A, I3)') 'ABNORMAL STOP IN SUBROUTINE EMACH1', ' SIMDEF not supported', SIMDEF
+            stop
         end if
+
+        result_emach = 0.0
+        if (ARG > 0.0) result_emach = sqrt(ARG)
 
     end function EMACH1
 
