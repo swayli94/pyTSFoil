@@ -34,14 +34,11 @@ module common_data
     real :: DELTA = 0.0       ! Maximum thickness of airfoil (set to zero to raise error)
 
     integer :: IMAXI = 0, JMAXI = 0 ! User-input maximum number of X/Y-direction grid points
-    real :: XIN(NMP_plus2) = 0.0, YIN(NMP_plus2) = 0.0  ! User-input mesh coordinate arrays
-    
+
     integer :: NWDGE = 0    ! Viscous wedge parameters (0 = no wedge, 1 = Murman wedge, 2 = Yoshihara wedge)
     integer :: SIMDEF = 3   ! Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
 
     real :: AK = 0.0        ! Free stream similarity parameter
-    real :: RIGF = 0.0      ! Rigidity factor for transonic effects
-    real :: POR = 0.0       ! Porosity
 
     real :: REYNLD = 4.0E6  ! Reynolds number
     real :: WCONST = 4.0    ! Wall constant
@@ -105,7 +102,7 @@ contains
         JBOT = JMIN + 1
 
         ! Grid parameters (from BLOCK DATA)
-        IMAXI = 77  ! User-input maximum number of streamwise (X-direction) grid points (match default XIN)
+        IMAXI = 77  ! User-input maximum number of streamwise (X-direction) grid points
         JMAXI = N_MESH_POINTS  ! User-input maximum number of spanwise (Y-direction) grid points
 
         ! ------------------------------------------------
@@ -119,16 +116,12 @@ contains
     
         IMAXI = 0
         JMAXI = 0
-        XIN = 0.0
-        YIN = 0.0
-        
+
         NWDGE = 0
         SIMDEF = 3
-    
+
         AK = 0.0
-        RIGF = 0.0
-        POR = 0.0
-    
+
         REYNLD = 4.0E6
         WCONST = 4.0
     

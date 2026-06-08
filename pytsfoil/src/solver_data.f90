@@ -19,9 +19,6 @@ module solver_data
     real :: SONVEL = 0.0    ! Sonic velocity
     real :: DUB = 0.0       ! doublet strength
 
-    real :: VFACT = 1.0 ! Scaling factor for velocity
-    real :: YFACT = 1.0 ! Scaling factor for Y-coordinate
-
     real :: CYYC(N_MESH_POINTS), CYYD(N_MESH_POINTS), CYYU(N_MESH_POINTS) ! Boundary differencing coefficients
     real :: CYYBLC, CYYBLD, CYYBLU, CYYBUC, CYYBUD, CYYBUU ! Special boundary coefficient arrays
 
@@ -49,8 +46,8 @@ module solver_data
     ! COM7: boundary extrapolation/coefficient flags
     real :: CJUP = 0.0, CJUP1 = 0.0, CJLOW = 0.0, CJLOW1 = 0.0
     
-    ! COM13: coefficient scaling factors
-    real :: CDFACT = 0.0, CLFACT = 0.0, CMFACT = 0.0, CPFACT = 0.0, CPSTAR = 0.0
+    ! Lift and moment scaling factors (used by Fortran solver in SOLVE)
+    real :: CLFACT = 0.0, CMFACT = 0.0
 
 
     ! Control flags and refinement (from /COM3/)
@@ -68,10 +65,7 @@ contains
         CIRCFF = 0.0
         SONVEL = 0.0
         DUB = 0.0
-    
-        VFACT = 1.0
-        YFACT = 1.0
-    
+
         CYYC = 0.0
         CYYD = 0.0
         CYYU = 0.0
@@ -116,13 +110,10 @@ contains
         CJUP1 = 0.0
         CJLOW = 0.0
         CJLOW1 = 0.0
-        
-        CDFACT = 0.0
+
         CLFACT = 0.0
         CMFACT = 0.0
-        CPFACT = 0.0
-        CPSTAR = 0.0
-    
+
         ABORT1 = .false.
         WSLP = 0.0
 

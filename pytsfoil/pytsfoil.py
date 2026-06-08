@@ -364,9 +364,6 @@ class PyTSFoil(object):
         tsf.common_data.imax = self.config['n_point_x']
         tsf.common_data.jmax = self.config['n_point_y']
         
-        # The final mesh array x, y is the same as xin, yin
-        tsf.common_data.xin[:len(xx)] = xx.astype(np.float32)
-        tsf.common_data.yin[:len(yy)] = yy.astype(np.float32)
         tsf.common_data.x[:len(xx)] = xx.astype(np.float32)
         tsf.common_data.y[:len(yy)] = yy.astype(np.float32)
     
@@ -590,34 +587,31 @@ class PyTSFoil(object):
 
         tsf.common_data.ak = np.float32(ak)
 
-        # Scale Y mesh (Fortran JMIN=1..JMAX, Python 0-indexed: yin[0:jmax])
-        jmax = int(tsf.common_data.jmax)
-        yfaciv = np.float32(1.0 / yfact)
-        tsf.common_data.yin[:jmax] *= yfaciv
-
-        # Scale porosity, angle of attack
-        por_scaled = float(tsf.common_data.por) * yfact
-        tsf.common_data.por = np.float32(por_scaled)
+        # Scale porosity (informational only, not used in computation)
+        por_scaled = self.config['POR'] * yfact
         if int(tsf.common_data.flag_output) == 1:
             print(f'          SCALED POR= {por_scaled:10.5f}')
 
         tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
 
-        tsf.solver_data.cpfact = np.float32(cpfact)
+        # CLFACT and CMFACT stay in Fortran (used by main_iteration.SOLVE)
         tsf.solver_data.clfact = np.float32(clfact)
-        tsf.solver_data.cdfact = np.float32(cdfact)
         tsf.solver_data.cmfact = np.float32(cmfact)
-        tsf.solver_data.yfact = np.float32(yfact)
-        tsf.solver_data.vfact = np.float32(vfact)
+
+        # Store scaling factors as Python instance variables
+        self._cpfact = float(cpfact)
+        self._cdfact = float(cdfact)
+        self._yfact = float(yfact)
+        self._vfact = float(vfact)
 
         ak_val = float(tsf.common_data.ak)
         if abs(gam1) <= 0.0001:
             tsf.solver_data.sonvel = np.float32(1.0)
-            tsf.solver_data.cpstar = np.float32(0.0)
+            self._cpstar = 0.0
         else:
             sonvel = ak_val / gam1
             tsf.solver_data.sonvel = np.float32(sonvel)
-            tsf.solver_data.cpstar = np.float32(-2.0 * sonvel * cpfact)
+            self._cpstar = float(-2.0 * sonvel * cpfact)
 
     def compute_far_field_bc(self) -> None:
         '''Compute far-field boundary conditions for outer boundaries (equivalent to FARFLD).
@@ -670,16 +664,15 @@ class PyTSFoil(object):
         Compute the data summary.
         '''
         alpha = tsf.common_data.alpha
-        vfact = tsf.solver_data.vfact
         clfact = tsf.solver_data.clfact
         cmfact = tsf.solver_data.cmfact
-        
+
         # Compute lift and pitch coefficients
-        self.data_summary['alpha'] = alpha * vfact
+        self.data_summary['alpha'] = alpha * self._vfact
         self.data_summary['mach'] = tsf.common_data.emach
         self.data_summary['cl'] = tsf.solver_base.lift(clfact)
         self.data_summary['cm'] = tsf.solver_base.pitch(cmfact)
-        self.data_summary['cpstar'] = tsf.solver_data.cpstar
+        self.data_summary['cpstar'] = self._cpstar
             
     def output_field(self) -> None:
         '''
@@ -699,12 +692,12 @@ class PyTSFoil(object):
         
         # Get solver data
         P = tsf.solver_data.p  # Pressure array
-        vfact = tsf.solver_data.vfact
         c1 = tsf.solver_data.c1
         cxl = tsf.solver_data.cxl
         cxc = tsf.solver_data.cxc
         cxr = tsf.solver_data.cxr
-        cpfact = tsf.solver_data.cpfact
+        cpfact = self._cpfact
+        vfact = self._vfact
         
         # Get configuration parameters
         emach = tsf.common_data.emach
@@ -821,9 +814,8 @@ class PyTSFoil(object):
         jup = tsf.common_data.jup
         
         # Get required data from solver_data
-        cpfact = tsf.solver_data.cpfact
-
-        cpstar = tsf.solver_data.cpstar
+        cpfact = self._cpfact
+        cpstar = self._cpstar
         cjlow = tsf.solver_data.cjlow
         cjlow1 = tsf.solver_data.cjlow1
         cjup = tsf.solver_data.cjup
@@ -968,7 +960,7 @@ class PyTSFoil(object):
         cjup1 = tsf.solver_data.cjup1
         cjlow = tsf.solver_data.cjlow
         cjlow1 = tsf.solver_data.cjlow1
-        cdfact = tsf.solver_data.cdfact
+        cdfact = self._cdfact
         
         # Helper functions
         def trap_integration(xi_arr, arg_arr, n_points):
@@ -1388,14 +1380,14 @@ class PyTSFoil(object):
         
         # Get solver data variables
         dub = tsf.solver_data.dub
-        cpfact = tsf.solver_data.cpfact
-        cdfact = tsf.solver_data.cdfact
         cmfact = tsf.solver_data.cmfact
         clfact = tsf.solver_data.clfact
-        yfact = tsf.solver_data.yfact
-        vfact = tsf.solver_data.vfact
         sonvel = tsf.solver_data.sonvel
         abort1 = tsf.solver_data.abort1
+        cpfact = self._cpfact
+        cdfact = self._cdfact
+        yfact = self._yfact
+        vfact = self._vfact
         
         # Write summary file
         if self.config['flag_output_summary']:
@@ -1420,7 +1412,7 @@ class PyTSFoil(object):
                 f.write(f'# SONVEL = {sonvel:10.6f}\n')
                 f.write(f'# ABORT1 = {abort1:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
-                f.write(f'# SCALED POR = {tsf.common_data.por:10.6f}\n')
+                f.write(f'# SCALED POR = {self.config["POR"] * yfact:10.6f}\n')
 
                 f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
                 

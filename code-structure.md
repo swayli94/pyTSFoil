@@ -346,3 +346,41 @@ logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
 #### 测试情况
 
 重新编译成功，`rae2822` 算例运行结果（CL=0.63126, CD=0.00371, CM=-0.14269）与重构前基本一致。
+
+### 10. 删除未使用变量 (2)
+
+#### 任务描述
+
+进一步检查 `common_data` 和 `solver_data` 模块中是否还有其他未使用的变量。
+
+如果完全没有被使用，或没有被用于计算，删除后不会有影响的变量，那么就删除 Fortran 和 Python 中的这些变量。
+
+如果仅在 Python 中使用但未在 Fortran 中使用，则删除 Fortran 中的变量定义，
+并把 Python 中的变量换为 python 自己的变量，而不是引用 `tsfoil_fortran` 的变量。
+
+有可能的变量包括
+`XIN`, `YIN`, `POR`, `RIGF`, `VFACT`, `YFACT`,
+`CDFACT`, `CPFACT`, `CPSTAR`
+等等。请进行检查，并删除未使用的变量。
+
+#### 完成情况
+
+从 `common_data.f90` 删除的 Fortran 变量：
+
+- `XIN`, `YIN`：仅在 Python `set_mesh()` 中写入，Fortran 计算使用 `X`/`Y`，已移除冗余赋值
+- `POR`：从不参与 Fortran 计算，Python 中改为直接使用 `self.config['POR']`
+- `RIGF`：从不参与 Fortran 计算，`compute_geometry_derivatives()` 已从 `self.config['RIGF']` 读取
+
+从 `solver_data.f90` 删除的 Fortran 变量（改为 Python 实例变量 `self._*`）：
+
+- `VFACT` → `self._vfact`
+- `YFACT` → `self._yfact`
+- `CDFACT` → `self._cdfact`
+- `CPFACT` → `self._cpfact`
+- `CPSTAR` → `self._cpstar`
+
+保留在 Fortran 中的：`CLFACT`, `CMFACT`（被 `main_iteration.SOLVE` 直接调用 `LIFT`/`PITCH` 使用）
+
+#### 测试情况
+
+重新编译成功，`rae2822` 算例运行结果（CL=0.63126, CD=0.00371, CM=-0.14273）与重构前基本一致。
