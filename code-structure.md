@@ -326,3 +326,23 @@ logical :: PHYS = .true.  ! Physical (True) vs similarity (False)
 #### 测试情况
 
 重新编译成功，`rae2822` 算例运行结果（CL=0.63149, CD=0.00371, CM=-0.14269）与重构前完全一致。
+
+### 9. 重构功能 (2)
+
+#### 任务描述
+
+重构 `solver_functions.f90` 中的 `FARFLD` 子程序，在 Python 中实现相关功能，
+然后删除 Fortran 中的 `FARFLD` 子程序。
+检查 `math_module.f90` 中的 `SIMP` 函数是否在其他地方被调用，如果没有被调用，则删除 `SIMP` 函数。
+把 `math_module.f90` 中的 `TRAP` 函数移动到 `solver_base.f90` 中，并更新调用。
+
+#### 完成情况
+
+- `FARFLD` 子程序已在 Python 中以 `compute_far_field_bc()` 方法实现（向量化，使用 numpy）
+- `run_fortran_solver()` 中原 `tsf.solver_functions.farfld()` 调用替换为 `self.compute_far_field_bc()`
+- Fortran `solver_functions.f90` 中 `FARFLD` 已从 `public` 列表删除，子程序体已删除
+- 确认 `SIMP` 在 `math_module.f90` 之外未被任何地方调用，已从 `math_module.f90` 中删除
+
+#### 测试情况
+
+重新编译成功，`rae2822` 算例运行结果（CL=0.63126, CD=0.00371, CM=-0.14269）与重构前基本一致。

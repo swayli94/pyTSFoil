@@ -5,7 +5,7 @@ module solver_functions
     implicit none
     private
 
-    public :: SETBC, BCEND, FARFLD, EMACH1, VWEDGE
+    public :: SETBC, BCEND, EMACH1, VWEDGE
     
 contains
 
@@ -93,62 +93,6 @@ contains
         RHS(JTOP) = RHS(JTOP) - RFACU + CYYU(JTOP)*P(JTOP+1,I)
 
     end subroutine BCEND
-
-    ! Compute far-field boundary conditions for outer boundaries
-    subroutine FARFLD()
-        use common_data, only: AK, X, Y, IMIN, IMAX, JMIN, JMAX, PI, TWOPI
-        use solver_data, only: XSING
-        use solver_data, only: DTOP, DBOT, VTOP, VBOT, DUP, DDOWN, VUP, VDOWN
-        use solver_base, only: ANGLE
-        implicit none
-        integer :: I=0, J=0
-        real :: YT=0.0, YB=0.0, XU_BC=0.0, XD_BC=0.0, YT2=0.0, YB2=0.0, XU2=0.0, XD2=0.0, COEF1=0.0, COEF2=0.0
-        real :: XP=0.0, XP2=0.0, YJ=0.0, YJ2=0.0, Q=0.0
-        real :: RTK=0.0
-
-        ! Supersonic freestream: upstream/downstream = uniform flow, top/bottom = simple wave
-        if (AK <= 0.0) return
-
-        RTK = sqrt(abs(AK))
-
-        ! FREE AIR boundary conditions
-        ! Subsonic asymptotic forms for doublet and vortex located at X=XSING, Y=0.
-        ! Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
-        YT = Y(JMAX) * RTK
-        YB = Y(JMIN) * RTK
-        XU_BC = X(IMIN) - XSING
-        XD_BC = X(IMAX) - XSING
-        YT2 = YT * YT
-        YB2 = YB * YB
-        XU2 = XU_BC * XU_BC
-        XD2 = XD_BC * XD_BC
-        COEF1 = 1.0 / TWOPI
-        COEF2 = 1.0 / (TWOPI * RTK)
-
-        ! Doublet and vortex terms on top and bottom boundaries
-        do I = IMIN, IMAX
-            XP = X(I) - XSING
-            XP2 = XP * XP
-            DTOP(I) = XP / (XP2 + YT2) * COEF2
-            DBOT(I) = XP / (XP2 + YB2) * COEF2
-            VTOP(I) = -atan2(YT, XP) * COEF1
-            VBOT(I) = -(atan2(YB, XP) + TWOPI) * COEF1
-        end do
-
-        ! Doublet and vortex terms on upstream and downstream boundaries
-        do J = JMIN, JMAX
-            YJ = Y(J) * RTK
-            YJ2 = YJ * YJ
-            DUP(J) = XU_BC / (XU2 + YJ2) * COEF2
-            DDOWN(J) = XD_BC / (XD2 + YJ2) * COEF2
-            Q = PI - sign(PI, YJ)
-            VUP(J) = -(atan2(YJ, XU_BC) + Q) * COEF1
-            VDOWN(J) = -(atan2(YJ, XD_BC) + Q) * COEF1
-        end do
-
-        if (AK > 0.0) call ANGLE()
-
-    end subroutine FARFLD
 
     ! Computes local similarity parameter or local Mach number
     ! Called by - VWEDGE, PRINT_SHOCK, OUTPUT_FIELD

@@ -144,8 +144,8 @@ class PyTSFoil(object):
         self.compute_scale()
 
         # Set far field boundary conditions
-        tsf.solver_functions.farfld()
-        
+        self.compute_far_field_bc()
+
         self.compute_geometry_derivatives()
         
         # Compute finite difference coefficients
@@ -618,6 +618,52 @@ class PyTSFoil(object):
             sonvel = ak_val / gam1
             tsf.solver_data.sonvel = np.float32(sonvel)
             tsf.solver_data.cpstar = np.float32(-2.0 * sonvel * cpfact)
+
+    def compute_far_field_bc(self) -> None:
+        '''Compute far-field boundary conditions for outer boundaries (equivalent to FARFLD).
+
+        Subsonic asymptotic forms for doublet and vortex located at X=0.5, Y=0.
+        Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
+        For supersonic freestream (AK <= 0), no far-field BC needed — returns immediately.
+        '''
+        ak = float(tsf.common_data.ak)
+        if ak <= 0.0:
+            return
+
+        imin = int(tsf.common_data.imin)
+        imax = int(tsf.common_data.imax)
+        jmin = int(tsf.common_data.jmin)
+        jmax = int(tsf.common_data.jmax)
+        x_coords = tsf.common_data.x
+        y_coords = tsf.common_data.y
+        xsing = 0.5   # XSING parameter in solver_data
+
+        rtk = np.sqrt(ak)
+        twopi = 2.0 * np.pi
+        coef1 = 1.0 / twopi
+        coef2 = 1.0 / (twopi * rtk)
+
+        yt = float(y_coords[jmax - 1]) * rtk
+        yb = float(y_coords[jmin - 1]) * rtk
+        xu_bc = float(x_coords[imin - 1]) - xsing
+        xd_bc = float(x_coords[imax - 1]) - xsing
+
+        # Top and bottom boundaries (vectorised over i = imin..imax, 0-based slice [imin-1:imax])
+        xp = x_coords[imin - 1:imax].astype(np.float64) - xsing
+        tsf.solver_data.dtop[imin - 1:imax] = (xp / (xp**2 + yt**2) * coef2).astype(np.float32)
+        tsf.solver_data.dbot[imin - 1:imax] = (xp / (xp**2 + yb**2) * coef2).astype(np.float32)
+        tsf.solver_data.vtop[imin - 1:imax] = (-np.arctan2(yt, xp) * coef1).astype(np.float32)
+        tsf.solver_data.vbot[imin - 1:imax] = (-(np.arctan2(yb, xp) + twopi) * coef1).astype(np.float32)
+
+        # Upstream and downstream boundaries (vectorised over j = jmin..jmax, 0-based slice [jmin-1:jmax])
+        yj = y_coords[jmin - 1:jmax].astype(np.float64) * rtk
+        q = np.pi - np.copysign(np.pi, yj)   # 0 if yj>=0, 2*pi if yj<0
+        tsf.solver_data.dup[jmin - 1:jmax] = (xu_bc / (xu_bc**2 + yj**2) * coef2).astype(np.float32)
+        tsf.solver_data.ddown[jmin - 1:jmax] = (xd_bc / (xd_bc**2 + yj**2) * coef2).astype(np.float32)
+        tsf.solver_data.vup[jmin - 1:jmax] = (-(np.arctan2(yj, xu_bc) + q) * coef1).astype(np.float32)
+        tsf.solver_data.vdown[jmin - 1:jmax] = (-(np.arctan2(yj, xd_bc) + q) * coef1).astype(np.float32)
+
+        tsf.solver_base.angle()
 
     def compute_data_summary(self):
         '''

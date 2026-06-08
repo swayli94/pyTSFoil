@@ -413,7 +413,7 @@ contains
     subroutine REDUB()
         use common_data, only: Y, IMIN, IMAX, JMIN, JMAX, N_MESH_POINTS
         use common_data, only: GAM1, XDIFF, VOL
-        use math_module, only: TRAP
+        use solver_base, only: TRAP
         use solver_data, only: P, CIRCFF, DUB
         implicit none
         

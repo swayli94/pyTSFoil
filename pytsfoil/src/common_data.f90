@@ -3,7 +3,6 @@
 !   - Constants
 !   - User-input parameters
 !   - Mesh and geometry parameters and arrays
-!   - File unit numbers
 
 module common_data
     implicit none

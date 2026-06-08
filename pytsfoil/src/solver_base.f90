@@ -8,10 +8,30 @@ module solver_base
     private
 
     ! Public functions
-    public :: PX, PY, DIFCOE, ANGLE
+    public :: TRAP, PX, PY, DIFCOE, ANGLE
     public :: LIFT, PITCH, FINDSK
 
 contains
+
+    ! Integrates Y DX by trapezoidal rule
+    subroutine TRAP(X_arr, Y_arr, N, SUM)
+        implicit none
+        integer, intent(in) :: N
+        real, intent(in) :: X_arr(N), Y_arr(N)
+        real, intent(out) :: SUM
+        integer :: I_loop=0, NM1=0
+        real :: Z=0.0, W=0.0
+        
+        SUM = 0.0
+        NM1 = N - 1
+        do I_loop = 1, NM1
+            Z = X_arr(I_loop+1) - X_arr(I_loop)
+            W = Y_arr(I_loop+1) + Y_arr(I_loop)
+            SUM = SUM + Z*W
+        end do
+        SUM = 0.5*SUM
+
+    end subroutine TRAP
 
     ! Computes U = DP/DX at point I,J
     function PX(I, J) result(result_px)
@@ -262,7 +282,6 @@ contains
     function PITCH(CMFACT_in) result(result_pitch)
         use common_data, only: X, ILE, ITE, JUP, JLOW, N_MESH_POINTS
         use solver_data, only: CJUP, CJUP1, CJLOW, CJLOW1, P
-        use math_module, only: TRAP
         implicit none
         real, intent(in) :: CMFACT_in
         real :: result_pitch
