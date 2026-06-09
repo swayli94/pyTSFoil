@@ -29,6 +29,6 @@ example/run_database_*/figures
 example/run_database_*/temp_results
 example/run_database_*/results_database.json
 
-test_3_cp_mach_comparison/figures
-test_3_cp_mach_comparison/temp_results
-test_3_cp_mach_comparison/results_database.json
+test_*/figures
+test_*/temp_results
+test_*/*.json

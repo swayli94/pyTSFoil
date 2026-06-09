@@ -16,7 +16,7 @@ from scipy.interpolate import interp1d
 from cst_modeling.foil import cst_foil
 from pytsfoil import PyTSFoil
 from airfoil_database.utils import (load_airfoil_database_from_json,
-                save_results_to_json, calculate_isentropic_Cp)
+                save_results_to_json)
 
 EPS = 0.5
 
@@ -140,6 +140,10 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
         cpl = pytsfoil.data_summary['cpl']
         mau = pytsfoil.data_summary['mau']
         mal = pytsfoil.data_summary['mal']
+        uu  = pytsfoil.data_summary['uu']
+        ul  = pytsfoil.data_summary['ul']
+        vu  = pytsfoil.data_summary['vu']
+        vl  = pytsfoil.data_summary['vl']
         
         fcpu = interp1d(xx, cpu, kind='linear', fill_value='extrapolate')
         fcpl = interp1d(xx, cpl, kind='linear', fill_value='extrapolate')
@@ -153,24 +157,17 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
         _mau = fmau(airfoil['xu']); _err_u = np.mean((_mau - airfoil['mwu'])**2)
         _mal = fmal(airfoil['xl']); _err_l = np.mean((_mal - airfoil['mwl'])**2)
         rmse_mw = np.sqrt(0.5 * (_err_u + _err_l))
-        
-        _cpu_c = calculate_isentropic_Cp(mau, airfoil['Ma'])
-        _cpl_c = calculate_isentropic_Cp(mal, airfoil['Ma'])
-        _err_u = np.mean((_cpu_c - cpu)**2)
-        _err_l = np.mean((_cpl_c - cpl)**2)
-        rmse_cp_isentropic = np.sqrt(0.5 * (_err_u + _err_l))
-        
+
         errors = {
             'cl': cl - airfoil['CL_RANS'],
             'cd': cd - airfoil['Cd_RANS'],
             'cm': cm - airfoil['Cm_RANS'],
             'cp': rmse_cp,
             'mw': rmse_mw,
-            'cp_isentropic': rmse_cp_isentropic
         }
         
         if airfoil['plot_cp']:
-            plot_comparison(airfoil, errors, xx, cpu, cpl, mau, mal, _cpu_c, _cpl_c)
+            plot_comparison(airfoil, errors, xx, cpu, cpl, mau, mal, uu, ul, vu, vl)
         
         elapsed_time = time.time() - start_time
         
@@ -187,8 +184,10 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
             'mal': mal,
             'cpu': cpu,
             'cpl': cpl,
-            'cpu_c': _cpu_c,
-            'cpl_c': _cpl_c,
+            'uu': uu,
+            'ul': ul,
+            'vu': vu,
+            'vl': vl,
             'cl': cl,
             'cd': cd,
             'cm': cm,
@@ -238,10 +237,11 @@ def run_parallel_analysis(airfoils: List[Dict[str, Any]],
 def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
             xx: np.ndarray, cpu: np.ndarray, cpl: np.ndarray,
             mau: np.ndarray, mal: np.ndarray,
-            cpu_c: np.ndarray, cpl_c: np.ndarray) -> None:
+            uu: np.ndarray, ul: np.ndarray,
+            vu: np.ndarray, vl: np.ndarray) -> None:
     '''
-    Plot the computed Cp & Mw distributions against the RANS results for a single case.
-    
+    Plot the computed Cp, Mw, and u/v velocity distributions against RANS results.
+
     Parameters:
     -----------
     airfoil: Dict[str, Any]
@@ -249,31 +249,27 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
     errors: Dict[str, float]
         Dictionary containing errors in CL, Cd, Cm, Cp and Mw.
     xx: np.ndarray
-        x-coordinates of the mesh points.
-    cpu: np.ndarray
-        Computed pressure coefficient distribution on upper surface.
-    cpl: np.ndarray
-        Computed pressure coefficient distribution on lower surface.
-    mau: np.ndarray
-        Computed Mach number distribution on upper surface.
-    mal: np.ndarray
-        Computed Mach number distribution on lower surface.
-    cpu_c: np.ndarray
-        Computed Cp from Ma on upper surface (isentropic).
-    cpl_c: np.ndarray
-        Computed Cp from Ma on lower surface (isentropic).
+        x-coordinates of the mesh points (full domain).
+    cpu, cpl: np.ndarray
+        Pressure coefficient on upper/lower surface.
+    mau, mal: np.ndarray
+        Mach number on upper/lower surface.
+    uu, ul: np.ndarray
+        Streamwise perturbation velocity U on upper/lower surface.
+    vu, vl: np.ndarray
+        Normal perturbation velocity V on upper/lower surface.
     '''
     entry_index = airfoil['entry_index']
     airfoil_id = airfoil['airfoil_id']
     Ma = airfoil['Ma']
     AoA = airfoil['AoA']
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axes = plt.subplots(1, 4, figsize=(24, 5))
 
     title = f'Airfoil {airfoil_id} | Ma={Ma:.2f}, AoA={AoA:.2f}°'
     text  = f'CL error: {errors["cl"]:7.4f} | Cd error: {errors["cd"]:7.4f} | '
     text += f'Cm error: {errors["cm"]:7.4f} | Cp RMSE: {errors["cp"]:7.4f} | '
-    text += f'Mw RMSE: {errors["mw"]:7.4f} | Cp Isentropic RMSE: {errors["cp_isentropic"]:7.4f}'
+    text += f'Mw RMSE: {errors["mw"]:7.4f}'
     fig.suptitle(title + '\n' + text, fontsize=11, fontfamily='monospace', y=1.02)
 
     # --- subplot 1: airfoil geometry ---
@@ -292,8 +288,6 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
     ax = axes[1]
     ax.plot(xx, cpu, 'b-', label='TSD')
     ax.plot(xx, cpl, 'b-', label=None)
-    ax.plot(xx, cpu_c, 'r--', label='Isentropic')
-    ax.plot(xx, cpl_c, 'r--', label=None)
     ax.plot(airfoil['xu'], airfoil['cpu'], 'g-', label='RANS', marker='x', markevery=5)
     ax.plot(airfoil['xl'], airfoil['cpl'], 'g-', label=None, marker='x', markevery=5)
     ax.invert_yaxis()
@@ -310,16 +304,39 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
     ax.plot(xx, mal, 'b-', label=None)
     ax.plot(airfoil['xu'], airfoil['mwu'], 'g-', label='RANS', marker='x', markevery=5)
     ax.plot(airfoil['xl'], airfoil['mwl'], 'g-', label=None, marker='x', markevery=5)
-    
+
     # Add reference line for sonic condition
     ax.axhline(y=1.0, color='k', linestyle=':', linewidth=2, alpha=0.7, label='Sonic (M=1)')
     ax.axhline(y=Ma, color='k', linestyle=':', linewidth=2, alpha=0.7, label='Free-stream')
-    
+
     ax.set_xlabel('x/c')
     ax.set_ylabel('Mw')
     ax.set_title('Mach Distribution')
     ax.set_xlim(-0.5, 1.5)
     ax.legend()
+    ax.grid()
+
+    # --- subplot 4: u and v perturbation velocities (airfoil region only) ---
+    ax = axes[3]
+    mask = (xx >= -0.5) & (xx <= 1.5)
+    xx_af = xx[mask]
+    ax.plot(xx_af, uu[mask], 'b-',  label='u')
+    ax.plot(xx_af, ul[mask], 'b--', label=None)
+    ax.plot(xx_af, vu[mask]*0.1, 'r-',  label='v (*0.1)')
+    ax.plot(xx_af, vl[mask]*0.1, 'r--', label=None)
+
+    # Mark U_critical (EMACH1 clips to 0 below this threshold)
+    delta = airfoil['tmax']
+    u_crit = -1.0 / (delta ** (2.0 / 3.0) * 2.4 * Ma)   # -(γ+1)·M∞·δ^(2/3) denominator
+    ax.axhline(y=u_crit, color='k', linestyle=':', linewidth=1.5, alpha=0.8, 
+                label=f'U_crit={u_crit:.2f}')
+    ax.axhline(y=0.0, color='gray', linestyle='-', linewidth=0.8, alpha=0.5)
+
+    ax.set_xlabel('x/c')
+    ax.set_ylabel('u, v')
+    ax.set_title('Perturbation Velocity (u, v)')
+    ax.set_xlim(-0.5, 1.5)
+    ax.legend(fontsize=8)
     ax.grid()
 
     fig.tight_layout()
