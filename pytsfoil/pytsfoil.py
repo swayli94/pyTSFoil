@@ -457,11 +457,9 @@ class PyTSFoil(object):
         
         # Airfoil geometry coordinates 
         xu = self.airfoil['xu']
-        yu = self.airfoil['yu'] 
+        yu = self.airfoil['yu']
         xl = self.airfoil['xl']
         yl = self.airfoil['yl']
-        nu = xu.shape[0]
-        nl = xl.shape[0]
         
         # Mesh coordinates
         xfoil = self.mesh['xx_airfoil']
@@ -476,26 +474,32 @@ class PyTSFoil(object):
         delinv = 1.0 / delta
 
         # Upper surface cubic spline interpolation
-        # Calculate derivatives at endpoints for boundary conditions
-        dy1_u = (yu[1] - yu[0]) / (xu[1] - xu[0])
-        dy2_u = (yu[nu-1] - yu[nu-2]) / (xu[nu-1] - xu[nu-2])
-        
-        # Create cubic spline with derivative boundary conditions
-        cs_upper = CubicSpline(xu, yu, bc_type=((1, dy1_u), (1, dy2_u)))
-        
+        # Use not-a-knot BCs (scipy default) so the result is independent of
+        # input point density.  Explicitly computed finite-difference slopes
+        # diverge near the leading-edge singularity (dy/dx ~ 1/sqrt(x)) as the
+        # input spacing shrinks with more points, producing n-dependent errors.
+        cs_upper = CubicSpline(xu, yu)
+
         # Interpolate upper surface at mesh x-coordinates
         fu = cs_upper(xfoil) * delinv
         fxu = cs_upper(xfoil, 1) * delinv
-        
-        # Lower surface cubic spline interpolation  
-        dy1_l = (yl[1] - yl[0]) / (xl[1] - xl[0])
-        dy2_l = (yl[nl-1] - yl[nl-2]) / (xl[nl-1] - xl[nl-2])
-        
-        cs_lower = CubicSpline(xl, yl, bc_type=((1, dy1_l), (1, dy2_l)))
-        
+
+        # Lower surface cubic spline interpolation
+        cs_lower = CubicSpline(xl, yl)
+
         # Interpolate lower surface at mesh x-coordinates
         fl = cs_lower(xfoil) * delinv
         fxl = cs_lower(xfoil, 1) * delinv
+
+        # At xfoil[0]=0 (leading edge) the spline analytic derivative diverges
+        # for CST airfoils (dy/dx ~ 1/sqrt(x) as x→0).  The divergence rate
+        # depends on the spacing of the first two input knots, making the result
+        # strongly n-dependent.  The function values fu/fl at x=0 are always
+        # correct (both surfaces meet at y=0), so use a forward finite-difference
+        # from those converged function values instead.
+        if xfoil[0] == 0.0:
+            fxu[0] = (fu[1] - fu[0]) / (xfoil[1] - xfoil[0])
+            fxl[0] = (fl[1] - fl[0]) / (xfoil[1] - xfoil[0])
         
         # Compute volume by Simpson's rule
         vol = integrate.simpson(y=fu-fl, x=xfoil)
