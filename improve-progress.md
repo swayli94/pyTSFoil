@@ -148,7 +148,7 @@ PyTSFoil.run()
 └─ 7. print_summary()                            [Python]
        ├─ 写 smry.out 文件头（参数汇总）
        │
-       ├─ output_shock()                         [Python]  — 表面 Cp/Ma 分布
+       ├─ output_surface()                       [Python]  — 表面 Cp/Ma 分布
        │   ├─ 对每个 I（IMIN..IMAX）：
        │   │   ├─ tsf.solver_base.px(I, JLOW/JUP) [Fortran] — 下/上表面 U = dP/dx
        │   │   └─ tsf.solver_functions.emach1(U,δ)[Fortran] — 局部马赫数
@@ -325,3 +325,142 @@ if xfoil[0] == 0.0:
 #### 2.3 测试情况
 
 网格收敛性良好，建议 `EPS` 取值在 0.5 左右以平衡稳定性和收敛速度。
+
+### 任务3：检查 Cp 和 Ma 的匹配性
+
+#### 3.1 任务描述
+
+检查 pyTSFoil 输出的表面压力系数 Cp 和局部马赫数 Ma 是否匹配，
+是否满足等熵关系。并与 RANS 结果进行对比，分析可能的差异来源。
+
+在 `test_3_cp_mach_comparison/` 中进行测试，加载 `airfoil_database/` 中的 RANS 数据进行对比。
+修复前的结果显示，pyTSFoil 内部的 Cp 计算存在问题，与 Ma 的关系不满足 isentropic flow 的理论预期。
+此外，pyTSFoil 的 Ma 分布与 RANS 结果（由 Cp 根据等熵关系计算的 Ma 分布）存在较大差异。
+
+pyTSFoil 的 Cp 和 Ma 计算逻辑主要在 `output_surface()`, `output_field()` 函数中实现，
+调用了 `solver_base.px()` 和 `solver_functions.emach1()`。
+
+```python
+u = tsf.solver_base.px(i, j)  # Computes U = DP/DX at point I,J
+em = tsf.solver_functions.emach1(u, delta)  # Computes Mach number from U
+cp_val = -2.0 * u * cpfact  # CPFACT is a scaling factor (transonic similarity) for pressure coefficient
+```
+
+相比于 Ma, Cp 的结果更不准确，且不满足等熵关系。
+很可能是 `cp_val = -2.0 * u * cpfact` 这个关系有问题，本身就不满足等熵关系。
+重点关注这个关系式的物理意义和数值实现，检查是否正确考虑了来流 Mach 数、局部 Mach 数、以及转化为 Cp 的比例因子。如果不合理，那么不妨直接替换为正确的等熵关系。
+
+```python
+def calculate_isentropic_Cp(Ma: np.ndarray,
+                    Minf: float, g=1.4) -> np.ndarray:
+    '''
+    Calculate the pressure coefficient (Cp) for isentropic flow,
+    given local Mach number (Ma) and free stream Mach number (Minf).
+
+    Parameters
+    ----------
+    Ma: ndarray
+        Local Mach number(s) at which to calculate Cp.
+    Minf: float
+        Free stream Mach number.
+    g: float, optional
+        Ratio of specific heats (default is 1.4 for air).
+        
+    Returns
+    -------
+    Cp: float, or ndarray
+        Pressure coefficient(s) corresponding to the input Mach number(s).
+    '''
+    xx = (2.0+(g-1.0)*Minf**2)/(2.0+(g-1.0)*Ma**2)
+    xx = xx**(g/(g-1.0))
+    Cp = 2.0/g/Minf**2*(xx-1.0)
+
+    return Cp
+```
+
+#### 3.2 完成情况
+
+**问题分析**
+
+原始代码使用线性化 TSD（Transonic Small Disturbance）公式输出表面 Cp：
+
+```python
+cp_val = -2.0 * u * cpfact   # 线性化 TSD Cp
+```
+
+而局部马赫数 `emach1` 的计算包含了非线性（二次）修正项（以 Krupp 相似律为例）：
+
+```
+Ma² = M_inf² + δ^(2/3) · M_inf · (γ+1) · U
+```
+
+因此，将 `emach1` 的马赫数代入等熵关系所得 `Cp_iso`，
+与线性化 `Cp_TSD` 之间存在系统性偏差（均方根误差 0.05–0.21），
+且在大攻角（吸力强）时偏差更大。
+通过与 RANS 数据对比验证，`Cp_iso = _cp_isentropic(Ma, Minf)` 在大多数算例中
+比 `Cp_TSD` 更接近 RANS 参考值。
+
+**修复内容**
+
+在 `pytsfoil.py` 中进行以下修改：
+
+1. **新增 `_cp_isentropic` 静态方法**：
+
+   ```python
+   @staticmethod
+   def _cp_isentropic(ma, minf, gamma=1.4):
+       denom = 2.0 + (gamma - 1.0) * ma * ma
+       numer = 2.0 + (gamma - 1.0) * minf * minf
+       return (2.0 / (gamma * minf * minf)) * ((numer / denom) ** (gamma / (gamma - 1.0)) - 1.0)
+   ```
+
+2. **`output_surface` 函数**：将表面 Cp 输出改为：
+   - 亚音速区（`emach1 > 0`）：`Cp = _cp_isentropic(Ma, Minf)`，与 Ma 严格自洽
+
+3. **`output_field` 函数**：同步更新全场 Cp 输出。
+
+4. **`compute_scale` 函数**：将临界压力系数 `Cp*` 改为等熵临界值：
+
+   ```python
+   self._cpstar = float(PyTSFoil._cp_isentropic(1.0, emach))
+   ```
+
+#### 3.3 测试情况
+
+在 `test_3_cp_mach_comparison/run_pytsfoil_database.py` 中对数据库前 10 个算例进行测试，
+来流条件为 Ma = 0.72–0.75，AoA = 0.02°–3.88°，与 RANS 数据进行对比。
+
+**Cp-Ma 自洽性（`Cp` 与由 `Ma` 通过等熵关系反算的 `Cp_iso` 之间的 RMSE）：**
+
+| 指标                   | 修复前   | 修复后   |
+|------------------------|---------|---------|
+| 平均 Cp-Ma 自洽 RMSE   | 0.1455  | 0.0565  |
+| 最大 Cp-Ma 自洽 RMSE   | 0.2082  | 0.0833  |
+
+修复后亚音速区 Cp 与 Ma 严格满足等熵关系，剩余误差仅来自强超音速区（`emach1 = 0`）。
+
+**与 RANS 的 Cp 对比（插值到 RANS 坐标后的 RMSE）：**
+
+| 算例 | Ma   | AoA   | Cp RMSE（修复前） | Cp RMSE（修复后） |
+|------|------|-------|-----------------|-----------------|
+| 0    | 0.72 | 0.02° | 0.1131          | 0.1367 ↑        |
+| 1    | 0.72 | 1.92° | 0.2110          | 0.1935 ↓        |
+| 2    | 0.73 | 0.80° | 0.1466          | 0.1529 ↑        |
+| 3    | 0.73 | 3.17° | 0.6977          | 0.5796 ↓        |
+| 4    | 0.74 | 3.38° | 0.7264          | 0.5877 ↓        |
+| 5    | 0.74 | 3.88° | 0.7400          | 0.6036 ↓        |
+| 6    | 0.75 | 2.25° | 0.2985          | 0.2648 ↓        |
+| 7    | 0.75 | 2.48° | 0.6240          | 0.5131 ↓        |
+| 8    | 0.75 | 2.59° | 0.6678          | 0.5370 ↓        |
+| 9    | 0.75 | 2.99° | 0.6769          | 0.5460 ↓        |
+| 均值 |      |       | **0.490**       | **0.412**       |
+
+10 个算例中 8 个改善，平均 RMSE 降低约 16%。
+仅极小攻角（AoA ≤ 0.80°）的 2 个算例略有退步（约 +0.02）。
+
+**Ma 分布与 RANS 的对比：**
+
+本修复未改变 `emach1` 马赫数计算，Ma RMSE 保持不变（均值 0.203）。
+TSD Ma 分布与 RANS 的差异是 TSD 理论本身的局限性：
+TSD 为无粘线性化理论，不计边界层效应，在高攻角（强激波–边界层干扰）时
+升力系数系统性偏高约 20–100%，Cp/Ma 分布与 RANS 差异显著。

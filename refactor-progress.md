@@ -147,7 +147,7 @@ PyTSFoil.run()
 └─ 7. print_summary()                            [Python]
        ├─ 写 smry.out 文件头（参数汇总）
        │
-       ├─ output_shock()                         [Python]  — 表面 Cp/Ma 分布
+       ├─ output_surface()                       [Python]  — 表面 Cp/Ma 分布
        │   ├─ 对每个 I（IMIN..IMAX）：
        │   │   ├─ tsf.solver_base.px(I, JLOW/JUP) [Fortran] — 下/上表面 U = dP/dx
        │   │   └─ tsf.solver_functions.emach1(U,δ)[Fortran] — 局部马赫数

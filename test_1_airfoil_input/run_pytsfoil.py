@@ -10,7 +10,7 @@ from cst_modeling.foil import cst_foil
 from pytsfoil import PyTSFoil
 import matplotlib.pyplot as plt
 
-EPS = 0.5
+EPS = 0.2
 MINF = 0.75
 AOA = 0.5
 
@@ -19,7 +19,6 @@ N_MESH_POINTS_Y = 80
 N_MESH_POINTS_AIRFOIL = 100
 
 baseline_config = {
-    'AK': 0.0,              # Free stream similarity parameter
     'ALPHA': AOA,           # Angle of attack
     'REYNLD': 6.5E6,        # Reynolds number
     'CVERGE': 1e-5,         # Error criterion for convergence

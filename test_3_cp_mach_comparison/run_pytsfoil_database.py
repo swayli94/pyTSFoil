@@ -1,33 +1,38 @@
-'''
-Compare pyTSFoil baseline results with RANS.
-
-Baseline: SIMDEF = 3
-'''
 import os
 import sys
 path = os.path.abspath(os.path.dirname(__file__))
-path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+path_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(path)
 sys.path.append(path_root)
 
 import time
+import json
 import copy
 import numpy as np
-from typing import Dict, Any, List
-import multiprocessing as mp
 import matplotlib.pyplot as plt
+import multiprocessing as mp
+from typing import Dict, Any, List
 from scipy.interpolate import interp1d
-
-from cst_modeling.section import cst_foil
+from cst_modeling.foil import cst_foil
 from pytsfoil import PyTSFoil
-from airfoil_database.utils import (load_airfoil_database_from_json, save_results_to_json)
+from airfoil_database.utils import (load_airfoil_database_from_json,
+                save_results_to_json, calculate_isentropic_Cp)
+
+EPS = 0.5
+
+N_AIRFOIL_POINTS = 1001
+N_PROCESS = 15
+N_MAX_RUN = 10
+PLOT_CP = True
+DPI = 100
 
 baseline_config = {
-    'ALPHA': 0.5,           #* Angle of attack
+    'EMACH': 0.75,          # Mach number
+    'ALPHA': 1.0,           # Angle of attack
+    'REYNLD': 6.5E6,        # Reynolds number
     'CVERGE': 1e-5,         # Error criterion for convergence
     'DVERGE': 10.0,         # Error criterion for divergence
-    'EMACH': 0.75,          #* Mach number
-    'EPS': 0.2,             # Convergence tolerance
+    'EPS': EPS,             # Artificial viscosity parameter (0.0-1.0)
     'IPRTER': 100,          # Print interval for convergence history
     'MAXIT': 9999,          # Maximum number of iterations
     'RIGF': 0.0,            # Rigidity factor for transonic effects
@@ -35,15 +40,14 @@ baseline_config = {
     'WCIRC': 1.0,           # Weight for circulation jump at trailing edge (0.0-1.0)
     'WE': [1.8, 1.9, 1.95], # SOR relaxation factors
     'NWDGE': 0,             # Viscous wedge parameters (0 = no wedge, 1 = Murman wedge, 2 = Yoshihara wedge)
-    'REYNLD': 4.0E6,        # Reynolds number
     'WCONST': 4.0,          # Wall constant for Murman wedge
     'IFLAP': 0,             # Flap flag
     'DELFLP': 0.0,          # Flap deflection angle
     'FLPLOC': 0.77,         # Flap location
-    'n_point_x': 200,       #* Number of points in the x-direction (IMAXI)
-    'n_point_y': 80,        #* Number of points in the y-direction (JMAXI)
-    'n_point_airfoil': 100, #* Number of points on the airfoil
-    'flag_output': False,     # write solver process to tsfoil2.out
+    'n_point_x': 200,       # Number of points in the x-direction (IMAXI)
+    'n_point_y': 80,        # Number of points in the y-direction (JMAXI)
+    'n_point_airfoil': 100, # Number of points on the airfoil
+    'flag_output': False,   # write solver process to tsfoil2.out
     'flag_output_summary': False,   # smry.out
     'flag_output_shock': False,     # cpxs.dat
     'flag_output_field': False,     # field.dat
@@ -56,11 +60,6 @@ path_temp_results = os.path.join(path, "temp_results")
 os.makedirs(path_temp_results, exist_ok=True)
 path_figure_cp = os.path.join(path, "figures")
 os.makedirs(path_figure_cp, exist_ok=True)
-
-N_PROCESS = 15
-N_MAX_RUN = None
-PLOT_CP = True
-DPI = 100
 
 
 def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
@@ -107,7 +106,7 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
         cst_u = airfoil['cst_u']
         cst_l = airfoil['cst_l']
         tmax = airfoil['tmax']
-        x, yu, yl, _, _ = cst_foil(201, cst_u, cst_l, x=None, t=tmax, tail=0.0)
+        x, yu, yl, _, _ = cst_foil(N_AIRFOIL_POINTS, cst_u, cst_l, x=None, t=tmax, tail=0.0)
         
         xx = np.concatenate((x[::-1], x[1:]))
         yy = np.concatenate((yu[::-1], yl[1:]))
@@ -155,16 +154,23 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
         _mal = fmal(airfoil['xl']); _err_l = np.mean((_mal - airfoil['mwl'])**2)
         rmse_mw = np.sqrt(0.5 * (_err_u + _err_l))
         
+        _cpu_c = calculate_isentropic_Cp(mau, airfoil['Ma'])
+        _cpl_c = calculate_isentropic_Cp(mal, airfoil['Ma'])
+        _err_u = np.mean((_cpu_c - cpu)**2)
+        _err_l = np.mean((_cpl_c - cpl)**2)
+        rmse_cp_isentropic = np.sqrt(0.5 * (_err_u + _err_l))
+        
         errors = {
             'cl': cl - airfoil['CL_RANS'],
             'cd': cd - airfoil['Cd_RANS'],
             'cm': cm - airfoil['Cm_RANS'],
             'cp': rmse_cp,
-            'mw': rmse_mw
+            'mw': rmse_mw,
+            'cp_isentropic': rmse_cp_isentropic
         }
         
         if airfoil['plot_cp']:
-            plot_comparison(airfoil, errors, xx, cpu, cpl, mau, mal)
+            plot_comparison(airfoil, errors, xx, cpu, cpl, mau, mal, _cpu_c, _cpl_c)
         
         elapsed_time = time.time() - start_time
         
@@ -181,6 +187,8 @@ def run_pytsfoil_analysis(airfoil: Dict[str, Any]) -> Dict[str, Any]:
             'mal': mal,
             'cpu': cpu,
             'cpl': cpl,
+            'cpu_c': _cpu_c,
+            'cpl_c': _cpl_c,
             'cl': cl,
             'cd': cd,
             'cm': cm,
@@ -229,7 +237,8 @@ def run_parallel_analysis(airfoils: List[Dict[str, Any]],
 
 def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
             xx: np.ndarray, cpu: np.ndarray, cpl: np.ndarray,
-            mau: np.ndarray, mal: np.ndarray) -> None:
+            mau: np.ndarray, mal: np.ndarray,
+            cpu_c: np.ndarray, cpl_c: np.ndarray) -> None:
     '''
     Plot the computed Cp & Mw distributions against the RANS results for a single case.
     
@@ -249,6 +258,10 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
         Computed Mach number distribution on upper surface.
     mal: np.ndarray
         Computed Mach number distribution on lower surface.
+    cpu_c: np.ndarray
+        Computed Cp from Ma on upper surface (isentropic).
+    cpl_c: np.ndarray
+        Computed Cp from Ma on lower surface (isentropic).
     '''
     entry_index = airfoil['entry_index']
     airfoil_id = airfoil['airfoil_id']
@@ -258,8 +271,9 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
     title = f'Airfoil {airfoil_id} | Ma={Ma:.2f}, AoA={AoA:.2f}°'
-    text  = f'CL error: {errors["cl"]:7.4f} | Cd error: {errors["cd"]:7.4f}   '
-    text += f'Cm error: {errors["cm"]:7.4f} | Cp RMSE: {errors["cp"]:7.4f} | Mw RMSE: {errors["mw"]:7.4f}'
+    text  = f'CL error: {errors["cl"]:7.4f} | Cd error: {errors["cd"]:7.4f} | '
+    text += f'Cm error: {errors["cm"]:7.4f} | Cp RMSE: {errors["cp"]:7.4f} | '
+    text += f'Mw RMSE: {errors["mw"]:7.4f} | Cp Isentropic RMSE: {errors["cp_isentropic"]:7.4f}'
     fig.suptitle(title + '\n' + text, fontsize=11, fontfamily='monospace', y=1.02)
 
     # --- subplot 1: airfoil geometry ---
@@ -278,6 +292,8 @@ def plot_comparison(airfoil: Dict[str, Any], errors: Dict[str, float],
     ax = axes[1]
     ax.plot(xx, cpu, 'b-', label='TSD')
     ax.plot(xx, cpl, 'b-', label=None)
+    ax.plot(xx, cpu_c, 'r--', label='Isentropic')
+    ax.plot(xx, cpl_c, 'r--', label=None)
     ax.plot(airfoil['xu'], airfoil['cpu'], 'g-', label='RANS', marker='x', markevery=5)
     ax.plot(airfoil['xl'], airfoil['cpl'], 'g-', label=None, marker='x', markevery=5)
     ax.invert_yaxis()

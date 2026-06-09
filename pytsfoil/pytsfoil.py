@@ -165,7 +165,6 @@ class PyTSFoil(object):
         # NU, NL, DELTA are set in set_airfoil()
         # IMAXI, JMAXI are set in set_mesh()
         self.config = {
-            'AK': 0.0,              # Free stream similarity parameter
             'ALPHA': 0.0,           # Angle of attack
             'CVERGE': 0.00001,      # Error criterion for convergence
             'DVERGE': 10.0,         # Error criterion for divergence
@@ -214,13 +213,14 @@ class PyTSFoil(object):
             raise ValueError("ALPHA must be between -9.0 and 9.0")
         if self.config['NWDGE'] > 0 and self.config['EMACH'] > 1.0:
             raise ValueError("NWDGE must be 0 if EMACH <= 1.0")
-        
-        self.config['AK'] = 0.0
-            
+         
         # Constants
         self.n_mesh_points = tsf.common_data.n_mesh_points
         self.nmp_plus1 = tsf.common_data.nmp_plus1
         self.nmp_plus2 = tsf.common_data.nmp_plus2
+        
+        self._gamma = float(tsf.common_data.gam) # gamma = 1.4
+        self._gam1 = float(tsf.common_data.gam1) # gamma + 1
         
         # Apply self.config to common data
         for key, value in self.config.items():
@@ -443,6 +443,16 @@ class PyTSFoil(object):
 
         return xx
 
+    def _cp_isentropic(self, ma: np.ndarray, minf: float) -> np.ndarray:
+        '''
+        Isentropic pressure coefficient from local Mach number and freestream Mach number.
+
+        More accurate than the linearized TSD formula for moderate-to-large perturbations.
+        '''
+        denom = 2.0 + (self._gamma - 1.0) * ma ** 2
+        numer = 2.0 + (self._gamma - 1.0) * minf ** 2
+        return (2.0 / (self._gamma * minf ** 2)) * ((numer / denom) ** (self._gamma / (self._gamma - 1.0)) - 1.0)
+
     def compute_geometry_derivatives(self):
         '''
         Compute airfoil geometry's derivatives (equivalent to BODY)
@@ -523,11 +533,7 @@ class PyTSFoil(object):
                 fl[i] = fl[i] - dely
                 fxu[i] = fxu[i] - dflap * delinv
                 fxl[i] = fxl[i] - dflap * delinv
-        
-        # Compute camber and thickness
-        camber = 0.5 * (fu + fl)
-        thick = 0.5 * (fu - fl)
-        
+                
         # Apply rigidity factor correction to surface slopes
         fxu = fxu / np.sqrt(1.0 + rigf * (delta * fxu)**2)
         fxl = fxl / np.sqrt(1.0 + rigf * (delta * fxl)**2)
@@ -552,7 +558,6 @@ class PyTSFoil(object):
         emach = float(tsf.common_data.emach)
         delta = float(tsf.common_data.delta)
         simdef = self.config['SIMDEF']
-        gam1 = float(tsf.common_data.gam1)
 
         emach2 = emach * emach
         beta = 1.0 - emach2
@@ -601,14 +606,13 @@ class PyTSFoil(object):
         self._yfact = float(yfact)
         self._vfact = float(vfact)
 
-        ak_val = float(tsf.common_data.ak)
-        if abs(gam1) <= 0.0001:
+        if abs(self._gam1) <= 0.0001:
             tsf.solver_data.sonvel = np.float32(1.0)
             self._cpstar = 0.0
         else:
-            sonvel = ak_val / gam1
+            sonvel = ak / self._gam1
             tsf.solver_data.sonvel = np.float32(sonvel)
-            self._cpstar = float(-2.0 * sonvel * cpfact)
+            self._cpstar = float(self._cp_isentropic(1.0, emach))
 
     def compute_far_field_bc(self) -> None:
         '''
@@ -616,7 +620,7 @@ class PyTSFoil(object):
 
         Subsonic asymptotic forms for doublet and vortex located at X=0.5, Y=0.
         Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
-        For supersonic freestream (AK <= 0), no far-field BC needed — returns immediately.
+        For supersonic freestream (ak <= 0), no far-field BC needed — returns immediately.
         '''
         ak = float(tsf.common_data.ak)
         if ak <= 0.0:
@@ -736,9 +740,9 @@ class PyTSFoil(object):
             for j in range(jmin, jmax + 1):
                 for i in range(imin, imax + 1):
                     # Calculate flow variables
-                    u = tsf.solver_base.px(i, j)  # Computes U = DP/DX at point I,J
-                    em = tsf.solver_functions.emach1(u, delta)  # Computes Mach number from U
-                    cp_val = -2.0 * u * cpfact  # CPFACT is a scaling factor for pressure coefficient
+                    u = tsf.solver_base.px(i, j) # Computes U = DP/DX at point I,J
+                    em = tsf.solver_functions.emach1(u, delta) # Computes Mach number from U
+                    cp_val = self._cp_isentropic(em, emach) # Computes Cp from local Mach number using isentropic relation
                     
                     # Calculate flow type for points within the computational domain
                     if imin <= i <= imax and jmin <= j <= jmax:
@@ -802,10 +806,10 @@ class PyTSFoil(object):
             if self.config['flag_print_info']:
                 print('Output to field.dat: Cp, Mach, Potential field data')
     
-    def output_shock(self) -> None:
+    def output_surface(self) -> None:
         '''
-        Output shock data, translating the Fortran PRINT_SHOCK subroutine.
-        This function computes pressure coefficients and Mach numbers along the airfoil surface.
+        Computes pressure coefficients and Mach numbers along the airfoil surface.
+        Translated from the Fortran PRINT_SHOCK subroutine.
         
         Parameters
         ----------
@@ -845,8 +849,6 @@ class PyTSFoil(object):
         n_points = imax - imin + 1
         em1l = np.zeros(n_points)
         em1u = np.zeros(n_points)
-        cpu = np.zeros(n_points)
-        cpl = np.zeros(n_points)
         
         # Main computation loop
         for i_p1 in range(imin, imax + 1):  # Fortran 1-based indexing
@@ -860,27 +862,25 @@ class PyTSFoil(object):
             if i_p1 < ile:
                 ul_p1 = cj01 * tsf.solver_base.px(i_p1, jup) + cj02 * tsf.solver_base.px(i_p1, jlow)
             
-            # Store CPL value and compute Mach number
-            cpl[i_py] = -2.0 * ul_p1 * cpfact
+            # Compute Mach number
             em1l[i_py] = tsf.solver_functions.emach1(ul_p1, delta)
             if em1l[i_py] > 1.3:
                 iem = 1
-            
+
             # Calculate UU_P1
             uu_p1 = cjup * tsf.solver_base.px(i_p1, jup) - cjup1 * tsf.solver_base.px(i_p1, jup + 1)
             if i_p1 > ite:
                 uu_p1 = ul_p1
             if i_p1 < ile:
                 uu_p1 = ul_p1
-            
-            # Store CPU value and compute Mach number
-            cpu[i_py] = -2.0 * uu_p1 * cpfact
+
+            # Compute Mach number
             em1u[i_py] = tsf.solver_functions.emach1(uu_p1, delta)
             if em1u[i_py] > 1.3:
                 iem = 1
         
-        self.data_summary['cpu'] = cpu
-        self.data_summary['cpl'] = cpl
+        self.data_summary['cpu'] = self._cp_isentropic(em1u, emach)
+        self.data_summary['cpl'] = self._cp_isentropic(em1l, emach)
         self.data_summary['mau'] = em1u
         self.data_summary['mal'] = em1l
         
@@ -889,6 +889,7 @@ class PyTSFoil(object):
             with open(os.path.join(self.output_dir, "smry.out"), 'a') as f:
 
                 # Check for detached shock
+                cpl = self.data_summary['cpl']
                 if cpl[imin-1] < cpstar and cpl[imin] > cpstar:
                     f.write('0 ***** CAUTION *****\n')
                     f.write(' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.\n')
@@ -958,7 +959,6 @@ class PyTSFoil(object):
         jup = tsf.common_data.jup
         jlow = tsf.common_data.jlow
         ak = tsf.common_data.ak
-        gam1 = tsf.common_data.gam1
         fxl = tsf.common_data.fxl
         fxu = tsf.common_data.fxu
         
@@ -1040,8 +1040,8 @@ class PyTSFoil(object):
             if not self.config['flag_output_summary']:
                 return
                 
-            cdycof = -cdfact * gam1 / (6.0 * yfact)
-            poycof = delta**2 * gam1 * (gam1 - 1.0) / 12.0
+            cdycof = -cdfact * self._gam1 / (6.0 * yfact)
+            poycof = delta**2 * self._gam1 * self._gamma / 12.0
                 
             with open(os.path.join(self.output_dir, "smry.out"), 'a') as f:
 
@@ -1070,7 +1070,7 @@ class PyTSFoil(object):
                     f.write(' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK\n')
         
         # Main computation starts here
-        gam123 = gam1 * 2.0 / 3.0
+        gam123 = self._gam1 * 2.0 / 3.0
         iskold = 0
         
         # Set locations of contour boundaries
@@ -1244,7 +1244,7 @@ class PyTSFoil(object):
                 arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
                 l += 1
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * cdfact * sum_val
+            cdsk = -self._gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
         
@@ -1285,7 +1285,7 @@ class PyTSFoil(object):
                 lprt1 = 1
             
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * cdfact * sum_val
+            cdsk = -self._gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
@@ -1329,7 +1329,7 @@ class PyTSFoil(object):
                 lprt1 = 1
             
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * (-sum_val)
+            cdsk = -self._gam1 / 6.0 * (-sum_val)
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
@@ -1434,8 +1434,8 @@ class PyTSFoil(object):
                 f.write('0 DIFFERENCE EQUATIONS ARE FULLY CONSERVATIVE.\n')
                 f.write('0 KUTTA CONDITION IS ENFORCED.\n')
         
-        # Print shock and mach number on Y=0 line
-        self.output_shock()
+        # Print data on Y=0 line
+        self.output_surface()
         
         # Output field data
         self.output_field()

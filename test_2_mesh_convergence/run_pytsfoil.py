@@ -18,7 +18,6 @@ N_AIRFOIL_POINTS = 1001
 DPI=150
 
 baseline_config = {
-    'AK': 0.0,              # Free stream similarity parameter
     'ALPHA': AOA,           # Angle of attack
     'REYNLD': 6.5E6,        # Reynolds number
     'CVERGE': 1e-5,         # Error criterion for convergence
