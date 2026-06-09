@@ -192,15 +192,6 @@ class PyTSFoil(object):
             'flag_output_field': True,     # field.dat
             'flag_print_info': True, # print information to console
 
-            #* ============================================================
-            # Leading-edge Mach correction (Method 1: FXL smooth blend)
-            # Blends near-LE FXL values toward the first TSD-valid value to reduce
-            # the excessive U-negative region on the lower surface at high AoA.
-            'fix_le_mach': False,              # enable LE slope smoothing
-            'fix_le_mach_threshold': 1.5,      # |(FX-ALPHA_sim)|*delta threshold for TSD validity
-            'fix_le_mach_surface': 'both',     # 'both' | 'lower' | 'upper' | 'auto'
-            # 'auto': lower-only at positive AoA, upper-only at negative AoA
-            #* ============================================================
         }
         
         # Default parameters
@@ -547,39 +538,7 @@ class PyTSFoil(object):
         # Apply rigidity factor correction to surface slopes
         fxu = fxu / np.sqrt(1.0 + rigf * (delta * fxu)**2)
         fxl = fxl / np.sqrt(1.0 + rigf * (delta * fxl)**2)
-        
-        #* ============================================================
-        # Leading-edge FXL/FXU smooth blend (Method 1 of fix_le_mach)
-        # SETBC applies (FX - ALPHA_sim) as the effective boundary condition slope:
-        #   FXLBC = CYYBLU * (FXL - ALPHA_sim)   (more negative at high AoA)
-        #   FXUBC = CYYBUD * (FXU - ALPHA_sim)   (less positive at high AoA)
-        # The threshold check therefore uses |FX - ALPHA_sim|*delta, not |FX|*delta.
-        # This gives asymmetric k_v per AoA: lower surface gets more correction at
-        # positive AoA (drives Ma=0), upper surface gets less (preserving lift).
-        if self.config.get('fix_le_mach', False):
-            threshold = float(self.config.get('fix_le_mach_threshold', 1.5))
-            alpha_sim = float(tsf.common_data.alpha)  # similarity alpha, set by compute_scale
-            surface = self.config.get('fix_le_mach_surface', 'both')
-            if surface == 'auto':
-                surface = 'lower' if alpha_sim >= 0.0 else 'upper'
-            pairs = []
-            if surface in ('both', 'lower'):
-                pairs.append(fxl)
-            if surface in ('both', 'upper'):
-                pairs.append(fxu)
-            for fx in pairs:
-                # Effective BC slope: FX - ALPHA_sim (same formula as SETBC)
-                eff = fx - alpha_sim
-                valid = np.abs(eff) * delta <= threshold
-                if np.any(valid):
-                    k_v = int(np.argmax(valid))
-                    if k_v > 0:
-                        x_v = xfoil[k_v]
-                        for k in range(k_v):
-                            w = xfoil[k] / x_v  # 0 at x=0, 1 at x_v
-                            fx[k] = (1.0 - w) * fx[k_v] + w * fx[k]
-        #* ============================================================
-        
+
         # Store results in common_data arrays
         tsf.common_data.vol = vol
         
