@@ -11,12 +11,11 @@ from pytsfoil import PyTSFoil
 import matplotlib.pyplot as plt
 
 EPS = 0.5
-MINF = 0.75
-AOA = 0.5
+MINF = 0.7
+AOA = 3.5
 
-N_MESH_POINTS_X = 200
-N_MESH_POINTS_Y = 80
-N_MESH_POINTS_AIRFOIL = 100
+N_AIRFOIL_POINTS = 1001
+DPI=150
 
 baseline_config = {
     'AK': 0.0,              # Free stream similarity parameter
@@ -37,10 +36,10 @@ baseline_config = {
     'IFLAP': 0,             # Flap flag
     'DELFLP': 0.0,          # Flap deflection angle
     'FLPLOC': 0.77,         # Flap location
-    'n_point_x': N_MESH_POINTS_X,               # Number of points in the x-direction (IMAXI)
-    'n_point_y': N_MESH_POINTS_Y,               # Number of points in the y-direction (JMAXI)
-    'n_point_airfoil': N_MESH_POINTS_AIRFOIL,   # Number of points on the airfoil
-    'flag_output': False,     # write solver process to tsfoil2.out
+    'n_point_x': 200,       # Number of points in the x-direction (IMAXI)
+    'n_point_y': 80,        # Number of points in the y-direction (JMAXI)
+    'n_point_airfoil': 100, # Number of points on the airfoil
+    'flag_output': False,   # write solver process to tsfoil2.out
     'flag_output_summary': False,   # smry.out
     'flag_output_shock': False,     # cpxs.dat
     'flag_output_field': False,     # field.dat
@@ -165,7 +164,7 @@ def plot_all_mach_distributions(results,
     ax.set_ylim([-0.1, 1.5])
     
     plt.tight_layout()
-    plt.savefig(fname, dpi=300, bbox_inches='tight')
+    plt.savefig(fname, dpi=DPI, bbox_inches='tight')
     plt.close()
 
 
@@ -178,25 +177,33 @@ if __name__ == "__main__":
     cst_u = np.array(cst_u)
     cst_l = np.array(cst_l)
     
-    # n_airfoil_points
+    # n_point_x, n_point_y, n_point_airfoil
     testing_parameters = [
-        (51,), (101,), (201,), (1001,)
+        (100, 40, 50), (150, 60, 80), (200, 80, 100),
+        (300, 120, 160), (400, 160, 200)
     ]
     
     results = []
     for i, vals in enumerate(testing_parameters):
         
+        config = baseline_config.copy()
+        config['n_point_x'] = vals[0]
+        config['n_point_y'] = vals[1]
+        config['n_point_airfoil'] = vals[2]
+        
         params = {
             'label': f'Airfoil {vals[0]} points',
-            'config': baseline_config.copy(),
-            'n_airfoil_points': vals[0],
+            'config': config,
+            'n_airfoil_points': N_AIRFOIL_POINTS,
             'cst_u': cst_u,
             'cst_l': cst_l,
         }
         
         result = run_pytsfoil_analysis(params)
         result['entry_index'] = i
-        result['n_airfoil_points'] = vals[0]
+        result['n_point_x'] = vals[0]
+        result['n_point_y'] = vals[1]
+        result['n_point_airfoil'] = vals[2]
         results.append(result)
         
         text = f"Case {i+1} ({vals[0]} points): "
@@ -204,10 +211,10 @@ if __name__ == "__main__":
         print(text)
         
         
-    fname = os.path.join(path, f'comparison_EPS{EPS}.png')
+    fname = os.path.join(path, f'comparison_M{MINF:.2f}_AOA{AOA:.1f}_EPS{EPS:.1f}.png')
     plot_all_mach_distributions(results, fname)
     
-    fname = os.path.join(path, f'summary_EPS{EPS}.txt')
+    fname = os.path.join(path, f'summary_M{MINF:.2f}_AOA{AOA:.1f}_EPS{EPS:.1f}.txt')
     results_dict = {r['entry_index']: convert(r) for r in results}
     results_dict = dict(sorted(results_dict.items()))
     with open(fname, 'w') as f:
