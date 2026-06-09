@@ -4,8 +4,19 @@
 
 ### 目标
 
-本项目的目标是对原始代码（含 `src` 文件夹中的 Fortran 文件，以及 `pytsfoil.py`）进行功能改进，
-以提高 `pyTSFoil` 的数值稳定性、收敛速度、计算结果的准确性（与 RANS 数据相比）。
+本项目是在上一阶段重构的基础上，进一步对 `pyTSFoil` 进行功能改进，
+以提高数值稳定性、收敛速度和计算结果的准确性。
+修改的对象含 `src` 文件夹中的 Fortran 文件，以及 `pytsfoil.py`。
+
+### 文件结构
+
+- `src/`: 本报告工作主要修改的代码所在的文件夹，包含 Fortran 源文件。
+- `refactored_src/`: 上一阶段重构后的 Fortran 代码备份，是 `src/` 的初始版本。
+- `original_src/`: 原始 Fortran 代码备份，重构前的版本。
+- `compile_f2py.py`: 用于编译 Fortran 代码并生成 Python 模块的脚本。
+- `pytsfoil.py`: Python 接口代码，调用 Fortran 模块，以及数据处理、结果输出等功能。
+- `example/`: 包含示例代码和测试脚本的文件夹。
+- `improve-progress.md`: 本报告文件，记录功能改进的过程和结果。
 
 ### 测试
 
