@@ -116,7 +116,7 @@ class PyTSFoil(object):
             if key in self.config:
                 self.config[key] = value
             else:
-                raise ValueError(f"Invalid configuration parameter: {key}")
+                print(f"WARNING: Invalid configuration parameter: {key}")
     
     def run(self):
         '''
@@ -170,10 +170,9 @@ class PyTSFoil(object):
             'CVERGE': 0.00001,      # Error criterion for convergence
             'DVERGE': 10.0,         # Error criterion for divergence
             'EMACH': 0.75,          # Mach number
-            'EPS': 0.2,             # Convergence tolerance
+            'EPS': 0.2,             # Artificial viscosity parameter (0.0-1.0)
             'IPRTER': 100,          # Print interval for convergence history
             'MAXIT': 1000,          # Maximum number of iterations
-            'POR': 0.0,             # Porosity
             'RIGF': 0.0,            # Rigidity factor for transonic effects
             'SIMDEF': 3,            # Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
             'WCIRC': 1.0,           # Weight for circulation jump at trailing edge (0.0-1.0)
@@ -192,8 +191,7 @@ class PyTSFoil(object):
             'flag_output_summary': True,   # smry.out
             'flag_output_shock': True,     # cpxs.dat
             'flag_output_field': True,     # field.dat
-            
-            'flag_print_info': True,
+            'flag_print_info': True, # print information to console
         }
         
         # Default parameters
@@ -586,11 +584,6 @@ class PyTSFoil(object):
             raise ValueError(f'SCALE: Invalid SIMDEF value: {simdef}')
 
         tsf.common_data.ak = np.float32(ak)
-
-        # Scale porosity (informational only, not used in computation)
-        por_scaled = self.config['POR'] * yfact
-        if int(tsf.common_data.flag_output) == 1:
-            print(f'          SCALED POR= {por_scaled:10.5f}')
 
         tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
 
@@ -1422,7 +1415,6 @@ class PyTSFoil(object):
                 f.write(f'# SONVEL = {sonvel:10.6f}\n')
                 f.write(f'# ABORT1 = {abort1:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
-                f.write(f'# SCALED POR = {self.config["POR"] * yfact:10.6f}\n')
 
                 f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
                 

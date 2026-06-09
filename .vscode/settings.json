@@ -1,5 +1,16 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python.defaultInterpreterPath": "/home/lrz/anaconda3/envs/pytsfoil/bin/python"
+    "python.defaultInterpreterPath": "/home/lrz/anaconda3/envs/pytsfoil/bin/python",
+    // "python.terminal.activateEnvironment": true,
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.profiles.linux": {
+        "bash": {
+            "path": "bash",
+            "args": ["--login"],
+            "env": {
+                "CONDA_DEFAULT_ENV": "pytsfoil"
+            }
+        }
+    }
 }

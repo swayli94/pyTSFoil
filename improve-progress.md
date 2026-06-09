@@ -15,17 +15,18 @@
 - `original_src/`: 原始 Fortran 代码备份，重构前的版本。
 - `compile_f2py.py`: 用于编译 Fortran 代码并生成 Python 模块的脚本。
 - `pytsfoil.py`: Python 接口代码，调用 Fortran 模块，以及数据处理、结果输出等功能。
-- `example/`: 包含示例代码和测试脚本的文件夹。
+- `example/`: 包含示例代码的文件夹。
+- `test_*_**/`: 计划编写的测试脚本文件夹，`*` 代表改进过程的任务编号，`**` 代表测试名称。
 - `improve-progress.md`: 本报告文件，记录功能改进的过程和结果。
 
-### 测试
+### 测试要求
 
 在修改 Fortran 代码的过程中，我们需要不断测试修改后的代码是否能够正确运行，并且输出的结果是否正确。
 由于本项目是 Fortran-Python 混合编程，因此我们需要在 Python 中调用 Fortran 代码来测试修改后的 Fortran 代码是否能够正确运行，并且输出的结果是否正确。
 
 注意，原始代码是正确的。因此，在每项任务完成后，需要使用 `compile_f2py.py` 来编译 Fortran 代码，测试修改后仍然可以 Python 正常调用，并且输出的结果与原始代码相同/相近。
 
-目前没有写测试代码，但是可以基于 `example` 文件夹中的示例代码来测试修改后的 Fortran 代码是否能够正确运行，并且输出的结果是否与原始代码相同/相近。
+目前没有写测试代码，但是可以参考 `example` 文件夹中的示例代码来构建新的测试脚本。
 
 ## pyTSFoil 解析
 
@@ -202,3 +203,43 @@ PyTSFoil.run()
 | `VWEDGE()` | solver_functions.f90 | SOLVE 主循环内，每 `NDWDGE` 次迭代调用一次 | 修改翼面斜率边界条件（`WSLP` 数组）|
 
 ## 改进过程
+
+本章节包括各个任务的描述，每个任务的描述包括：
+
+- 任务描述：对任务的背景、目标和具体内容进行详细描述。
+- 完成情况：描述修改了哪些内容，总结完成情况。
+- 测试情况：基于`测试要求`一节中的测试要求，描述测试的过程和结果。
+
+### 任务1：Debug 翼型坐标相关预处理代码
+
+#### 任务描述
+
+现有代码可以观测到，在使用相同的翼型时，
+如果输入的翼型坐标 `airfoil_coordinates` 的点数不同，则计算结果不同。
+尤其是，点数增加的时候，甚至更容易获得错误的结果。
+
+这一现象也有可能与网格密度有关，但我们首先需要确认输入的翼型坐标是否正确。
+我猜想有可能与边界条件的梯度计算有关。
+
+参考 `test_1_airfoil_input/run_pytsfoil.py` 中的测试代码:
+
+```python
+N_MESH_POINTS_X = 200
+N_MESH_POINTS_Y = 80
+N_MESH_POINTS_AIRFOIL = 100
+
+testing_parameters = [
+    (51,), (101,), (201,), (1001,)
+]
+
+x, yu, yl, _, _ = cst_foil(nn=params['n_airfoil_points'],
+                    cst_u=params['cst_u'], cst_l=params['cst_l'])
+
+xx = np.concatenate((x[::-1], x[1:]))
+yy = np.concatenate((yu[::-1], yl[1:]))
+airfoil_coordinates = np.column_stack((xx, yy))
+```
+
+已知 `cst_foil` 函数是一个可靠、正确的翼型几何生成函数，
+其建立了翼型几何的光滑解析函数，生成的坐标点不同仅仅是因为采样点数不同。
+因此，我们需要确认 `pytsfoil.py` 中是否正确处理了不同点数的翼型坐标和梯度。
