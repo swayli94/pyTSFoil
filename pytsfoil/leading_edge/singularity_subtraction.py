@@ -84,3 +84,53 @@ def compute_surface_corrections(
     )
 
     return phi_sy_upper.astype(np.float32), phi_sx_surface.astype(np.float32)
+
+
+def compute_phi_s_2d(
+        X_1d: np.ndarray,
+        Y_1d: np.ndarray,
+        R_c: float,
+        cpfact: float,
+        gamma: float = 1.4,
+        r1: float = 2.0,
+        r2: float = 8.0,
+) -> np.ndarray:
+    """Compute the 2D singular potential phi_s on the full outer mesh.
+
+    Uses the asymptotic form f(xi) ~ C*xi^{2/3} (valid for xi >> 1, i.e. near Y=0).
+    This gives phi_s(X, Y) = A * X^{2/3} * chi(r), independent of Y, where the
+    window chi provides the spatial confinement and A is determined by matching
+    to the cp_common formula.
+
+    The returned array has Fortran layout PHI_S(J, I) = phi_s(Y_J, X_I), shape
+    (len(Y_1d), len(X_1d)).  Pass directly to tsf.solver_data.phi_s.
+
+    Parameters
+    ----------
+    X_1d   : 1D array of outer grid X-coordinates, length NI
+    Y_1d   : 1D array of outer grid Y-coordinates, length NJ
+    R_c    : parabolic nose radius (= 2*h^2 for c=1)
+    cpfact : TSD pressure scaling delta^{2/3}
+    gamma  : ratio of specific heats
+    r1, r2 : window transition limits in units of R_c (default 2, 8)
+
+    Returns
+    -------
+    phi_s_2d : ndarray, shape (NJ, NI), float32
+        PHI_S(J, I) = phi_s at grid point (Y_J, X_I).
+    """
+    # Amplitude coefficient: from -2*A*(2/3)*X^{-1/3}*cpfact = cp_common(X)
+    # => A = -3/(4) * (COMMON_COEF * R_c^{1/3} / (gamma+1)^{1/3}) / cpfact
+    A = (-3.0 / 4.0) * (_COMMON_COEF * R_c ** (1.0 / 3.0) / (gamma + 1.0) ** (1.0 / 3.0)) / cpfact
+
+    # 2D grid: shape (NJ, NI) — Fortran layout PHI_S(J, I)
+    XX, YY = np.meshgrid(X_1d, Y_1d, indexing='xy')   # YY rows, XX cols → (NJ, NI)
+
+    # Window: r = sqrt(X^2 + Y^2) / R_c; chi = 1 inside, 0 outside
+    r = np.sqrt(np.maximum(XX, 0.0) ** 2 + YY ** 2) / R_c
+    chi = _window(r, r1, r2)
+
+    # phi_s = A * X^{2/3} * chi  (zero where X <= 0)
+    phi_s = np.where(XX > 0.0, A * XX ** (2.0 / 3.0) * chi, 0.0)
+
+    return phi_s.astype(np.float32)

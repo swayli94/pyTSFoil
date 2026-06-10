@@ -1,10 +1,11 @@
 """
 Test 8: Singularity subtraction verification.
 
-Three modes are compared for each case:
+Four modes are compared for each case:
   baseline  -- no LE correction at all
-  sing_sub  -- singularity subtraction (D+E+A) only, no composite
-  full      -- singularity subtraction (D+E+A) + composite correction
+  composite -- composite correction only (Task 6 result, no singularity subtraction)
+  sing_sub  -- singularity subtraction (D+E only; step A disabled) without composite
+  full      -- singularity subtraction (D+E) + composite correction
 
 Metrics:
   1. CL / CM relative change vs baseline
@@ -87,7 +88,8 @@ def run_single(airfoil: dict) -> dict:
                                    np.concatenate([yu[::-1], yl[1:]])))
 
         modes = {
-            'baseline': {'apply_singularity_subtraction': False, 'apply_le_correction': False},
+            'baseline':  {'apply_singularity_subtraction': False, 'apply_le_correction': False},
+            'composite': {'apply_singularity_subtraction': False, 'apply_le_correction': True},
             'sing_sub':  {'apply_singularity_subtraction': True,  'apply_le_correction': False},
             'full':      {'apply_singularity_subtraction': True,  'apply_le_correction': True},
         }
@@ -111,6 +113,10 @@ def run_single(airfoil: dict) -> dict:
             cpl = ts.data_summary['cpl']
             mau = ts.data_summary['mau']
             mal = ts.data_summary['mal']
+            uu  = ts.data_summary['uu']
+            ul  = ts.data_summary['ul']
+            vu  = ts.data_summary['vu']
+            vl  = ts.data_summary['vl']
             cl  = ts.data_summary.get('cl_le', ts.data_summary['cl'])
             cm  = ts.data_summary.get('cm_le', ts.data_summary['cm'])
 
@@ -134,6 +140,7 @@ def run_single(airfoil: dict) -> dict:
 
             results[mode_name] = {
                 'xx': xx, 'cpu': cpu, 'cpl': cpl, 'mau': mau, 'mal': mal,
+                'uu': uu, 'ul': ul, 'vu': vu, 'vl': vl,
                 'cl': cl, 'cm': cm,
                 'n_ma0': n_ma0,
                 'rmse_cp': rmse_cp,
@@ -160,39 +167,86 @@ def run_single(airfoil: dict) -> dict:
 
 
 def _plot(airfoil, results):
-    idx = airfoil['entry_index']
-    Ma  = airfoil['Ma']
-    AoA = airfoil['AoA']
+    idx   = airfoil['entry_index']
+    Ma    = airfoil['Ma']
+    AoA   = airfoil['AoA']
+    delta = airfoil['tmax']
+    # U critical: ARG=0 in EMACH1 → U_crit = -Ma / (GAM1 * delta^(2/3))
+    u_crit = -Ma / (2.4 * delta ** (2.0 / 3.0))
+    LE_XLIM = 0.15
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Case {idx} | {airfoil['airfoil_id']} | Ma={Ma:.2f}, AoA={AoA:.2f}°", fontsize=11)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle(
+        f"Case {idx} | {airfoil['airfoil_id']} | Ma={Ma:.2f}, AoA={AoA:.2f}°, "
+        f"δ={delta:.3f}, U_crit={u_crit:.3f}",
+        fontsize=11)
 
-    colours = {'baseline': 'b', 'sing_sub': 'orange', 'full': 'r'}
-    styles  = {'baseline': '--', 'sing_sub': '-.', 'full': '-'}
-    labels  = {'baseline': 'Baseline', 'sing_sub': 'Sing.Sub.(D+E+A)', 'full': 'Full(+Composite)'}
+    colours = {'baseline': 'b', 'composite': 'g', 'sing_sub': 'orange', 'full': 'r'}
+    styles  = {'baseline': '--', 'composite': ':', 'sing_sub': '-.', 'full': '-'}
+    labels  = {'baseline': 'Baseline', 'composite': 'Composite(Task6)',
+               'sing_sub': 'Sing.Sub.(D+E)', 'full': 'Full(D+E+Composite)'}
+    mode_order = ('baseline', 'composite', 'sing_sub', 'full')
     xx = results['baseline']['xx']
 
-    ax = axes[0]
-    for m in ('baseline', 'sing_sub', 'full'):
+    # ── Row 0, Col 0: Cp ────────────────────────────────────────────────────────
+    ax = axes[0, 0]
+    for m in mode_order:
         r = results[m]
-        ax.plot(xx, r['cpu'], color=colours[m], ls=styles[m], label=f'{labels[m]} U')
+        ax.plot(xx, r['cpu'], color=colours[m], ls=styles[m], label=labels[m])
         ax.plot(xx, r['cpl'], color=colours[m], ls=styles[m])
-    ax.plot(airfoil['xu'], airfoil['cpu'], 'g^', markevery=5, ms=4, label='RANS upper')
-    ax.plot(airfoil['xl'], airfoil['cpl'], 'gv', markevery=5, ms=4, label='RANS lower')
+    ax.plot(airfoil['xu'], airfoil['cpu'], 'k^', markevery=5, ms=4, label='RANS upper')
+    ax.plot(airfoil['xl'], airfoil['cpl'], 'kv', markevery=5, ms=4, label='RANS lower')
     ax.invert_yaxis()
-    ax.set(title='Cp', xlabel='x/c', ylabel='Cp')
+    ax.set(title='Cp (upper+lower)', xlabel='x/c', ylabel='Cp')
     ax.set_xlim(-0.05, 1.05)
     ax.legend(fontsize=7)
     ax.grid()
 
-    ax = axes[1]
-    for m in ('baseline', 'sing_sub', 'full'):
+    # ── Row 0, Col 1: Mach ──────────────────────────────────────────────────────
+    ax = axes[0, 1]
+    for m in mode_order:
         r = results[m]
-        ax.plot(xx, r['mau'], color=colours[m], ls=styles[m], label=f'{labels[m]}')
+        n0 = r['n_ma0']
+        ax.plot(xx, r['mau'], color=colours[m], ls=styles[m], label=f'{labels[m]} (n0={n0})')
+        ax.plot(xx, r['mal'], color=colours[m], ls=styles[m])
     ax.axhline(0, color='k', lw=0.5, ls=':')
     ax.axhline(1, color='k', lw=0.5, ls='--')
-    ax.set(title='Mach', xlabel='x/c', ylabel='Mach')
+    ax.set(title='Mach (upper+lower)', xlabel='x/c', ylabel='Mach')
     ax.set_xlim(-0.05, 1.05)
+    ax.legend(fontsize=7)
+    ax.grid()
+
+    # ── Row 1, Col 0: U (both surfaces) ─────────────────────────────────────────
+    ax = axes[1, 0]
+    for m in mode_order:
+        r = results[m]
+        ax.plot(xx, r['uu'], color=colours[m], ls=styles[m], label=labels[m])
+        ax.plot(xx, r['ul'], color=colours[m], ls=styles[m])
+    ax.axhline(u_crit, color='red', ls='--', lw=1.8, label=f'U_crit={u_crit:.3f}')
+    ax.axhline(0, color='gray', lw=0.7, ls='-', alpha=0.4)
+    ax.set(title='U = ∂P/∂x (upper+lower, Ma=0 when U < U_crit)', xlabel='x/c', ylabel='U')
+    ax.set_xlim(-0.05, 1.05)
+    ax.legend(fontsize=7)
+    ax.grid()
+
+    # ── Row 1, Col 1: V near LE (both surfaces) ──────────────────────────────────
+    ax = axes[1, 1]
+    mal_b    = results['baseline']['mal']
+    xx_af    = xx[(xx >= 0) & (xx <= 1)]
+    mal_af   = mal_b[(xx >= 0) & (xx <= 1)]
+    zero_idx = np.where(mal_af == 0.0)[0]
+    x_exit   = float(xx_af[zero_idx[-1]]) if len(zero_idx) > 0 else None
+
+    mask_le = (xx >= -0.01) & (xx <= LE_XLIM)
+    for m in mode_order:
+        r = results[m]
+        ax.plot(xx[mask_le], r['vu'][mask_le], color=colours[m], ls=styles[m], label=labels[m])
+        ax.plot(xx[mask_le], r['vl'][mask_le], color=colours[m], ls=styles[m])
+    if x_exit is not None:
+        ax.axvline(x_exit, color='red', ls=':', lw=1.5, label=f'x_exit(base)={x_exit:.4f}')
+    ax.axhline(0, color='gray', lw=0.7, ls='-', alpha=0.4)
+    ax.set(title=f'V = ∂P/∂y (upper+lower, x ≤ {LE_XLIM:.0%})', xlabel='x/c', ylabel='V')
+    ax.set_xlim(-0.01, LE_XLIM)
     ax.legend(fontsize=7)
     ax.grid()
 
@@ -202,28 +256,31 @@ def _plot(airfoil, results):
 
 
 def print_summary(all_results):
+    # columns: baseline | composite(task6) | sing_sub | full
     print()
-    header = f"{'Idx':>4}  {'Ma':>5}  {'AoA':>5}  "
-    header += f"{'nMa0_B':>7}  {'nMa0_S':>7}  {'nMa0_F':>7}  "
-    header += f"{'rmseCp_B':>9}  {'rmseCp_S':>9}  {'rmseCp_F':>9}  "
-    header += f"{'selfB':>7}  {'selfF':>7}  {'dCL_S%':>7}  {'dCL_F%':>7}"
-    print(header)
-    print('-' * len(header))
+    hdr  = f"{'Idx':>4}  {'Ma':>5}  {'AoA':>5}  "
+    hdr += f"{'nMa0_B':>6} {'nMa0_C':>6} {'nMa0_S':>6} {'nMa0_F':>6}  "
+    hdr += f"{'rmCp_B':>7} {'rmCp_C':>7} {'rmCp_S':>7} {'rmCp_F':>7}  "
+    hdr += f"{'dCL_C%':>7} {'dCL_S%':>7} {'dCL_F%':>7}"
+    print(hdr)
+    print('-' * len(hdr))
 
     for r in all_results:
         if not r['success']:
             print(f"{r['entry_index']:>4}  FAILED: {r['error'][:60]}")
             continue
         b = r['results']['baseline']
+        c = r['results']['composite']
         s = r['results']['sing_sub']
         f = r['results']['full']
-        dcl_s = 100.0 * (s['cl'] - b['cl']) / max(abs(b['cl']), 1e-6)
-        dcl_f = 100.0 * (f['cl'] - b['cl']) / max(abs(b['cl']), 1e-6)
+        cl_b = max(abs(b['cl']), 1e-6)
+        dcl_c = 100.0 * (c['cl'] - b['cl']) / cl_b
+        dcl_s = 100.0 * (s['cl'] - b['cl']) / cl_b
+        dcl_f = 100.0 * (f['cl'] - b['cl']) / cl_b
         print(f"{r['entry_index']:>4}  {r['Ma']:>5.3f}  {r['AoA']:>5.2f}  "
-              f"{b['n_ma0']:>7}  {s['n_ma0']:>7}  {f['n_ma0']:>7}  "
-              f"{b['rmse_cp']:>9.4f}  {s['rmse_cp']:>9.4f}  {f['rmse_cp']:>9.4f}  "
-              f"{b['rmse_self']:>7.4f}  {f['rmse_self']:>7.4f}  "
-              f"{dcl_s:>+7.2f}  {dcl_f:>+7.2f}")
+              f"{b['n_ma0']:>6} {c['n_ma0']:>6} {s['n_ma0']:>6} {f['n_ma0']:>6}  "
+              f"{b['rmse_cp']:>7.4f} {c['rmse_cp']:>7.4f} {s['rmse_cp']:>7.4f} {f['rmse_cp']:>7.4f}  "
+              f"{dcl_c:>+7.2f} {dcl_s:>+7.2f} {dcl_f:>+7.2f}")
 
 
 def check_regression(all_results, cl_tol=0.01, rmse_tol=0.05):
@@ -232,11 +289,7 @@ def check_regression(all_results, cl_tol=0.01, rmse_tol=0.05):
     for r in all_results:
         if not r['success']:
             continue
-        b = r['results']['baseline']
-        s = r['results']['sing_sub']
-        # With subtraction DISABLED on baseline, the results must be unchanged.
-        # As a sanity check: sing_sub (step A applied) should not wildly differ from baseline in CL.
-        # The primary regression check is that the code runs without errors.
+        # Primary regression check: all four modes must complete without exceptions.
     print("\n[Regression] All cases completed without exceptions.")
 
 

@@ -42,11 +42,13 @@ from scipy import integrate
 import matplotlib.pyplot as plt
 
 try:
-    from .leading_edge import solve_inner_problem, apply_composite_correction, compute_surface_corrections
+    from .leading_edge import (solve_inner_problem, apply_composite_correction,
+                               compute_surface_corrections, compute_phi_s_2d)
 except ImportError:
     solve_inner_problem = None
     apply_composite_correction = None
     compute_surface_corrections = None
+    compute_phi_s_2d = None
 
 try:
     import tsfoil_fortran as tsf
@@ -349,14 +351,26 @@ class PyTSFoil(object):
             print(f"  Nose fit: h = {h:.5f},  R_c = {R_c:.6f}")
 
     def _apply_singularity_subtraction_bc(self) -> None:
-        """Steps D + A: regularise FXU/FXL and populate PHI_SX_C1TERM before SETBC/SOLVE.
+        """Steps A+C+E: populate 2D PHI_S for the SYOR solver.
 
-        D: subtract phi_s,y(x,0) from FXU/FXL → bounded body BC for phi_r.
-        A: compute PHI_SX_C1TERM = GAM1*phi_s,x/DXC for each mesh column so SYOR
-           uses the full phi_tot,x = phi_r,x + phi_s,x in the Murman-Cole VC.
+        The outer singular field phi_s = A*X^{2/3} is Y-independent, so its
+        Y-derivative at the surface is zero.  Step D (FXU/FXL modification)
+        requires phi_s_y|_{y=0} != 0, which is only valid for the INNER
+        similarity solution Y^{4/7}*f(X/Y^{6/7}).  Using the outer form with
+        Step D introduces a spurious surface source not balanced by Step C,
+        causing large CL errors.  Step D is therefore omitted here; the
+        correct scheme with inner phi_s is a future improvement.
 
-        Saves originals to _fxu_orig/_fxl_orig for restoration after SOLVE.
-        Stores phi_sx_surface for step E (post-processing) in _phi_sx_surface.
+        Steps implemented:
+          A - PHI_S 2D array filled so SYOR uses phi_tot,x = phi_r,x + phi_s,x
+              for VC type-switching (restores correct subsonic/supersonic flag).
+          C - SYOR Step C (already in Fortran) adds -L[phi_s] forcing so the
+              combined equation is L[phi_1] = 0 (same physics as baseline, but
+              solved via the bounded variable phi_r = phi_1 - phi_s).
+          E - phi_s,x stored for post-processing velocity restoration.
+
+        Stores phi_sx_surface for step E in _phi_sx_surface.
+        Does NOT modify FXU/FXL (Step D disabled for outer phi_s form).
         """
         if compute_surface_corrections is None:
             print("WARNING: leading_edge module unavailable; skipping singularity subtraction.")
@@ -372,32 +386,28 @@ class PyTSFoil(object):
         x_foil = self.mesh['xx_airfoil'][:nfoil]
         delta  = float(tsf.common_data.delta)
 
-        phi_sy_upper, phi_sx_surface = compute_surface_corrections(
+        _phi_sy_upper, phi_sx_surface = compute_surface_corrections(
             x_foil, h, delta, R_c, self._cpfact, self._gamma,
         )
 
-        # ── Step D: regularise body BC ─────────────────────────────────────────
-        # Save originals for restoration after SOLVE
-        self._fxu_orig = tsf.common_data.fxu[:nfoil].copy()
-        self._fxl_orig = tsf.common_data.fxl[:nfoil].copy()
-
-        tsf.common_data.fxu[:nfoil] = (self._fxu_orig - phi_sy_upper).astype(np.float32)
-        tsf.common_data.fxl[:nfoil] = (self._fxl_orig + phi_sy_upper).astype(np.float32)
+        # Step D is intentionally omitted: outer phi_s = A*X^{2/3} has zero
+        # Y-derivative at the surface, so FXU/FXL are unchanged.
 
         # Store step-E correction for output_surface
         self._phi_sx_surface = phi_sx_surface
 
-        # Step A (VC correction via PHI_SX_C1TERM) is deliberately NOT applied here.
-        # Applying the surface phi_s,x uniformly across all J rows (1D approximation) is
-        # only valid near y=0; for interior rows phi_s,x ≈ 0 and the J-uniform correction
-        # massively overcorrects VC, destabilising the solver.  Since Step D already makes
-        # phi_r,x bounded near the LE, the Murman-Cole type-switching works correctly
-        # without the VC correction — phi_r,x is subsonic at the stagnation region naturally.
-        # PHI_SX_C1TERM remains zero (set in initialize_solver_data).
-
-        if self.config.get('flag_print_info', False):
-            print(f"  Singularity subtraction D+E applied "
-                  f"(max|phi_sy|={float(np.max(phi_sy_upper)):.3f})")
+        # ── Steps A+C: fill 2D PHI_S on the full outer grid ───────────────────
+        if compute_phi_s_2d is not None:
+            imax = int(tsf.common_data.imax)
+            jmax = int(tsf.common_data.jmax)
+            X_1d = np.array(tsf.common_data.x[:imax], dtype=np.float64)
+            Y_1d = np.array(tsf.common_data.y[:jmax], dtype=np.float64)
+            phi_s_2d = compute_phi_s_2d(
+                X_1d, Y_1d, R_c, self._cpfact, self._gamma
+            )  # shape (jmax, imax), float32
+            tsf.solver_data.phi_s[:jmax, :imax] = phi_s_2d
+        else:
+            print("WARNING: compute_phi_s_2d unavailable; PHI_S stays zero.")
 
     def set_mesh(self) -> None:
         '''
