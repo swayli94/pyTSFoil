@@ -42,6 +42,12 @@ from scipy import integrate
 import matplotlib.pyplot as plt
 
 try:
+    from .leading_edge import solve_inner_problem, apply_composite_correction
+except ImportError:
+    solve_inner_problem = None
+    apply_composite_correction = None
+
+try:
     import tsfoil_fortran as tsf
 except ImportError as e:
     print("ERROR: Could not import tsfoil_fortran module!")
@@ -192,6 +198,9 @@ class PyTSFoil(object):
             'flag_output_field': True,     # field.dat
             'flag_print_info': True, # print information to console
 
+            # MAE leading-edge correction (post-processing, non-invasive)
+            'apply_le_correction': False,
+
         }
         
         # Default parameters
@@ -277,6 +286,49 @@ class PyTSFoil(object):
         self.airfoil['yl'] = yl
         
         tsf.common_data.delta = np.float32(t_max)
+
+        # Parabolic nose fit for MAE leading-edge correction (step 1)
+        self._fit_nose_geometry()
+
+    def _fit_nose_geometry(self) -> None:
+        """Fit parabolic nose parameters h (shape constant) and R_c (curvature radius).
+
+        Model: half-thickness t(x) ~ h * sqrt(x) for x in (0, x_fit_max], c=1.
+        Derives from ct(x/c) ~ 2h*(cx)^{1/2}  =>  t(x) = 2h*sqrt(c)*sqrt(x)/c = 2h*sqrt(x) for c=1.
+        Therefore the polyfit slope h_coef = 2h  =>  h = h_coef / 2.
+        Curvature radius: R_c = 2 * h^2 * delta^2 * c.
+        """
+        xu    = self.airfoil['xu']
+        yu    = self.airfoil['yu']
+        xl    = self.airfoil['xl']
+        yl    = self.airfoil['yl']
+        delta = self.airfoil['t_max']
+        c     = 1.0  # normalized chord
+
+        x_fit_max = 0.05
+        mask = (xu > 1e-6) & (xu <= x_fit_max)
+        if mask.sum() < 3:
+            x_fit_max = 0.10
+            mask = (xu > 1e-6) & (xu <= x_fit_max)
+
+        x_fit  = xu[mask]
+        yu_fit = yu[mask]
+        yl_fit = np.interp(x_fit, xl, yl)
+
+        half_thickness = (yu_fit - yl_fit) / 2.0   # physical half-thickness (c=1)
+
+        # Fit: half_thickness = h_coef * sqrt(x)  (through origin)
+        sqrt_x = np.sqrt(x_fit)
+        h_coef = np.dot(half_thickness, sqrt_x) / np.dot(sqrt_x, sqrt_x)
+
+        h   = h_coef / 2.0         # shape constant (half of sqrt(x) fit coefficient)
+        R_c = 2.0 * h ** 2 * c    # parabolic nose radius: R_c = h_coef^2/2 for c=1
+
+        self.airfoil['h_nose'] = h
+        self.airfoil['R_c']    = R_c
+
+        if self.config.get('flag_print_info', False):
+            print(f"  Nose fit: h = {h:.5f},  R_c = {R_c:.6f}")
 
     def set_mesh(self) -> None:
         '''
@@ -897,7 +949,11 @@ class PyTSFoil(object):
         self.data_summary['ul'] = ul_arr
         self.data_summary['vu'] = vu_arr
         self.data_summary['vl'] = vl_arr
-        
+
+        # MAE leading-edge composite correction (step 4)
+        if self.config.get('apply_le_correction', False):
+            self._apply_le_correction()
+
         # Output summary file
         if self.config['flag_output_summary']:
             with open(os.path.join(self.output_dir, "smry.out"), 'a') as f:
@@ -943,6 +999,81 @@ class PyTSFoil(object):
             if self.config['flag_print_info']:
                 print('Output to cpxs.dat: Cp, Mach distribution on a x-line (Y=0)')
     
+    def _apply_le_correction(self) -> None:
+        """Apply MAE composite correction (post-processing, non-invasive).
+
+        Replaces cpu/cpl/mau/mal in data_summary with composite values.
+        Also stores corrected CL, CM in data_summary under 'cl_le', 'cm_le'.
+        """
+        if solve_inner_problem is None or apply_composite_correction is None:
+            print("WARNING: leading_edge module not available; skipping LE correction.")
+            return
+
+        R_c   = self.airfoil.get('R_c', None)
+        h     = self.airfoil.get('h_nose', None)
+        if R_c is None or h is None or R_c <= 0:
+            print("WARNING: Nose geometry not fitted; skipping LE correction.")
+            return
+
+        emach  = float(tsf.common_data.emach)
+        delta  = float(tsf.common_data.delta)
+        cpfact = self._cpfact
+
+        # Resolve cache directory relative to the package location
+        cache_dir = os.path.join(os.path.dirname(__file__),
+                                 'leading_edge', 'inner_tables_cache')
+
+        # Solve / load inner problem (cached per geometry)
+        inner_tables = solve_inner_problem(
+            h=h, c=1.0, gamma=self._gamma,
+            cache_dir=cache_dir
+        )
+
+        # Mesh x-coordinates
+        xx = self.mesh['xx']
+
+        # Airfoil index range (1-based ile/ite, 0-based in Python)
+        ile = int(tsf.common_data.ile) - 1   # 0-based
+        ite = int(tsf.common_data.ite) - 1   # 0-based (inclusive)
+
+        # Extract airfoil-region x-coordinates and raw perturbation velocities
+        x_foil = xx[ile:ite + 1]
+        uu_foil = self.data_summary['uu'][ile:ite + 1]
+        ul_foil = self.data_summary['ul'][ile:ite + 1]
+
+        # Apply composite correction to upper and lower surfaces
+        cpu_new, mau_new = apply_composite_correction(
+            x_foil, uu_foil, cpfact, emach, R_c, inner_tables, self._gamma)
+        cpl_new, mal_new = apply_composite_correction(
+            x_foil, ul_foil, cpfact, emach, R_c, inner_tables, self._gamma)
+
+        # Write corrected values back into the full arrays
+        cpu_full = self.data_summary['cpu'].copy()
+        cpl_full = self.data_summary['cpl'].copy()
+        mau_full = self.data_summary['mau'].copy()
+        mal_full = self.data_summary['mal'].copy()
+
+        cpu_full[ile:ite + 1] = cpu_new
+        cpl_full[ile:ite + 1] = cpl_new
+        mau_full[ile:ite + 1] = mau_new
+        mal_full[ile:ite + 1] = mal_new
+
+        self.data_summary['cpu'] = cpu_full
+        self.data_summary['cpl'] = cpl_full
+        self.data_summary['mau'] = mau_full
+        self.data_summary['mal'] = mal_full
+
+        # Step 5: corrected CL and CM by re-integration
+        _trapz = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+        cl_le = float(_trapz(cpl_new - cpu_new, x_foil))
+        cm_le = float(_trapz((cpl_new - cpu_new) * (0.25 - x_foil), x_foil))
+        self.data_summary['cl_le'] = cl_le
+        self.data_summary['cm_le'] = cm_le
+
+        if self.config.get('flag_print_info', False):
+            n_ma0_before = int(np.sum(self.data_summary['mal'] == 0.0))
+            print(f"  LE correction applied: CL_le={cl_le:.5f}, CM_le={cm_le:.5f}")
+
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """
         Compute drag coefficient by momentum integral method.
