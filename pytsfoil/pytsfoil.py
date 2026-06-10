@@ -43,12 +43,14 @@ import matplotlib.pyplot as plt
 
 try:
     from .leading_edge import (solve_inner_problem, apply_composite_correction,
-                               compute_surface_corrections, compute_phi_s_2d)
+                               compute_surface_corrections, compute_phi_s_2d,
+                               apply_step_d_le_closure)
 except ImportError:
     solve_inner_problem = None
     apply_composite_correction = None
     compute_surface_corrections = None
     compute_phi_s_2d = None
+    apply_step_d_le_closure = None
 
 try:
     import tsfoil_fortran as tsf
@@ -215,11 +217,24 @@ class PyTSFoil(object):
             # MAE leading-edge correction (post-processing, non-invasive)
             'apply_le_correction': False,
 
-            # Singularity subtraction: regularise TSD outer solve at LE (steps D+E)
-            # Modifies FXU/FXL before SOLVE so phi_r = phi_1 - phi_s is smooth,
-            # then restores phi_s,x in output_surface.
+            # Singularity subtraction: regularise TSD outer solve at LE (steps A+C+E)
+            # Populates 2D PHI_S for SYOR and stores phi_s,x for output_surface.
             # Should be combined with apply_le_correction for correct near-LE cp.
             'apply_singularity_subtraction': False,
+
+            # Step D LE closure: modify FXU/FXL so phi_r = phi_1 - phi_s has
+            # a bounded body slope at x=0 (removes the x^{-1/2} spike).
+            # Requires apply_singularity_subtraction=True to take effect.
+            'apply_step_d': False,
+            # Extrapolation method for the LE closure ('linear'|'sqrt_fit'|'constant').
+            # 'linear'   fits phi_ry = A + B*x and extrapolates intercept to x=0.
+            #            Empirically best overall: significantly better than constant
+            #            for mid-AoA cases and nearly tied with sqrt_fit for high-AoA.
+            # 'sqrt_fit' fits phi_ry = A + B*sqrt(x), matching the theoretical form
+            #            phi_ry ~ c1/delta + c2/delta*sqrt(x); slightly better for
+            #            very high AoA but worse for mid-AoA.
+            # 'constant' uses phi_ry[i_eff] directly (no fit); fastest but biased.
+            'step_d_method': 'linear',
 
         }
         
@@ -351,17 +366,9 @@ class PyTSFoil(object):
             print(f"  Nose fit: h = {h:.5f},  R_c = {R_c:.6f}")
 
     def _apply_singularity_subtraction_bc(self) -> None:
-        """Steps A+C+E: populate 2D PHI_S for the SYOR solver.
+        """Steps A+C+E (always) and optional D: populate 2D PHI_S for SYOR.
 
-        The outer singular field phi_s = A*X^{2/3} is Y-independent, so its
-        Y-derivative at the surface is zero.  Step D (FXU/FXL modification)
-        requires phi_s_y|_{y=0} != 0, which is only valid for the INNER
-        similarity solution Y^{4/7}*f(X/Y^{6/7}).  Using the outer form with
-        Step D introduces a spurious surface source not balanced by Step C,
-        causing large CL errors.  Step D is therefore omitted here; the
-        correct scheme with inner phi_s is a future improvement.
-
-        Steps implemented:
+        Steps always applied:
           A - PHI_S 2D array filled so SYOR uses phi_tot,x = phi_r,x + phi_s,x
               for VC type-switching (restores correct subsonic/supersonic flag).
           C - SYOR Step C (already in Fortran) adds -L[phi_s] forcing so the
@@ -369,8 +376,14 @@ class PyTSFoil(object):
               solved via the bounded variable phi_r = phi_1 - phi_s).
           E - phi_s,x stored for post-processing velocity restoration.
 
+        Step D (enabled by config 'apply_step_d': True):
+          Modifies FXU/FXL so phi_r = phi_1 - phi_s has a bounded body slope.
+          Uses the parabolic-nose formula phi_s,y = chi*h/(delta*sqrt(x)) with
+          LE closure to remove the x=0 spike (where phi_s,y = 0 by construction).
+          Original FXU/FXL are saved in _fxu_orig/_fxl_orig and restored after
+          the solver finishes.
+
         Stores phi_sx_surface for step E in _phi_sx_surface.
-        Does NOT modify FXU/FXL (Step D disabled for outer phi_s form).
         """
         if compute_surface_corrections is None:
             print("WARNING: leading_edge module unavailable; skipping singularity subtraction.")
@@ -390,8 +403,22 @@ class PyTSFoil(object):
             x_foil, h, delta, R_c, self._cpfact, self._gamma,
         )
 
-        # Step D is intentionally omitted: outer phi_s = A*X^{2/3} has zero
-        # Y-derivative at the surface, so FXU/FXL are unchanged.
+        # Step D: body-BC regularisation with LE closure.
+        # Subtract phi_s,y from FXU/FXL so phi_r has a bounded surface slope.
+        # At x=0 phi_s,y = 0 by construction (spike); the LE closure extrapolates
+        # phi_ry from the first non-zero correction point back to x=0.
+        if self.config.get('apply_step_d', False) and apply_step_d_le_closure is not None:
+            fxu_cur = np.array(tsf.common_data.fxu[:nfoil], dtype=np.float64)
+            fxl_cur = np.array(tsf.common_data.fxl[:nfoil], dtype=np.float64)
+            self._fxu_orig = fxu_cur.astype(np.float32)
+            self._fxl_orig = fxl_cur.astype(np.float32)
+            fxu_mod, fxl_mod = apply_step_d_le_closure(
+                fxu_cur, fxl_cur, _phi_sy_upper.astype(np.float64),
+                x_foil=x_foil.astype(np.float64),
+                method=self.config.get('step_d_method', 'sqrt_fit'),
+            )
+            tsf.common_data.fxu[:nfoil] = fxu_mod
+            tsf.common_data.fxl[:nfoil] = fxl_mod
 
         # Store step-E correction for output_surface
         self._phi_sx_surface = phi_sx_surface

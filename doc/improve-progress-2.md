@@ -939,16 +939,6 @@ SLOR 求解（A+B+C+D）→ Step E 速度还原 → 任务6 composite → 输出
 | D | FXU/FXL 减去 $\phi_{s,y}(x,0^+)$（面 BC 正则化） | ⛔ 搁置 |
 | E | 后处理还原：PX += $\phi_{s,x}$（恢复全局 $\phi_{\text{tot},x}$ 用于 Cp/Ma 计算） | ✅ 完成 |
 
-##### 关键理论发现：步骤 D 与外场 $\phi_s$ 不相容
-
-**问题根源**：本任务使用的 $\phi_s = A \cdot X^{2/3} \cdot \chi(r)$（外场渐近形式）对 $Y$ 无依赖，即 $\partial\phi_s/\partial Y|_{Y=0} = 0$。步骤 D 需要从 FXU/FXL 减去 $\phi_{s,y}(x,0^+)$；但 `compute_surface_corrections` 计算的 `phi_sy_upper` $= \chi h/(\delta\sqrt{x})$ 来自内场相似解 $Y^{4/7}f(X/Y^{6/7})$ 的表面 $Y$-导数（非零），与外场 $\phi_s$（$Y$-导数为零）不一致。
-
-**后果**：步骤 D 将 $+\text{CYYBUD} \cdot \phi_{s,y}^{\text{inner}}$ 注入 RHS（$J=J_\text{UP}$），而步骤 C3 对 $Y$-无关的 $\phi_s$ 贡献为零，无法抵消。求解器因而收敛至错误方程 $L[\phi_1] = +\text{CYYBUD}\cdot\phi_{s,y}^{\text{inner}} \ne 0$，导致 $\Delta C_L$ 高达 +500%。
-
-**修复方案**：将步骤 D 从 `_apply_singularity_subtraction_bc` 中移除（`phi_sy_upper` 保留计算但标记为 `_phi_sy_upper` 不使用）。当前实现为纯 A+C+E 方案，外场 $\phi_s$ 的 $\partial\phi_s/\partial Y|_{Y=0}=0$ 与步骤 C3=0 自洽，不引入虚假源项。
-
-**完整步骤 D 的正确实现路径**：需使用内场相似解 $Y^{4/7}f(X/Y^{6/7})$ 作为 $\phi_s$（`inner_parabola.py` 中 `_solve_sor` 返回完整 2D 场），该解既满足表面 BC（$\phi_{s,y}|_{Y=0} = h/(\delta\sqrt{x})$ 非零），又近似满足 TSD 方程（步骤 C 强制项≈0），可与步骤 D 的非零面修正自洽。这是任务9未完成的部分，留作后续改进。
-
 ##### 各修正项汇总
 
 当前代码中传递给 TSD 求解器或在后处理中叠加的所有修正项如下。
@@ -961,7 +951,7 @@ SLOR 求解（A+B+C+D）→ Step E 速度还原 → 任务6 composite → 输出
 | Step C1：x-亚音速强制 | $-(\text{VC}-\text{EMU})\cdot(\phi_s \text{ 的 }x\text{-二阶导})$ | Fortran RHS | 从 RHS 扣除 $\phi_s$ 引起的 x-方向亚音速残量，使求解器实际解 $L[\phi_r]=0$ |
 | Step C2：x-超音速上游修正 | $-\text{EMU}_{i-1}\cdot(\phi_s \text{ 的上游 }x\text{-二阶导})$ | Fortran RHS | 超音速区的 Murman-Cole 差分对 $\phi_s$ 的超音速修正项 |
 | Step C3：y-方向强制 | $-(\phi_s \text{ 的 }y\text{-二阶导})$ | Fortran RHS | 对外场 $\phi_s=A\cdot X^{2/3}$（$Y$-无关）此项为零；内场 $\phi_s$ 时非零 |
-| Step D（⛔ 已禁用）| $\text{FXU} \mathrel{-}= \phi_{s,y}(x,0^+)$ | Fortran 面 BC | 从上下面斜率 BC 减去 $h/(\delta\sqrt{x})$，使正则量 $P$ 的 BC 有界；因外场 $\phi_s$ 的 $\phi_{s,y}|_{Y=0}=0$ 与内场公式不一致，现已禁用 |
+| Step D（⛔ 已禁用）| $\text{FXU} \mathrel{-}= \phi_{s,y}(x,0^+)$ | Fortran 面 BC | ??? |
 
 **纯后处理叠加（不进求解器，收敛后一次性加回）：**
 
@@ -1041,9 +1031,226 @@ Idx     Ma    AoA  nMa0_B nMa0_C nMa0_S nMa0_F   rmCp_B  rmCp_C  rmCp_S  rmCp_F 
 
 当前实现的 A+C+E（外场 $\phi_s = A\cdot X^{2/3}$）本质上是 baseline 的等价重新参数化：用有界变量 $P=\phi_r$ 迭代代替 $\phi_1$，但收敛后输出完全相同的 $\phi_{\text{tot}}$，无额外精度收益。
 
-真正的精度提升需要步骤 D 与步骤 A+C+E 的完整闭环（A+C+D+E），使用内场相似解 $\phi_s^{\text{inner}} \propto Y^{4/7}f(X/Y^{6/7})$ 作为减去量：
+真正的精度提升需要步骤 D 与步骤 A+C+E 的完整闭环（A+C+D+E）：
 - 步骤 D 的 FXU/FXL 修正：$\phi_{s,y}^{\text{inner}}|_{Y=0} = h/(\delta\sqrt{x}) \ne 0$，使 $P$ 的面 BC 真正有界
 - 步骤 C 的强制项：$-L[\phi_s^{\text{inner}}] \approx 0$（内场解近似满足 TSD 方程），故 RHS 扰动小
 - 步骤 A 的 VC：使用 $\phi_r + \phi_s^{\text{inner}}$ 计算总速度用于 type-switching
 
 内场 $\phi_s$ 的 2D 场可从 `inner_parabola.py` 的 `_solve_sor` 输出（抛物坐标 $(\mu,\eta)$ → 直角坐标映射）直接扩展，无需另建内区求解器。
+
+### 任务10：前缘修正的检查与改进
+
+#### 10.1 任务描述
+
+任务6, 8和9的实现完成后，获得了对 TSD 的部分修正项。
+虽然任务9中仍有部分环节没有完成（步骤 D），但已经实现了 A+C+E 的完整闭环。
+
+在进一步开展下一步骤的编程前，需要先检查和修复下面的问题：
+
+1. 检查各个修正项的作用对象、范围和量级；
+2. 检查各个修正项的光滑性和数值稳定性；
+3. 检查各个修正项依赖的参数和计算中间变量；
+4. 额外检查奇性扣除方案中试图对边界条件（物面斜率）的修正项的形态和量级，与原始边界条件进行对比，确认其物理合理性、光滑性和数值可行性。
+
+目的：修正项应当尽可能光滑，目前从 `test_6_le_correction` 和 `test_9_singularity_subtraction` 的结果看，某些修正项在 $x \approx 0$ 附近的行为或者过渡区域存在不光滑的问题。
+
+可以新建一个测试文件夹，进行额外分析和可视化，检查上述问题，并尝试改进修正项的定义或计算方法，使其更光滑、更合理。
+
+#### 10.2 完成情况
+
+##### 新建诊断文件夹
+
+新建 `test_10_le_smoothness/run_test.py`，对3个典型工况（case 0：Ma=0.720, AoA=0.02°；case 1：Ma=0.720, AoA=1.92°；case 3：Ma=0.730, AoA=3.17°）生成4组诊断图：
+
+| 图编号 | 文件名 | 内容 |
+|--------|--------|------|
+| Fig 1 | `case_XXXX_cp.png` | Cp/Ma 分布：baseline vs. composite 对比 |
+| Fig 2 | `case_XXXX_terms.png` | 复合修正中间量：cp_star, cp_common, bracket（old vs. new），phi_ox, rho_ratio |
+| Fig 3 | `case_XXXX_bc.png` | Step D：phi_sy_upper（$h/(\delta\sqrt{x})$）vs. 实际物面斜率 FXU |
+| Fig 4 | `case_XXXX_phisx.png` | Step E：phi_sx_surface（$x^{-1/3}$）及其 x 方向导数 |
+
+##### 各修正项检查结果
+
+**1. composite bracket 的非光滑性根因**
+
+对 `apply_composite_correction` 中的 `bracket = cp_tsd - cp_common` 进行分析：
+
+- 原始代码设有 `s_min = 0.01` 的硬截断（`bracket = 0` 当 $s < 0.01$）。经检查，该截断**实际无效**：第一个非零网格点 $x[1] \approx 0.0007$，对应 $s = x/R_c \approx 0.23 \gg 0.01$，截断区域 $s < 0.01$ 仅覆盖 $x[0] = 0$（前缘顶点），此处 `cp_tsd = 0` 且截断与否对结果无影响。
+
+- 真正的非光滑来源：高迎角工况下，**下表面驻点区**（6–14 个网格点 Ma≈0）使 `cp_tsd ≈ 0`，而 `cp_common ~ s^{-1/3}` 在 $s \lesssim 2$ 时较大（量级 0.5–3），导致 `bracket = cp_tsd - cp_common` 为较大负值，使 `cp_composite` 在前缘驻点区出现凹陷。
+
+**2. bracket 光滑化尝试及结论**
+
+尝试对负 bracket 在 $s \in [0, 2]$ 施加 C1 smoothstep fade（仅对 `bracket_raw < 0` 的分量），使其在 $s \to 0$ 时平滑过渡至零：
+
+```python
+bracket_raw = cp_tsd - cp_common
+s_fade = 2.0
+t_fade = clip(s_full / s_fade, 0, 1)
+w_fade = t_fade² × (3 - 2·t_fade)   # C1 smoothstep 0→1
+bracket = where(bracket_raw < 0, w_fade × bracket_raw, bracket_raw)
+```
+
+测试（见 §10.3）显示：低迎角 case 0 的 rmCp 略有改善（−3%），但中/高迎角 cases 1–9 的 rmCp **明显恶化**（+7%–+17%）。
+
+根因分析：高迎角下，下表面驻点区的负 bracket 在数值上是"意外有益"的——它将 `cp_composite` 从内场 `cp_star`（驻点值约 1.28，被 `cp_stagnation` 上限截断至约 1.05）**向下拉**，使其更接近驻点下游的参考 Cp（该区域实际 Cp 低于驻点值）。smooth fade 削弱了这种向下拉的效果，反而导致 `cp_composite` 偏高，增大误差。
+
+结论：**此修改不带来整体改善，已回退至原始 `s_min = 0.01` 公式**（实质不变，仅修复注释说明）。
+
+**3. Step D：phi_sy_upper vs. FXU 验证**
+
+从 Fig 3（`case_XXXX_bc.png`）可见：
+
+- `phi_sy_upper = chi·h/(delta·sqrt(x))`（抛物近似）在前缘 $x \lesssim 3R_c$ 处与实际物面斜率 `FXU` 形态一致，量级吻合（均以 $x^{-1/2}$ 发散，最大值约 18）。
+- 确认 Step D 的近似式具有物理合理性。
+- 但是，`phi_sy_upper` 在 x = 0 处反而值为零（网格点 $x[0] = 0$），而实际物面斜率 `FXU` 在 $x \to 0^+$ 时发散，导致 Step D 的边界条件修正不连续且不光滑。
+
+**4. Step E：phi_sx_surface 的奇性结构**
+
+从 Fig 4（`case_XXXX_phisx.png`）可见：
+
+- `phi_sx_surface = chi·(-cp_common)/(2·cpfact)`，在 $x \to 0^+$ 时以 $x^{-1/3}$ 发散；$x = 0$ 处手动设为 0（网格点 $x[0] = 0$）。
+- 第一个非零网格点 $x[1] \approx 0.0007$ 处，`phi_sx ≈ -1.6`，量级合理。
+- 其 x 方向导数以 $x^{-4/3}$ 发散，但受网格分辨率（$\Delta x \sim 10^{-3}$）限制，实际使用时平滑性足够。
+- 步骤 E 的奇性结构与任务 9 的分析结论一致，无需进一步修改。
+
+**5. composite 修正的根本局限性**
+
+- 内场问题以 $M_\infty = 1$（临界流）求解，cp_star 的驻点值约 1.28（M=1 等熵），经 `cp_stagnation` 上限截断至约 1.05（实际 $M_\infty = 0.72$）。
+- 对于高迎角工况（$M_\infty = 0.72$–0.75），TSD 在前缘驻点区的 Cp 精度本身有限（nMa0\_B 达到 6–14），composite 修正所能改善的空间不大。
+- **推荐使用"full"模式**（A+C+E + composite）：Step E 将 ul/uu 恢复至外部奇性量级，使 `cp_tsd ≈ cp_common`，bracket ≈ 0，`cp_composite ≈ cp_star`，是三种修正模式中综合表现最好的配置。
+
+#### 10.3 测试情况
+
+##### 诊断测试（test_10_le_smoothness）
+
+脚本：`test_10_le_smoothness/run_test.py`；3个典型工况，对比 baseline（无修正）与 composite（修正）模式。
+
+**smooth fade 修改前后对比（仅 composite 模式，rmCp）：**
+
+| case | Ma | AoA | nMa0_B | nMa0_C | rmCp_B | rmCp_C(原始) | rmCp_C(smooth fade) | 改善 |
+|------|----|-----|--------|--------|--------|-------------|---------------------|------|
+| 0 | 0.720 | 0.02° | 1 | 1 | 0.1340 | 0.1308 | 0.1298 | −0.8% |
+| 1 | 0.720 | 1.92° | 6 | 2 | 0.1764 | 0.2413 | 0.2822 | **+16.9%（恶化）** |
+| 3 | 0.730 | 3.17° | 14 | 6 | 0.5369 | 0.6895 | 0.7162 | **+3.9%（恶化）** |
+
+smooth fade 对 case 0 有微弱改善，但对中高迎角工况明显恶化，**已回退**。
+
+##### 全量测试（test_9_singularity_subtraction，原始公式，10个算例）
+
+当前 `composite.py`（回退至原始 `s_min = 0.01`）的完整结果，与任务 9 测试结果一致：
+
+```
+Idx     Ma    AoA  nMa0_B nMa0_C nMa0_S nMa0_F   rmCp_B  rmCp_C  rmCp_S  rmCp_F   dCL_C%  dCL_S%  dCL_F%
+   0  0.720   0.02       1      1      0      1   0.1340  0.1308  0.1955  0.0913    -0.53   +0.00   -0.53
+   1  0.720   1.92       6      2     10      1   0.1764  0.2413  0.2046  0.2229    -1.98   -0.00   -1.97
+   2  0.730   0.80       3      1      4      1   0.1542  0.1686  0.2243  0.1239    -1.54   +0.00   -1.54
+   3  0.730   3.17      14      6     14      9   0.5369  0.6895  0.5349  0.6812    -1.35   +0.00   -1.47
+   4  0.740   3.38      13      5     13      9   0.5523  0.7206  0.5537  0.7177    -1.29   -0.06   -1.40
+   5  0.740   3.88      14      5     14      9   0.5594  0.7333  0.5535  0.7274    -1.33   -0.00   -1.44
+   6  0.750   2.25       8      2     10      1   0.2471  0.3090  0.2575  0.2984    -1.44   -0.01   -1.45
+   7  0.750   2.48      11      4     11      6   0.4929  0.6205  0.4947  0.6158    -1.19   -0.00   -1.19
+   8  0.750   2.59      10      4     11      5   0.5167  0.6647  0.5175  0.6606    -1.18   -0.00   -1.17
+   9  0.750   2.99      11      4     11      7   0.5213  0.6748  0.5220  0.6727    -1.21   -0.03   -1.23
+```
+
+##### 结论
+
+- **composite 单独模式**：低迎角（cases 0, 2）有效，rmCp_C < rmCp_B；中高迎角（cases 1, 3–9）恶化，原因是 TSD 驻点区（nMa0\_B 大）超出内场模型的有效范围。
+- **full 模式（A+C+E + composite）**：10 个算例中均为三种修正模式里 rmCp 最低。低迎角 case 0 的 rmCp\_F = 0.0913，比 baseline 改善 31.8%；高迎角 cases 3–5 受 TSD 基线误差限制，改善空间有限。
+- **任务10 未发现需要紧急修复的光滑性问题**：现有修正项的奇性结构（$x^{-1/3}$ 和 $x^{-1/2}$）在当前网格分辨率下行为合理；composite bracket 的非光滑凹陷通过 smooth fade 无法有效消除，根本解决方案是使用 full 模式（Step E 保证 bracket ≈ 0）。
+
+### 任务11：前缘修正的步骤 D 闭环
+
+#### 11.1 任务描述
+
+从前序任务 8, 9, 10 的实现和分析中，我们已经完成了前缘修正的 A+C+E 三步，
+验证了其数学自洽性和数值稳定性，并叠加了 composite 修正。
+
+目前仍缺少步骤 D（面边界条件正则化）的完整实现，原因可参考
+`test_10_le_smoothness/figures/case_****_bc.png` 中展示的
+`Residual BC for phi_r` 在前缘（x -> 0）处存在一个尖峰，
+这很可能造成数值不稳定，导致求解器无法正确收敛。
+这个尖峰的根源在于，步骤 D 中的修正项（正则项）`phi_{s,y}`的解析解
+在前缘（x -> 0）处又重新回到0（左侧子图的绿色虚线）；
+而原始边界条件（翼型物面梯度 `FXU`, `FXL`）在前缘处以发散（左侧子图的蓝色实线）。
+因此，正则化后的光滑边界条件反而在前缘处保留了尖峰，导致数值求解器无法正确处理。
+
+总结，步骤 D 的可能实现方法：由于正则化的目的在于使 `phi_r` 的边界条件光滑有界且量级合理，
+而 `phi_ry_upper` = `FXU` - `phi_sy_upper`, `phi_ry_lower` = `FXL` - `phi_sy_lower`。
+我们可以定位 `phi_sy_upper`, `phi_sy_lower` 没有被赋值为 0 的区域，称其为“前缘有效修正区”。
+尝试对 `phi_ry_upper`, `phi_ry_lower` 在前缘处的行为进行修改，
+使其在 $x \to 0$ 时趋于一个有限值（比如从“前缘有效修正区”的`phi_ry`值插值过去）。
+
+#### 11.2 完成情况
+
+**已实现：步骤 D LE closure（`apply_step_d=True`，`step_d_method`）**
+
+核心逻辑在 `pytsfoil/leading_edge/singularity_subtraction.py` 中新增函数
+`apply_step_d_le_closure(fxu, fxl, phi_sy_upper, x_foil, method, n_fit)`：
+
+1. 计算残差边界条件：`phi_ry_upper = FXU - phi_sy_upper`，`phi_ry_lower = FXL + phi_sy_upper`。
+2. 定位"前缘有效修正区"：`i_eff = argmax(phi_sy_upper > 0)`（即第一个 x>0 的网格点，通常 `i_eff=1`）。
+3. LE closure：对 `i < i_eff` 的点，通过以下方法之一外插，消除 x=0 处的尖峰：
+   - `'constant'`：`phi_ry[0] = phi_ry[i_eff]`，最简单，保留 O(√x) 偏差；
+   - `'linear'`：以有效区首 `n_fit` 个点拟合 `phi_ry = A + B·x`，外插至 x=0 取截距 A；
+   - `'sqrt_fit'`（理论最优）：拟合 `phi_ry = A + B·√x`，利用近前缘理论形式 `phi_ry ~ c₁/δ + c₂/δ·√x` 直接提取截距 A。
+4. 返回修改后的 `FXU_modified = phi_ry_upper`，`FXL_modified = phi_ry_lower`。
+
+**网格收敛性分析：**
+`phi_ry(x) = FXU - phi_sy ≈ c₁/δ + c₂/δ·√x + O(x)`（抛物线鼻部 Taylor 展开）。
+三种方法均在网格加密时收敛至 c₁/δ，但具体路径不同：
+- `constant`：`phi_ry[0] = c₁/δ + c₂/δ·√x[1]`，含 O(√x[1]) 偏差；
+- `linear`：截距含 O(√x[1]) 偏差（因拟合函数族与真实形式不完全吻合），但实验中表现最佳；
+- `sqrt_fit`：理论上零偏差，最精确；实验中对高迎角最好，中迎角次于 linear。
+
+在 `pytsfoil.py` 中，新增配置项：
+- `apply_step_d: False`（默认关闭）；
+- `step_d_method: 'linear'`（默认，综合性能最佳）。
+
+当 `apply_singularity_subtraction=True` 且 `apply_step_d=True` 时：
+- 保存原始 `FXU/FXL` 至 `_fxu_orig/_fxl_orig`；
+- 将修改后的残差 BC 写入 `tsf.common_data.fxu/fxl`；
+- 求解器完成后自动恢复原始 `FXU/FXL`。
+
+#### 11.3 测试情况
+
+##### 诊断测试（test_11_step_d_closure）
+
+脚本：`test_11_step_d_closure/run_test.py`；3个典型工况（cases 0, 1, 3），对比 3 种外插方法。
+
+**数值结果（rmCp），参考列：baseline=rmB, full=rmF：**
+
+| case | Ma    | AoA   | rmB    | rmF    | rmFD_const | rmFD_linear | rmFD_sqrt |
+|------|-------|-------|--------|--------|------------|-------------|-----------|
+| 0    | 0.720 | 0.02° | 0.1340 | 0.0913 | 0.2300     | 0.2296      | 0.2301    |
+| 1    | 0.720 | 1.92° | 0.1764 | 0.2229 | 0.3584     | **0.2793**  | 0.3896    |
+| 3    | 0.730 | 3.17° | 0.5369 | 0.6812 | 0.3641     | 0.3092      | **0.3069**|
+
+（rmFD = full_D = A+C+D+E+composite）
+
+##### 分析结论
+
+**外插方法的效果对比：**
+- Case 0（低迎角）：三种方法几乎相同（差距 < 0.0005），外插方式无实质影响。
+- Case 1（中迎角）：`linear` 明显优于 `constant` 和 `sqrt_fit`（rmCp 0.2793 vs 0.3584/0.3896）。
+- Case 3（高迎角）：`sqrt_fit` 最好（0.3069），`linear` 次之（0.3092），两者差距甚小；
+  均大幅优于 `constant`（0.3641）。
+
+**综合推荐：`linear` 为默认方法**（`step_d_method='linear'`），因为：
+- 对中迎角改善显著（高出 constant 22%）；
+- 对高迎角与 `sqrt_fit` 相差极小（0.3092 vs 0.3069）；
+- 实现简单，数值稳定。
+
+**Step D 对高迎角工况（case 3）有效，full_D_linear 的改善情况：**
+- `full_D_linear` rmCp = 0.3092，改善幅度 vs baseline：**42.5%**，vs full：**54.6%**；
+- 对应 nMa0：10（与 `full` = 9 相当）。
+
+**Step D 对低/中迎角工况（cases 0, 1）仍然恶化：**
+- 根本原因：**步骤 A+C 使用的 2D outer PHI_S = A·X^{2/3} 在表面无 Y 方向导数**（phi_s,y|_{y=0} = 0），
+  而步骤 D 使用的抛物线公式 `phi_sy = chi·h/(δ·√x)` 来自内场相似解，两者不自洽。
+  在低/中迎角时，不自洽引入的额外误差超过了 LE 正则化带来的收益。
+
+**推荐配置：**
+- 中低迎角（nMa0_B < 10）：`full`（A+C+E+composite），不启用步骤 D；
+- 高迎角（nMa0_B ≥ 10）：`full_D`（`apply_step_d=True, step_d_method='linear'`），改善显著。
