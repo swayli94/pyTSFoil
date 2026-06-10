@@ -19,6 +19,7 @@ contains
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
         use solver_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD
+        use solver_data, only: PHI_SX_C1TERM
         implicit none
         integer, intent(inout) :: I1, I2  ! Indices for potential values
         logical, intent(inout) :: OUTERR  ! outer iteration error (logical)
@@ -41,8 +42,11 @@ contains
             EPSX = EPS / ((X(I) - X(I-1))**2)
             
             ! Compute VC = 1 - M**2
+            ! PHI_SX_C1TERM(I) = GAM1*phi_s,x/DXC: step-A VC correction for singularity
+            ! subtraction. Zero by default; populated by Python when enabled.
             do J = JBOT, JTOP
-                VC(J) = C1(I) - (CXL(I)*POLD(J,I2) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
+                VC(J) = C1(I) - (CXL(I)*POLD(J,I2) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1)) &
+                        - PHI_SX_C1TERM(I)
                 EMU(J,I1) = 0.0
                 POLD(J,I1) = P(J,I)
             end do

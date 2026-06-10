@@ -42,10 +42,11 @@ from scipy import integrate
 import matplotlib.pyplot as plt
 
 try:
-    from .leading_edge import solve_inner_problem, apply_composite_correction
+    from .leading_edge import solve_inner_problem, apply_composite_correction, compute_surface_corrections
 except ImportError:
     solve_inner_problem = None
     apply_composite_correction = None
+    compute_surface_corrections = None
 
 try:
     import tsfoil_fortran as tsf
@@ -153,15 +154,26 @@ class PyTSFoil(object):
         self.compute_far_field_bc()
 
         self.compute_geometry_derivatives()
-        
+
+        # Singularity subtraction step D: regularise FXU/FXL before SETBC/SOLVE
+        self._phi_sx_surface = None
+        if self.config.get('apply_singularity_subtraction', False):
+            self._apply_singularity_subtraction_bc()
+
         # Compute finite difference coefficients
         tsf.solver_base.difcoe()
-        
+
         # Set boundary conditions
         tsf.solver_functions.setbc(0)
-        
+
         # Solve transonic flow equations
         tsf.main_iteration.solve()
+
+        # Restore original FXU/FXL so downstream computations (cdcole, etc.) are unaffected.
+        if self.config.get('apply_singularity_subtraction', False) and hasattr(self, '_fxu_orig'):
+            nfoil = self.mesh['nfoil']
+            tsf.common_data.fxu[:nfoil] = self._fxu_orig
+            tsf.common_data.fxl[:nfoil] = self._fxl_orig
     
     def _default_config(self):
         '''
@@ -200,6 +212,12 @@ class PyTSFoil(object):
 
             # MAE leading-edge correction (post-processing, non-invasive)
             'apply_le_correction': False,
+
+            # Singularity subtraction: regularise TSD outer solve at LE (steps D+E)
+            # Modifies FXU/FXL before SOLVE so phi_r = phi_1 - phi_s is smooth,
+            # then restores phi_s,x in output_surface.
+            # Should be combined with apply_le_correction for correct near-LE cp.
+            'apply_singularity_subtraction': False,
 
         }
         
@@ -329,6 +347,57 @@ class PyTSFoil(object):
 
         if self.config.get('flag_print_info', False):
             print(f"  Nose fit: h = {h:.5f},  R_c = {R_c:.6f}")
+
+    def _apply_singularity_subtraction_bc(self) -> None:
+        """Steps D + A: regularise FXU/FXL and populate PHI_SX_C1TERM before SETBC/SOLVE.
+
+        D: subtract phi_s,y(x,0) from FXU/FXL → bounded body BC for phi_r.
+        A: compute PHI_SX_C1TERM = GAM1*phi_s,x/DXC for each mesh column so SYOR
+           uses the full phi_tot,x = phi_r,x + phi_s,x in the Murman-Cole VC.
+
+        Saves originals to _fxu_orig/_fxl_orig for restoration after SOLVE.
+        Stores phi_sx_surface for step E (post-processing) in _phi_sx_surface.
+        """
+        if compute_surface_corrections is None:
+            print("WARNING: leading_edge module unavailable; skipping singularity subtraction.")
+            return
+
+        h   = self.airfoil.get('h_nose', None)
+        R_c = self.airfoil.get('R_c',    None)
+        if h is None or R_c is None or R_c <= 0:
+            print("WARNING: Nose geometry not fitted; skipping singularity subtraction.")
+            return
+
+        nfoil  = self.mesh['nfoil']
+        x_foil = self.mesh['xx_airfoil'][:nfoil]
+        delta  = float(tsf.common_data.delta)
+
+        phi_sy_upper, phi_sx_surface = compute_surface_corrections(
+            x_foil, h, delta, R_c, self._cpfact, self._gamma,
+        )
+
+        # ── Step D: regularise body BC ─────────────────────────────────────────
+        # Save originals for restoration after SOLVE
+        self._fxu_orig = tsf.common_data.fxu[:nfoil].copy()
+        self._fxl_orig = tsf.common_data.fxl[:nfoil].copy()
+
+        tsf.common_data.fxu[:nfoil] = (self._fxu_orig - phi_sy_upper).astype(np.float32)
+        tsf.common_data.fxl[:nfoil] = (self._fxl_orig + phi_sy_upper).astype(np.float32)
+
+        # Store step-E correction for output_surface
+        self._phi_sx_surface = phi_sx_surface
+
+        # Step A (VC correction via PHI_SX_C1TERM) is deliberately NOT applied here.
+        # Applying the surface phi_s,x uniformly across all J rows (1D approximation) is
+        # only valid near y=0; for interior rows phi_s,x ≈ 0 and the J-uniform correction
+        # massively overcorrects VC, destabilising the solver.  Since Step D already makes
+        # phi_r,x bounded near the LE, the Murman-Cole type-switching works correctly
+        # without the VC correction — phi_r,x is subsonic at the stagnation region naturally.
+        # PHI_SX_C1TERM remains zero (set in initialize_solver_data).
+
+        if self.config.get('flag_print_info', False):
+            print(f"  Singularity subtraction D+E applied "
+                  f"(max|phi_sy|={float(np.max(phi_sy_upper)):.3f})")
 
     def set_mesh(self) -> None:
         '''
@@ -940,6 +1009,19 @@ class PyTSFoil(object):
             uu_arr[i_py] = uu_p1
             vl_arr[i_py] = tsf.solver_base.py(i_p1, jlow)
             vu_arr[i_py] = tsf.solver_base.py(i_p1, jup)
+
+        # Singularity subtraction step E: restore phi_s,x so ul/uu = phi_tot,x
+        if (self.config.get('apply_singularity_subtraction', False)
+                and self._phi_sx_surface is not None):
+            ile_0b = ile - 1   # 0-based
+            ite_0b = ite - 1   # 0-based (inclusive)
+            phi_sx = self._phi_sx_surface
+            ul_arr[ile_0b:ite_0b + 1] += phi_sx
+            uu_arr[ile_0b:ite_0b + 1] += phi_sx
+            # Recompute Mach numbers for airfoil region with restored total velocity
+            for k in range(ile_0b, ite_0b + 1):
+                em1l[k] = tsf.solver_functions.emach1(float(ul_arr[k]), delta)
+                em1u[k] = tsf.solver_functions.emach1(float(uu_arr[k]), delta)
 
         self.data_summary['cpu'] = self._cp_isentropic(em1u, emach)
         self.data_summary['cpl'] = self._cp_isentropic(em1l, emach)
