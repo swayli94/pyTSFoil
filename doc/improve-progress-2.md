@@ -544,3 +544,228 @@ pytsfoil/
 - 高 AoA（>3°）仍有少量 Ma=0 点残留（4–6 点）：内区求解在零攻角假设下进行，不对称驻点偏移未进入内区解，仅通过外区 $c_{p\text{TSD}}$ 的不对称性间接引入。
 - 高 AoA 算例 RmCp_corr > RmCp_base 约 15–30%：源于激波强度与位置的 TSD vs RANS 差异，非前缘修正引入的误差；低 AoA 算例 RmCp 持平或改善。
 - 内区求解仅在 $s\in[0,10]$ 区间内（$x/c\lesssim3\%$）有效应用，平滑过渡到 TSD；更精细的过渡或高阶匹配条件留待后续任务。
+
+### 任务7：前缘修正的渐近匹配的奇性扣除方案分析
+
+#### 7.1 任务描述
+
+任务 6 的 MAE 复合解方案虽然成功消除了 x=0 附近 x>0 区域的 Ma=0 区域，
+但修正的结果不是很光滑，整体的 Ma, Cp 分布仍然存在系统性偏差，尤其是在前缘驻点附近。
+x=0 附近 x<0 区域的 Ma=0 区域仍然较大。
+
+其根本原因在于小扰动假设本身在鼻部失效，
+而渐近匹配需要外区求解在圆前缘处数值干净，即数值解真正等于理论里的外区渐近解 $\phi_1$，
+从而环量 $\Gamma$、激波位置、远场可信。
+这是 `TSD_leading_edge_correction.md` 第 8 节里"正则化外解"那一步的展开。
+
+所以需要**奇性扣除负责全局调理（让外解干净），composite 负责鼻部物理 $c_p$。两者互补，不可互相替代。**
+具体理论参考 `TSD_singularity_subtraction.md` 中的分析。
+
+结合 pyTSFoil 代码与任务6的结果，在此基础上，
+结合理论，分析前缘修正的"渐近匹配+奇性扣除"方案，寻找可行的实现方法。
+
+#### 7.2 修正方案与可行性分析
+
+##### 7.2.1 方案总述
+
+奇性扣除的核心操作是把求解器的未知量从全势 $\phi_1$ 换成光滑余项 $\phi_r = \phi_1 - \phi_s$，其中 $\phi_s$ 是解析预知的鼻部跨声速相似解，乘以平滑窗 $\chi$。求解器所有内核（VC 系数、DIAG/RHS 装配、缝面斜率 BC）均改用 $\phi_{tot} = \phi_s + \phi_r$ 来计算算子，$\phi_s$ 以只读预置数组进入，不参与迭代更新。
+
+与任务 6 的分工：奇性扣除确保外区 $c_{p,TSD}$ 和环量 $\Gamma$ 干净（全局），任务 6 的 composite 在此基础上做鼻部物理 $c_p$ 修正（局部后处理）。两者串联，缺一不可。
+
+---
+
+##### 7.2.2 $\phi_s$ 的形式与预计算
+
+**解析形式**（外区坐标 $X = x/c$，$Y = \tilde y$，即 pyTSFoil 中的 `X(I)`/`Y(J)`）：
+
+$$P_s(X, Y) = \frac{Y^{4/7}}{\gamma+1}\, f\!\left(\frac{X}{Y^{6/7}}\right)\cdot\chi(r),
+\qquad r = \sqrt{X^2 + Y^2}/R_c$$
+
+其中：
+- $f(\xi)$ 是 Rusak (1993) 外区鼻部相似 ODE 的解，即 `inner_parabola.py` 已经建立的 hodograph 表（$f$ 与内区问题匹配，函数形式完全相同，无额外量纲因子）。
+- $\chi(r)$：平滑截断窗，在 $r \leq r_1 \approx 2$ 处 $\chi=1$，在 $r_2 \approx 5$–$10$ 处降到 0（smoothstep 或类似）；须保证 TE 前 $\chi=0$。
+- $R_c = 2h^2 c$（已在任务 6 中计算，`_fit_nose_geometry` 方法）。
+
+所需导数（解析计算）：
+
+$$P_{s,X} = \frac{\chi}{\gamma+1}\left[\frac{4}{7} Y^{-3/7} f'(\xi)\cdot(-Y^{-6/7}) + Y^{4/7} f'(\xi)\cdot Y^{-6/7}\right] + \phi_s \cdot \chi'/\chi \cdot r_X$$
+
+更简洁地：以链式法则展开后对 $X$ 偏导：
+
+$$P_{s,X}(X, Y) = \frac{\chi}{\gamma+1}\, Y^{-2/7}\, f'(\xi) + P_s \frac{\chi_X}{\chi}$$
+
+对 $Y$ 偏导（用于表面 BC 扣除）：
+
+$$P_{s,Y}(X, Y) = \frac{\chi}{\gamma+1}\left[\frac{4}{7}Y^{-3/7}f(\xi) - \frac{6}{7}\frac{X}{Y}\,Y^{-3/7}f'(\xi)\right] + P_s \frac{\chi_Y}{\chi}$$
+
+**表面极限**（$Y \to 0^+$，$\xi \to +\infty$，利用 $f(\xi)\to C\xi^{2/3}$）：
+
+$$P_{s,Y}(X, 0^+) \;\to\; h\,c^{1/2}\,X^{-1/2}$$
+
+即精确复现翼面斜率的 $X^{-1/2}$ 奇异部分（这正是 §2.4 的设计目标），且窗函数在 $X \gg R_c$ 后将其截断至零。
+
+**预计算策略**：$P_s$、$P_{s,X}$、$P_{s,Y}$ **离线一次性计算**，结果存为与 pyTSFoil 网格 `(JMAX, IMAX)` 对齐的 NumPy 数组，通过 f2py 注入 Fortran 求解器。
+- 对 $Y \leq 0$ 的下半域（$J \leq$ JLOW）：$P_s$ 关于 $Y=0$ 对称（$P_s$ 偶函数），$P_{s,Y}$ 反对称（奇函数）。
+- 节点 `J = JUP/JLOW` 处须直接用表面极限公式（避免 $Y^{4/7} \to 0$ 的数值精度问题）。
+- $f(\xi)$ 和 $f'(\xi)$ 的大 $\xi$ 渐近（$C\xi^{2/3}$）需要作为远端 fallback 补充进 `inner_parabola.py` 的插值表之外。
+
+---
+
+##### 7.2.3 对 SLOR 求解器的修改（逐环节）
+
+求解器入口：`main_iteration.f90: SYOR` → `SOLVE`；边界条件：`solver_functions.f90: SETBC`。
+
+**A. VC（非线性系数 / Murman–Cole 类型判别）**
+
+```fortran
+! 当前：
+VC(J) = C1(I) - (CXL(I)*POLD(J,I2) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
+
+! 修改后（P 存 φ_r；PHI_S 为预置数组）：
+VC(J) = C1(I) - (CXL(I)*(POLD(J,I2) + PHI_S(J,IM2))   &
+               + CXC(I)*(P(J,I)   + PHI_S(J,I))         &
+               + CXR(I)*(P(J,I+1) + PHI_S(J,I+1)))
+```
+
+即把 `PHI_S` 叠加到 `P` 上再代入现有公式，不改变差分模板结构。  
+效果：MC 判别使用 $\phi_{tot,X}$，鼻区由解析 $P_{s,X}$ 主导，切断"鼻部伪超声速点播撒"通道。
+
+**B. DIAG**
+
+```fortran
+DIAG(J) = (EMU(J,I1) - VC(J)) * CXXC(I) * WI + EMU(J,I2)*CXXR(I-1) - CYYC(J)
+```
+
+`EMU` 由 `VC < 0` 触发，VC 已在步骤 A 修正，故 **DIAG 不需额外改动**；影响自动传递。
+
+**C. RHS**
+
+RHS 由三部分构成（对应 KG 方程的 $x$ 二阶项、$x$ 跨列项、$y$ 二阶项）。P 改为 $\phi_r$ 后，每一项都缺少 $\phi_s$ 的贡献，需作为已知源项补入右端。
+
+*C1：$x$ 弦向首项（亚声速：$\phi_{tot,XX}$）*
+
+```fortran
+! 当前：
+RHS(J) = -(VC(J) - EMU(J,I1)) * (CXXL(I)*P(J,I-1) - CXXC(I)*P(J,I) + CXXR(I)*P(J,I+1))
+
+! 修改后（在已知行 P_s 上补加）：
+RHS(J) = RHS(J) - (VC(J) - EMU(J,I1)) * (CXXL(I)*PHI_S(J,I-1) - CXXC(I)*PHI_S(J,I) + CXXR(I)*PHI_S(J,I+1))
+```
+
+*C2：$x$ 跨列超声速修正项（$\phi_{tot,XX}$ 的 upwind 部分）*
+
+```fortran
+RHS(J) = RHS(J) - EMU(J,I2) * (CXXL(I-1)*PHI_S(J,IM2) - CXXC(I-1)*PHI_S(J,I-1) + CXXR(I-1)*PHI_S(J,I))
+```
+
+*C3：$y$ 方向项*
+
+```fortran
+RHS(J) = RHS(J) - (CYYD(J)*PHI_S(J-1,I) - CYYC(J)*PHI_S(J,I) + CYYU(J)*PHI_S(J+1,I))
+```
+
+对 `J = JBOT/JTOP` 的边界特殊处理同现有代码结构。
+
+> 上述 RHS 修改等价于：对 $\phi_r$ 的残差方程 $L[\phi_r] = -L[\phi_s]$ 中补入解析已知的 $\phi_s$ 强迫项。窗过渡区内 $L[\phi_s] \neq 0$（窗梯度项），但有界，不引入新奇性。
+
+**D. 缝面斜率边界条件（`SETBC`）**
+
+```fortran
+! 当前（solver_functions.f90 第 59–60 行）：
+FXLBC(I) = CYYBLU * (FXL(IF1) - ALPHA + WSLP(I,2))
+FXUBC(I) = CYYBUD * (FXU(IF1) - ALPHA + WSLP(I,1))
+
+! 修改后（扣除 φ_s 的法向导数）：
+FXLBC(I) = CYYBLU * (FXL(IF1) - ALPHA + WSLP(I,2) - PHI_SY_SURF(I,2))
+FXUBC(I) = CYYBUD * (FXU(IF1) - ALPHA + WSLP(I,1) - PHI_SY_SURF(I,1))
+```
+
+其中 `PHI_SY_SURF(I,1/2)` 是 $P_{s,Y}(X_i, 0^\pm)$，1D 数组，用表面极限公式预置（无需 2D 插值）。  
+效果：$\phi_r$ 的缝面斜率 BC 变为有界，消除驱动残差中的 $X^{-1/2}$ 奇性注入。  
+注意：$\phi_s$ 对称（偶函数），对 $\Gamma$ 贡献为零（上下斜率符号相反，相加消去），Kutta 条件与 `PJUMP` 读取无需修改（§2.2）。
+
+**E. 迭代控制**
+
+- 初值：只对 $\phi_r$ 赋初值（通常 0 即可；$\phi_s$ 已解析预置，不参与初始化）。
+- 残差监控：监控 $|\phi_r|$ 和 $\phi_r$ 的残差，不再被鼻部奇性主导，收敛应更干净。
+- SOR 松弛步作用在 $\phi_r$ 的更新量 `RHS(J)` 上，无需额外改动。
+
+**F. 后处理**
+
+在 `output_surface`（`pytsfoil.py`）读取 `PX(i,j)` 后，须叠加 $P_{s,X}$ 以还原 $\phi_{tot,X}$，再按现有流程计算 Mach/Cp：
+
+```python
+# 现有：uu_p1 = cjup * tsf.solver_base.px(i_p1, jup) - ...
+# 修改：
+uu_p1 += phi_s_x_surface_upper[i_py]   # P_{s,X}(X_i, 0^+) 预置数组
+ul_p1 += phi_s_x_surface_lower[i_py]   # P_{s,X}(X_i, 0^-)（= P_{s,X}(X_i, 0^+)，对称）
+```
+
+之后再执行任务 6 的 composite 修正，流程不变。$\phi_s$ 在 $s > 10$（窗外）已为 0，过渡区外与现有代码完全一致。
+
+---
+
+##### 7.2.4 新增 Fortran 数组需求
+
+需在 `solver_data.f90` 中新增以下公开数组（由 Python 通过 f2py 填充）：
+
+| 数组名 | 维度 | 说明 |
+|---|---|---|
+| `PHI_S(JMAX, IMAX)` | 2D | $P_s$ 全场（窗化的相似解） |
+| `PHI_SY_SURF(IMAX, 2)` | 1D×2 | $P_{s,Y}(X_i, 0^\pm)$，上下表面各一行 |
+
+内场 RHS 的 C1–C3 修正只需 `PHI_S`（有限差分模板内取邻点），VC 修正同。`PHI_SY_SURF` 仅用于 `SETBC`（1D 表面 BC）。
+
+可选：额外存 `PHI_SX(JMAX, IMAX)` 供后处理用（若不想在 Python 端重算）。
+
+---
+
+##### 7.2.5 主要难点与风险
+
+**难点 1：$f(\xi)$ 大 $\xi$ 渐近**
+
+`inner_parabola.py` 当前的 hodograph 表覆盖 $|\sin\alpha| \leq \alpha_3 = 80.41°$，对应 $\xi$ 范围有限（$\alpha \to \alpha_3$ 时 $\xi \to +\infty$ 的渐近极限）。在外区第一网格行 $J = $ JUP（$Y_J$ 很小，X > 0），$\xi = X/Y^{6/7}$ 可能超出表格。需要补充大 $\xi$ 渐近式 $f(\xi) \approx C\xi^{2/3}$（$C = \cot^{2/3}\alpha_3 \cdot 3^{1/3}$）作为外推 fallback。
+
+**难点 2：窗函数的选择与 RHS 强迫**
+
+$\chi$ 的过渡区（$r_1 < r < r_2$）产生额外 RHS 源（窗梯度项）。源的量级为 $O(|\nabla\chi| \cdot |P_s|)$，若过渡带太窄（$r_2 - r_1 \ll 1$）会产生大梯度；若太宽（$r_2$ 超过激波位置）会污染已收敛的激波解。窗的位置与形状需实验性调整，建议初始取 $r_1 = 2, r_2 = 8$（单位为 $R_c$）。
+
+**难点 3：$Y = 0$ 附近的数值计算**
+
+内区网格行 $J = $ JUP/JLOW 的 $Y_J$ 通常非常小（pyTSFoil 的缝面在 $Y = 0$，近缝第一行约为网格间距 $\Delta Y$）。在这些点上用 2D 插值（$Y^{4/7} f(\xi)$）会面临大 $\xi$ 和小 $Y^{4/7}$ 同时出现，精度依赖大 $\xi$ 渐近的准确性。实际上这些点的 RHS 修正（C3 项）非常小，因为 $P_s \to 0$ 当 $Y \to 0$；对计算精度影响有限，但数值实现须避免 $0/0$ 型的 NaN。
+
+**难点 4：Fortran 数组维度约束**
+
+`solver_data.f90` 中的数组大小由编译期常数 `N_MESH_POINTS` 决定，新增 `PHI_S(JMAX, IMAX)` 需对应 Fortran 模块的实际网格维度。f2py 暴露后在 Python 端赋值时须保证维度匹配（C vs Fortran 列优先顺序）。
+
+**难点 5：与任务 6 composite 的衔接点**
+
+任务 6 的 composite 在 `_apply_le_correction`（后处理，`output_surface` 末尾）中用 `c_{p,TSD}` 作为输入。奇性扣除改变的是 `P` 数组，后处理中 `PX` 须先叠加 $P_{s,X}$ 还原 $\phi_{tot,X}$，然后再用已有 composite 公式。需确保"扣除在求解器内、加回在后处理入口"的边界清晰，避免双重扣除或漏加。
+
+---
+
+##### 7.2.6 可行性结论
+
+**整体判断**：方案理论完备、代码改动局部可控，**可行**。核心修改点明确（`SYOR` 约 5 处，`SETBC` 1 处，`solver_data.f90` 新增 1-2 个数组，Python 后处理 2 处），无需重构 SLOR 框架。
+
+**工作量估计**：
+1. `inner_parabola.py` 扩展（大 $\xi$ 渐近 + 导数 $f'(\xi)$ 输出）：小
+2. 新模块 `leading_edge/singularity_subtraction.py`（2D $\phi_s$/$P_{s,X}$/$P_{s,Y}$ 计算 + 窗函数）：中
+3. `solver_data.f90` 新增数组 + f2py 接口：小
+4. `main_iteration.f90 SYOR` 修改（A+C）：小（各处约 2–4 行）
+5. `solver_functions.f90 SETBC` 修改（D）：小
+6. `pytsfoil.py`（预计算调用 + 后处理叠加）：小
+7. 测试与窗参数调试：中
+
+**推荐实施顺序**：先仅做 D（SETBC 扣除表面 BC）观察收敛改善；再加 A（VC 修正）；最后加 C（RHS 全场修正）。逐步验证，每步与无扣除基准对比 $\Gamma$、$c_p$ 分布和网格收敛性。
+
+### 任务8：前缘修正的渐近匹配的奇性扣除方案实现
+
+#### 8.1 任务描述
+
+基于任务7的理论分析（`7.2 修正方案与可行性分析`），
+在 pyTSFoil 中实现匹配渐近展开+奇性扣除的前缘修正，并以数据库算例验证修正效果。
+
+#### 8.2 完成情况
+
+#### 8.3 测试情况
