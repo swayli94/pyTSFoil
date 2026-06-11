@@ -26,11 +26,10 @@ from pytsfoil import PyTSFoil
 from airfoil_database.utils import load_airfoil_database_from_json
 
 try:
-    from pytsfoil.leading_edge import solve_inner_problem
+    from pytsfoil.leading_edge import solve_inner_problem, apply_composite_correction
 except ImportError:
     solve_inner_problem = None
-
-_COMMON_COEF = 0.635776   # same constant as composite.py
+    apply_composite_correction = None
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 fname_db  = os.path.join(path_root, 'airfoil_database', 'airfoil_database.json')
@@ -74,62 +73,10 @@ def _cp_isentropic(ma, minf, gamma=GAMMA):
     return (2.0 / (gamma * minf ** 2)) * ((numer / denom) ** (gamma / (gamma - 1.0)) - 1.0)
 
 
-def _compute_correction_terms(x_surface, u_surface, cpfact, emach, R_c, inner_tables,
-                               gamma=GAMMA):
-    """Recompute every intermediate quantity in apply_composite_correction for diagnostics."""
-    s_tab = inner_tables['s']
-    s_max = s_tab[-1]
-    s_min = 0.01   # hard-clamp threshold  (bracket forced to 0 below this)
-    s_b0  = 5.0    # blend-out start
-    s_b1  = 10.0   # blend-out end
-
-    s_full    = x_surface / R_c
-    s_clamp   = np.clip(s_full, s_tab[0], s_max)
-    cp_star   = np.interp(s_clamp, s_tab, inner_tables['cp_star'])
-    rho_ratio = np.interp(s_clamp, s_tab, inner_tables['rho_ratio'])
-    phi_ox    = np.interp(s_clamp, s_tab, inner_tables['phi_ox'])
-    phi_ox    = np.clip(phi_ox,    0.0, 1.0)
-    rho_ratio = np.clip(rho_ratio, 0.0, 2.0)
-
-    cp_tsd    = -2.0 * u_surface * cpfact
-    s_safe    = np.maximum(s_full, 1e-6)
-    cp_common = _COMMON_COEF / (gamma + 1.0) ** (1.0 / 3.0) * s_safe ** (-1.0 / 3.0)
-    bracket   = np.where(s_full >= s_min, cp_tsd - cp_common, 0.0)
-
-    cp_composite = cp_star + rho_ratio * phi_ox * bracket
-
-    t = np.clip((s_full - s_b0) / (s_b1 - s_b0), 0.0, 1.0)
-    w = t * t * (3.0 - 2.0 * t)           # smoothstep
-    cp_blended = (1.0 - w) * cp_composite + w * cp_tsd
-    cp_blended = np.where(s_full > s_max, cp_tsd, cp_blended)
-    cp_blended = np.where(x_surface < 0.0, cp_tsd, cp_blended)
-    cp_stag    = (2.0 / (gamma * emach ** 2)) * (
-        (1.0 + 0.5 * (gamma - 1.0) * emach ** 2) ** (gamma / (gamma - 1.0)) - 1.0)
-    cp_blended = np.minimum(cp_blended, cp_stag)
-
-    return {
-        's':                    s_full,
-        'cp_tsd':               cp_tsd,
-        'cp_common':            cp_common,
-        'bracket':              bracket,
-        'cp_star':              cp_star,
-        'rho_ratio':            rho_ratio,
-        'phi_ox':               phi_ox,
-        'rho_phi_bracket':      rho_ratio * phi_ox * bracket,
-        'cp_composite_pre':     cp_composite,   # before blend-out
-        'blend_weight':         w,
-        'cp_composite':         cp_blended,
-        # key thresholds in x-space
-        'x_smin':   R_c * s_min,
-        'x_sb0':    R_c * s_b0,
-        'x_sb1':    R_c * s_b1,
-        'x_smax':   R_c * s_max,
-    }
-
-
 def run_single(airfoil: dict) -> dict:
     """Worker: run baseline and corrected cases for one airfoil."""
     try:
+    # if True:
         t0 = time.time()
 
         cst_u  = airfoil['cst_u']
@@ -191,7 +138,7 @@ def run_single(airfoil: dict) -> dict:
 
         # ── correction diagnostics ────────────────────────────────────────────
         diag = None
-        if solve_inner_problem is not None:
+        if apply_composite_correction is not None and solve_inner_problem is not None:
             ts_b  = ts_cache['baseline']
             R_c   = ts_b.airfoil.get('R_c')
             h     = ts_b.airfoil.get('h_nose')
@@ -203,20 +150,29 @@ def run_single(airfoil: dict) -> dict:
                 ile_b  = ts_b.mesh['ile']
                 ite_b  = ts_b.mesh['ite']
                 x_foil = ts_b.mesh['xx'][ile_b:ite_b + 1]
-                uu_raw = ts_b.data_summary['uu'][ile_b:ite_b + 1]
-                ul_raw = ts_b.data_summary['ul'][ile_b:ite_b + 1]
+                cpu_foil = ts_b.data_summary['cpu'][ile_b:ite_b + 1]
+                cpl_foil = ts_b.data_summary['cpl'][ile_b:ite_b + 1]
+                result = ts_b._adaptive_blend_range()
+                _, _, debug_upper = apply_composite_correction(
+                    x_foil, cpu_foil, airfoil['Ma'], R_c, inner_tables,
+                    x_blend_range=result['x_blend_range_upper'],
+                    gamma=ts_b._gamma, debug=True)
+                _, _, debug_lower = apply_composite_correction(
+                    x_foil, cpl_foil, airfoil['Ma'], R_c, inner_tables,
+                    x_blend_range=result['x_blend_range_lower'],
+                    gamma=ts_b._gamma, debug=True)
+
                 diag = {
                     'x_foil':  x_foil,
-                    'upper':   _compute_correction_terms(
-                        x_foil, uu_raw, ts_b._cpfact, airfoil['Ma'],
-                        R_c, inner_tables, ts_b._gamma),
-                    'lower':   _compute_correction_terms(
-                        x_foil, ul_raw, ts_b._cpfact, airfoil['Ma'],
-                        R_c, inner_tables, ts_b._gamma),
+                    'upper':   debug_upper,
+                    'lower':   debug_lower,
                     'R_c': R_c, 'h': h,
                 }
 
-        _plot(airfoil, results, xx)
+        ts_b  = ts_cache['baseline']
+        nose_R_c = ts_b.airfoil.get('R_c')
+        nose_h   = ts_b.airfoil.get('h_nose')
+        _plot(airfoil, results, xx, R_c=nose_R_c, h=nose_h)
         if diag is not None:
             _plot_corrections(airfoil, results, diag)
 
@@ -230,6 +186,7 @@ def run_single(airfoil: dict) -> dict:
             'results':      results,
         }
     except Exception as e:
+        print(f"Error in case {airfoil['entry_index']}: {e}")
         import traceback
         return {
             'success':     False,
@@ -238,7 +195,7 @@ def run_single(airfoil: dict) -> dict:
         }
 
 
-def _plot(airfoil, results, xx):
+def _plot(airfoil, results, xx, R_c=None, h=None):
     idx = airfoil['entry_index']
     Ma  = airfoil['Ma']
     AoA = airfoil['AoA']
@@ -251,9 +208,32 @@ def _plot(airfoil, results, xx):
     r_c = results['corrected']
 
     ax = axes[0]
-    ax.plot(airfoil['xu'], airfoil['yu'], 'g-')
-    ax.plot(airfoil['xl'], airfoil['yl'], 'g-')
-    ax.set(title='Geometry', xlabel='x/c', ylabel='y/c')
+    ax.plot(airfoil['xu'], airfoil['yu'], 'g-', lw=1.5, label='Airfoil')
+    ax.plot(airfoil['xl'], airfoil['yl'], 'g-', lw=1.5)
+    if R_c is not None and h is not None and R_c > 0:
+        # Parabolic nose: stored h = h_coef/2 (Rusak convention y_surface = 2h*sqrt(x)),
+        # so the coefficient that fits the actual surface is h_coef = 2h.
+        h_coef = 2.0 * h
+        x_le = np.linspace(0.0, 0.15, 400)
+        ax.plot(x_le,  h_coef * np.sqrt(x_le), 'r--', lw=1.2, label=f'$2h\\sqrt{{x}}$  (parabola fit)')
+        ax.plot(x_le, -h_coef * np.sqrt(x_le), 'r--', lw=1.2)
+        # Osculating circle at LE tip: centre (R_c, 0), radius R_c
+        theta = np.linspace(0.0, 2.0 * np.pi, 360)
+        ax.plot(R_c + R_c * np.cos(theta), R_c * np.sin(theta),
+                'b:', lw=0.9, label=f'LE circle ($R_c$)')
+        ax.annotate(f'$R_c$={R_c:.5f}\n$h$={h:.4f}',
+                    xy=(0, 0), xytext=(0.04, h_coef * np.sqrt(0.04) * 1.4),
+                    fontsize=7, color='navy',
+                    arrowprops=dict(arrowstyle='->', color='navy', lw=0.8))
+        # Zoom to LE region so the parabola is visible
+        y_half = max(h_coef * np.sqrt(0.15) * 1.3, R_c * 2.2)
+        ax.set_xlim(-R_c * 0.5, 0.15)
+        ax.set_ylim(-y_half, y_half)
+        ax.set_aspect('equal', adjustable='box')
+        ax.set(title='Geometry — LE zoom', xlabel='x/c', ylabel='y/c')
+    else:
+        ax.set(title='Geometry', xlabel='x/c', ylabel='y/c')
+    ax.legend(fontsize=7)
     ax.grid()
 
     ax = axes[1]
@@ -287,19 +267,7 @@ def _plot(airfoil, results, xx):
 
 
 def _plot_corrections(airfoil, results, diag):
-    """Figure 2: visualise every intermediate term of the composite correction.
 
-    Subplots:
-      [0,0] LE zoom — cp_tsd, cp_common (s^{-1/3}), bracket = cp_tsd − cp_common
-            Vertical lines mark: s_min (bracket clamp) and s_b0 (blend-out start).
-      [0,1] Composition of cp_composite on lower surface:
-            cp_star (inner), rho*phi*bracket (outer matching), sum = cp_composite,
-            plus the actual corrected Cp from pytsfoil for cross-check.
-      [1,0] Transition functions vs x: phi_ox, rho_ratio, blend weight w(x).
-            Shaded band marks the [s_b0, s_b1] blend-out region.
-      [1,1] Net correction ΔCp = cp_corrected − cp_tsd for upper and lower.
-            Shaded band marks where the correction is active (0 ≤ x ≤ x_sb1).
-    """
     idx = airfoil['entry_index']
     Ma  = airfoil['Ma']
     AoA = airfoil['AoA']
@@ -309,54 +277,64 @@ def _plot_corrections(airfoil, results, diag):
     dl     = diag['lower']
     xx     = results['baseline']['xx']
 
+    r_b = results['baseline']
+    r_c = results['corrected']
+
     # find airfoil-region mask in the full xx array (for corrected Cp lookup)
     ile_mask = (xx >= x_foil[0] - 1e-9) & (xx <= x_foil[-1] + 1e-9)
     xx_af    = xx[ile_mask]
 
-    cpu_base = results['baseline']['cpu'][ile_mask]
-    cpl_base = results['baseline']['cpl'][ile_mask]
-    cpu_corr = results['corrected']['cpu'][ile_mask]
-    cpl_corr = results['corrected']['cpl'][ile_mask]
+    cpu_corr = r_c['cpu'][ile_mask]
+    cpl_corr = r_c['cpl'][ile_mask]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     fig.suptitle(
         f"Case {idx} | Ma={Ma:.3f}, AoA={AoA:.2f}° — Composite correction terms",
         fontsize=11)
 
-    LE_XLIM = 0.15
+    x_smin, x_b0, x_b1 = dl['x_smin'], dl['x_sb0'], dl['x_sb1']
 
-    # ── [0,0] cp_tsd / cp_common / bracket at LE ─────────────────────────────
+    # ── [0,0] Composition of cp_composite on upper surface ───────────────────
     ax = axes[0, 0]
-    mask = x_foil <= LE_XLIM
-    ax.plot(x_foil[mask], du['cp_tsd'][mask],    'b-',  lw=1.5, label='cp_tsd upper  (= −2U·cpfact)')
-    ax.plot(x_foil[mask], dl['cp_tsd'][mask],    'r-',  lw=1.5, label='cp_tsd lower')
-    ax.plot(x_foil[mask], dl['cp_common'][mask],  'k--', lw=1.5, label='cp_common  (C·s^{−1/3})')
-    ax.plot(x_foil[mask], dl['bracket'][mask],    'g-',  lw=1.2, label='bracket lower  (cp_tsd − cp_common)')
-    ax.plot(x_foil[mask], du['bracket'][mask],    'g--', lw=0.8, alpha=0.6, label='bracket upper')
-    ax.axvline(dl['x_smin'], color='purple', ls=':', lw=1.5,
-               label=f"x_smin = R_c·s_min  ({dl['x_smin']:.4f})")
-    ax.axvline(dl['x_sb0'],  color='orange', ls=':', lw=1.5,
-               label=f"x_sb0  = R_c·5       ({dl['x_sb0']:.4f})")
+    mask = x_foil <= 0.25
+    ax.plot(x_foil[mask], du['cp_inner'][mask],            'y-', lw=2, label='cp_inner')
+    ax.plot(x_foil[mask], du['cp_tsd'][mask],               'r-', lw=2, label='cp_tsd')
+    ax.plot(x_foil[mask], du['cp_common'][mask],           'g--', lw=2, label='cp_common')
+    ax.plot(x_foil[mask], du['rho_phi_bracket'][mask],     'g-', lw=1, label='ρ·φ_ox·bracket (outer match)')
+    ax.plot(x_foil[mask], du['cp_composite_original'][mask],'b-', lw=2, label='cp_composite (original)')
+    ax.plot(x_foil[mask], du['cp_composite_blended'][mask], 'k--', lw=1.5, label='cp_final (blended composite)')
+    mask_af = xx_af <= 0.25
+    ax.plot(xx_af[mask_af], cpu_corr[mask_af], 'k^', ms=5, markevery=1,
+            label='cp_final (pytsfoil output)')
+    ax.axvspan(du['x_sb0'], min(du['x_sb1'], x_foil[-1]), alpha=0.10, color='green',
+               label=f'blend region [{x_b0:.3f}, {du['x_sb1']:.3f}]')
+    ax.axvline(x_smin, color='purple', ls=':', lw=1, label=f"x_smin={x_smin:.4f}")
     ax.axhline(0, color='gray', lw=0.5)
-    ax.set(title='LE singularity structure  (x ≤ 15%c)',
+    ax.invert_yaxis()
+    ax.set(title='cp_composite decomposition — upper surface  (x ≤ 25%c)',
            xlabel='x/c', ylabel='Cp')
-    ax.set_xlim(-0.005, LE_XLIM)
+    ax.set_xlim(-0.005, 0.25)
     ax.legend(fontsize=7); ax.grid()
 
     # ── [0,1] Composition of cp_composite on lower surface ───────────────────
     ax = axes[0, 1]
     mask2 = x_foil <= 0.25
-    ax.plot(x_foil[mask2], dl['cp_star'][mask2],        'orange', lw=2,   label='cp_star  (inner solution)')
-    ax.plot(x_foil[mask2], dl['rho_phi_bracket'][mask2], 'g-',    lw=1.5, label='ρ·φ_ox·bracket  (outer match)')
-    ax.plot(x_foil[mask2], dl['cp_composite_pre'][mask2],'b-',    lw=2,   label='cp_composite_pre  (sum, before blend)')
-    ax.plot(x_foil[mask2], dl['cp_composite'][mask2],    'b--',   lw=1.5, label='cp_composite  (after blend+cap)')
-    ax.plot(x_foil[mask2], dl['cp_tsd'][mask2],          'r--',   lw=1,   alpha=0.5, label='cp_tsd  (raw TSD)')
+    ax.plot(x_foil[mask2], dl['cp_inner'][mask2],             'y--', lw=2, label='cp_inner')
+    ax.plot(x_foil[mask2], dl['cp_tsd'][mask2],               'r-', lw=2, label='cp_tsd')
+    ax.plot(x_foil[mask2], dl['cp_common'][mask2],           'g--', lw=2, label='cp_common')
+    ax.plot(x_foil[mask2], dl['rho_phi_bracket'][mask2],      'g-', lw=1, label='ρ·φ_ox·bracket  (outer match)')
+    ax.plot(x_foil[mask2], dl['cp_composite_original'][mask2],'b-', lw=2,   label='cp_composite (original)')
+    ax.plot(x_foil[mask2], dl['cp_composite_blended'][mask2], 'k--', lw=1.5, label='cp_final (blended composite)')
+    
     # pytsfoil output as cross-check
     mask_af2 = xx_af <= 0.25
-    ax.plot(xx_af[mask_af2], cpl_corr[mask_af2], 'k^', ms=3, markevery=3,
-            label='cpl_corrected  (pytsfoil output)')
-    ax.axvline(dl['x_smin'], color='purple', ls=':', lw=1)
+    ax.plot(xx_af[mask_af2], cpl_corr[mask_af2], 'k^', ms=5, markevery=1,
+            label='cp_final (pytsfoil output)')
+    ax.axvspan(dl['x_sb0'], min(dl['x_sb1'], x_foil[-1]), alpha=0.10, color='green',
+               label=f'blend region [{dl["x_sb0"]:.3f}, {dl["x_sb1"]:.3f}]')
+    ax.axvline(x_smin, color='purple', ls=':', lw=1, label=f"x_smin={x_smin:.4f}")
     ax.axhline(0, color='gray', lw=0.5)
+    ax.invert_yaxis()
     ax.set(title='cp_composite decomposition — lower surface  (x ≤ 25%c)',
            xlabel='x/c', ylabel='Cp')
     ax.set_xlim(-0.005, 0.25)
@@ -364,34 +342,33 @@ def _plot_corrections(airfoil, results, diag):
 
     # ── [1,0] Transition functions ────────────────────────────────────────────
     ax = axes[1, 0]
-    ax.plot(x_foil, dl['phi_ox'],     'b-',  lw=1.5, label='φ_ox  (inner axial vel, 0→1)')
-    ax.plot(x_foil, dl['rho_ratio'],  'r-',  lw=1.5, label='ρ*/ρ_inf  (inner density ratio)')
+    ax.plot(x_foil, dl['rho_ratio']*dl['phi_ox'], 'b-',  lw=1.5, label='ρ*/ρ_inf*φ_ox')
     ax.plot(x_foil, dl['blend_weight'], 'g-', lw=1.5, label='blend weight w(x)  (smoothstep)')
-    x_b0, x_b1 = dl['x_sb0'], dl['x_sb1']
-    ax.axvspan(x_b0, min(x_b1, x_foil[-1]), alpha=0.10, color='green',
-               label=f'blend-out region [{x_b0:.3f}, {x_b1:.3f}]')
-    ax.axvline(dl['x_smin'], color='purple', ls=':', lw=1, label=f"x_smin={dl['x_smin']:.4f}")
+    ax.axvspan(dl['x_sb0'], min(dl['x_sb1'], x_foil[-1]), alpha=0.10, color='green',
+               label=f'blend region [{dl["x_sb0"]:.3f}, {dl["x_sb1"]:.3f}]')
+    ax.axvline(x_smin, color='purple', ls=':', lw=1, label=f"x_smin={x_smin:.4f}")
     ax.axhline(0, color='gray', lw=0.5)
     ax.axhline(1, color='gray', lw=0.5, ls='--')
     ax.set(title='Transition functions (same for upper & lower)',
            xlabel='x/c', ylabel='value')
-    ax.set_xlim(-0.005, x_foil[-1])
+    ax.set_xlim(-0.005, 0.25)
     ax.legend(fontsize=7); ax.grid()
 
     # ── [1,1] Net correction ΔCp ─────────────────────────────────────────────
     ax = axes[1, 1]
-    dcp_u = cpu_corr - cpu_base
-    dcp_l = cpl_corr - cpl_base
-    ax.plot(xx_af, dcp_u, 'b-',  lw=1.5, label='ΔCp upper  (cp_corrected − cp_baseline)')
-    ax.plot(xx_af, dcp_l, 'r-',  lw=1.5, label='ΔCp lower')
-    x_b1_clip = min(dl['x_sb1'], xx_af[-1])
-    ax.axvspan(0.0, x_b1_clip, alpha=0.08, color='blue', label='correction active (0 → x_sb1)')
-    ax.axvline(dl['x_smin'], color='purple', ls=':', lw=1, label=f"x_smin={dl['x_smin']:.4f}")
-    ax.axvline(dl['x_sb0'],  color='orange', ls=':', lw=1, label=f"x_sb0={x_b0:.4f}")
-    ax.axhline(0, color='gray', lw=0.5)
-    ax.set(title='Net correction ΔCp = cp_corrected − cp_baseline',
-           xlabel='x/c', ylabel='ΔCp')
-    ax.set_xlim(-0.005, xx_af[-1])
+    ax.plot(xx, r_b['cpu'], 'b--', label='TSD upper')
+    ax.plot(xx, r_b['cpl'], 'b--', label='TSD lower')
+    ax.plot(xx, r_c['cpu'], 'r-',  label='Corrected upper')
+    ax.plot(xx, r_c['cpl'], 'r-',  label='Corrected lower')
+    ax.plot(airfoil['xu'], airfoil['cpu'], 'g^', markevery=5, label='RANS upper', ms=4)
+    ax.plot(airfoil['xl'], airfoil['cpl'], 'gv', markevery=5, label='RANS lower', ms=4)
+    ax.axvspan(dl['x_sb0'], min(dl['x_sb1'], x_foil[-1]), alpha=0.10, color='green',
+               label=f'blend region (lower)')
+    ax.axvspan(du['x_sb0'], min(du['x_sb1'], x_foil[-1]), alpha=0.10, color='red',
+               label=f'blend region (lower)')
+    ax.invert_yaxis()
+    ax.set(title='Cp Distribution', xlabel='x/c', ylabel='Cp')
+    ax.set_xlim(-0.005, 0.25)
     ax.legend(fontsize=7); ax.grid()
 
     fig.tight_layout()
@@ -432,6 +409,11 @@ if __name__ == '__main__':
     print(f"Running {N_CASES} cases with N_PROCESS={N_PROCESS} ...")
     with mp.Pool(N_PROCESS) as pool:
         all_results = pool.map(run_single, cases)
-
+        
+    # all_results = []
+    # for airfoil in cases:
+    #     result = run_single(airfoil)
+    #     all_results.append(result)
+    
     print_summary(all_results)
     print(f"Figures saved to {path_figs}/")

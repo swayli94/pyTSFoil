@@ -40,6 +40,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy import integrate
 import matplotlib.pyplot as plt
+from typing import Dict, Any
 
 try:
     from .leading_edge import (solve_inner_problem, apply_composite_correction,
@@ -61,6 +62,31 @@ except ImportError as e:
     print("Make sure you have compiled the Fortran modules with f2py:")
     print("  python3 pyTSFoil/compile_f2py.py")
     sys.exit(1)
+
+
+def calculate_cp_isentropic(ma: np.ndarray, minf: float, gamma: float = 1.4) -> np.ndarray:
+    '''
+    Calculate the isentropic pressure coefficient from local Mach number and freestream Mach number.
+
+    Parameters
+    ----------
+    ma: np.ndarray
+        Local Mach number at each point.
+        
+    minf: float
+        Freestream Mach number.
+        
+    gamma: float, optional
+        Ratio of specific heats (default is 1.4 for air).
+        
+    Returns
+    -------
+    cp: np.ndarray
+        Isentropic pressure coefficient at each point.
+    '''
+    denom = 2.0 + (gamma - 1.0) * ma ** 2
+    numer = 2.0 + (gamma - 1.0) * minf ** 2
+    return (2.0 / (gamma * minf ** 2)) * ((numer / denom) ** (gamma / (gamma - 1.0)) - 1.0)
 
 
 class PyTSFoil(object):
@@ -326,7 +352,8 @@ class PyTSFoil(object):
         self._fit_nose_geometry()
 
     def _fit_nose_geometry(self) -> None:
-        """Fit parabolic nose parameters h (shape constant) and R_c (curvature radius).
+        """
+        Fit parabolic nose parameters h (shape constant) and R_c (curvature radius).
 
         Model: half-thickness t(x) ~ h * sqrt(x) for x in (0, x_fit_max], c=1.
         Derives from ct(x/c) ~ 2h*(cx)^{1/2}  =>  t(x) = 2h*sqrt(c)*sqrt(x)/c = 2h*sqrt(x) for c=1.
@@ -366,7 +393,8 @@ class PyTSFoil(object):
             print(f"  Nose fit: h = {h:.5f},  R_c = {R_c:.6f}")
 
     def _apply_singularity_subtraction_bc(self) -> None:
-        """Steps A+C+E (always) and optional D: populate 2D PHI_S for SYOR.
+        """
+        Steps A+C+E (always) and optional D: populate 2D PHI_S for SYOR.
 
         Steps always applied:
           A - PHI_S 2D array filled so SYOR uses phi_tot,x = phi_r,x + phi_s,x
@@ -604,13 +632,11 @@ class PyTSFoil(object):
 
     def _cp_isentropic(self, ma: np.ndarray, minf: float) -> np.ndarray:
         '''
-        Isentropic pressure coefficient from local Mach number and freestream Mach number.
+        Isentropic pressure coefficient from local Mach number and free-stream Mach number.
 
         More accurate than the linearized TSD formula for moderate-to-large perturbations.
         '''
-        denom = 2.0 + (self._gamma - 1.0) * ma ** 2
-        numer = 2.0 + (self._gamma - 1.0) * minf ** 2
-        return (2.0 / (self._gamma * minf ** 2)) * ((numer / denom) ** (self._gamma / (self._gamma - 1.0)) - 1.0)
+        return calculate_cp_isentropic(ma, minf, gamma=self._gamma)
 
     def compute_geometry_derivatives(self):
         '''
@@ -1118,8 +1144,37 @@ class PyTSFoil(object):
             if self.config['flag_print_info']:
                 print('Output to cpxs.dat: Cp, Mach distribution on a x-line (Y=0)')
     
+    def _adaptive_blend_range(self, active: bool=True) -> Dict[str, Any]:
+        '''
+        Adaptive blending range for leading-edge correction.
+        The blending range is determined based on angle of attack and upper/lower surface.
+        '''
+        xpi = 0.00
+        xb0 = 0.005
+        xb1 = 0.10
+        result = {
+            'x_pure_inner_upper': xpi,
+            'x_blend_range_upper': (xb0, xb1),
+            'x_pure_inner_lower': xpi,
+            'x_blend_range_lower': (xb0, xb1)
+        }
+        
+        if active:
+            alpha_rad = np.radians(self.data_summary['alpha'])
+            xb0_u = max(xpi, xpi - alpha_rad * 1)
+            xb1_u = max(xb0, xb0 - alpha_rad * 2)
+            xb0_l = max(xpi, xpi + alpha_rad * 1)
+            xb1_l = max(xb0, xb0 + alpha_rad * 4)
+            
+            result['x_blend_range_upper'] = (xb0_u, xb1_u)
+            result['x_blend_range_lower'] = (xb0_l, xb1_l)
+
+        
+        return result
+    
     def _apply_le_correction(self) -> None:
-        """Apply MAE composite correction (post-processing, non-invasive).
+        """
+        Apply MAE composite correction (post-processing, non-invasive).
 
         Replaces cpu/cpl/mau/mal in data_summary with composite values.
         Also stores corrected CL, CM in data_summary under 'cl_le', 'cm_le'.
@@ -1135,8 +1190,6 @@ class PyTSFoil(object):
             return
 
         emach  = float(tsf.common_data.emach)
-        delta  = float(tsf.common_data.delta)
-        cpfact = self._cpfact
 
         # Resolve cache directory relative to the package location
         cache_dir = os.path.join(os.path.dirname(__file__),
@@ -1157,14 +1210,19 @@ class PyTSFoil(object):
 
         # Extract airfoil-region x-coordinates and raw perturbation velocities
         x_foil = xx[ile:ite + 1]
-        uu_foil = self.data_summary['uu'][ile:ite + 1]
-        ul_foil = self.data_summary['ul'][ile:ite + 1]
+        cpu_foil = self.data_summary['cpu'][ile:ite + 1]
+        cpl_foil = self.data_summary['cpl'][ile:ite + 1]
 
         # Apply composite correction to upper and lower surfaces
-        cpu_new, mau_new = apply_composite_correction(
-            x_foil, uu_foil, cpfact, emach, R_c, inner_tables, self._gamma)
-        cpl_new, mal_new = apply_composite_correction(
-            x_foil, ul_foil, cpfact, emach, R_c, inner_tables, self._gamma)
+        result = self._adaptive_blend_range()
+        cpu_new, mau_new, _ = apply_composite_correction(
+            x_foil, cpu_foil, emach, R_c, inner_tables,
+            x_blend_range=result['x_blend_range_upper'],
+            gamma=self._gamma)
+        cpl_new, mal_new, _ = apply_composite_correction(
+            x_foil, cpl_foil, emach, R_c, inner_tables,
+            x_blend_range=result['x_blend_range_lower'],
+            gamma=self._gamma)
 
         # Write corrected values back into the full arrays
         cpu_full = self.data_summary['cpu'].copy()
@@ -1190,7 +1248,6 @@ class PyTSFoil(object):
         self.data_summary['cm_le'] = cm_le
 
         if self.config.get('flag_print_info', False):
-            n_ma0_before = int(np.sum(self.data_summary['mal'] == 0.0))
             print(f"  LE correction applied: CL_le={cl_le:.5f}, CM_le={cm_le:.5f}")
 
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
