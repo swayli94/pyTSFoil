@@ -1187,7 +1187,7 @@ Idx     Ma    AoA  nMa0_B nMa0_C nMa0_S nMa0_F   rmCp_B  rmCp_C  rmCp_S  rmCp_F 
 **已实现：步骤 D LE closure（`apply_step_d=True`，`step_d_method`）**
 
 核心逻辑在 `pytsfoil/leading_edge/singularity_subtraction.py` 中新增函数
-`apply_step_d_le_closure(fxu, fxl, phi_sy_upper, x_foil, method, n_fit)`：
+`calculate_phi_ry(fxu, fxl, phi_sy_upper, x_foil, method, n_fit)`：
 
 1. 计算残差边界条件：`phi_ry_upper = FXU - phi_sy_upper`，`phi_ry_lower = FXL + phi_sy_upper`。
 2. 定位"前缘有效修正区"：`i_eff = argmax(phi_sy_upper > 0)`（即第一个 x>0 的网格点，通常 `i_eff=1`）。

@@ -31,6 +31,6 @@ example/run_database_*/results_database.json
 
 inner_tables_cache/
 
-test_*/figures
+test_*/figures*
 test_*/temp_results
 test_*/*.json

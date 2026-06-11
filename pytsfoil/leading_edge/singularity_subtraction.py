@@ -86,103 +86,55 @@ def compute_surface_corrections(
     return phi_sy_upper.astype(np.float32), phi_sx_surface.astype(np.float32)
 
 
-def apply_step_d_le_closure(
+def calculate_phi_ry(
         fxu: np.ndarray,
         fxl: np.ndarray,
-        phi_sy_upper: np.ndarray,
+        fx_camber: np.ndarray,
+        phi_sy: np.ndarray,
         x_foil: np.ndarray,
-        method: str = 'sqrt_fit',
-        n_fit: int = 6,
-) -> tuple:
+        x_blend_range: tuple = (0.002, 0.010),
+    ) -> tuple:
     """
-    Step D LE closure: return regularized residual BCs phi_ry for the solver.
+    Calculate the regularised residual BCs phi_ry for the Step D LE closure.
 
-    phi_ry_upper = FXU - phi_sy_upper  (upper: removes x^{-1/2} spike)
-    phi_ry_lower = FXL + phi_sy_upper  (lower: symmetric thickness)
+    - `phi_ry_upper = FXU - phi_sy`
+    - `phi_ry_lower = FXL + phi_sy`
 
-    Near x=0, phi_ry has the theoretical form
-        phi_ry(x) ≈ c1/delta + c2/delta * sqrt(x) + O(x)
-    because FXU and phi_sy both diverge as x^{-1/2} and cancel, leaving a
-    finite intercept c1/delta and a sqrt(x) correction.  The three closure
-    methods extrapolate this series back to x=0:
-
-      'sqrt_fit'  (default) — fit phi_ry = A + B*sqrt(x) with n_fit points
-                              and use A as the x=0 value.  Mesh-convergent and
-                              numerically stable: the sqrt-basis is well-scaled
-                              and eliminates the O(sqrt(x)) bias present in
-                              both constant and linear methods.
-      'linear'              — fit phi_ry = A + B*x with n_fit points and use
-                              A as x=0.  Linear-in-x basis diverges in slope as
-                              mesh refines (d phi_ry/dx ~ x^{-1/2} → ∞), so
-                              the intercept A is mesh-convergent only because
-                              the large slope * small x terms cancel; less
-                              stable than 'sqrt_fit' on coarse meshes.
-      'constant'            — use phi_ry[i_eff] directly (no fitting).  Fastest
-                              but retains an O(sqrt(x[i_eff])) bias.
-
+    This formula removes the leading-order x^{-1/2} singularity from the raw residual BCs, 
+    but it has some numerical issues near x=0.
+    
+    - At x=0, `phi_sy` is set to zero to avoid numerical issues, but FXU/FXL are not.
+    - The `phi_sy` is not a perfect match to the actual singularity in FXU/FXL,
+      so the subtraction is not exact. The `phi_ry` distribution is not perfect near the LE.
+    - Theoretically, `phi_ry` should approach the slope of camber `FX_CAMBER` near the LE.
+    
+    To mitigate these issues, this function applies a closure to smoothly transition the `phi_ry` values from their raw computed values to the slope of camber in the region of
+    `x in [0, x_blending]`.
+    
     Parameters
     ----------
-    fxu, fxl      : surface slopes FXU/delta, FXL/delta (nfoil,)
-    phi_sy_upper  : Step-D correction from compute_surface_corrections (nfoil,)
-    x_foil        : chord-normalised x-coordinates (nfoil,); x[0] = 0 assumed
-    method        : 'sqrt_fit' | 'linear' | 'constant'
-    n_fit         : number of points from effective zone used for fitting
+    fxu, fxl    : surface slopes (nfoil,)
+    fx_camber   : camber slope (nfoil,)
+    phi_sy      : Step-D correction from compute_surface_corrections (nfoil,)
+    x_foil      : chord-normalised x-coordinates (nfoil,); x[0] = 0 assumed
+    x_blending  : length of blending region from LE (default 0.05)
 
     Returns
     -------
-    fxu_modified, fxl_modified : float32 arrays (nfoil,)
+    fxu_modified, fxl_modified : (nfoil,)
     """
-    phi_ry_upper = fxu.astype(np.float64) - phi_sy_upper.astype(np.float64)
-    phi_ry_lower = fxl.astype(np.float64) + phi_sy_upper.astype(np.float64)
+    phi_ry_upper = fxu - phi_sy
+    phi_ry_lower = fxl + phi_sy
+    
+    # Smooth transition weight: smoothstep (C1)
+    t = np.clip((x_foil-x_blend_range[0]) / (x_blend_range[1] - x_blend_range[0]), 0.0, 1.0)
+    w = t * t * (3.0 - 2.0 * t)
+    
+    # Blend phi_ry towards fx_camber near the LE to mitigate numerical issues
+    phi_ry_upper = (1.0 - w) * fx_camber + w * phi_ry_upper
+    phi_ry_lower = (1.0 - w) * fx_camber + w * phi_ry_lower
 
-    effective = phi_sy_upper > 0.0
-    if not effective.any():
-        return phi_ry_upper.astype(np.float32), phi_ry_lower.astype(np.float32)
-
-    i_eff = int(np.argmax(effective))
-    if i_eff == 0:
-        return phi_ry_upper.astype(np.float32), phi_ry_lower.astype(np.float32)
-
-    i_end = min(i_eff + n_fit, len(phi_ry_upper))
-    n_pts = i_end - i_eff
-
-    if method == 'constant' or n_pts < 2:
-        val_u = phi_ry_upper[i_eff]
-        val_l = phi_ry_lower[i_eff]
-    elif method == 'linear':
-        # Fit phi_ry = A + B*x; evaluate at x=0 → A
-        x_fit = x_foil[i_eff:i_end]
-        A_u, _ = _fit_intercept(x_fit, phi_ry_upper[i_eff:i_end])
-        A_l, _ = _fit_intercept(x_fit, phi_ry_lower[i_eff:i_end])
-        val_u, val_l = A_u, A_l
-    elif method == 'sqrt_fit':
-        # Fit phi_ry = A + B*sqrt(x); evaluate at x=0 → A
-        sx_fit = np.sqrt(x_foil[i_eff:i_end])
-        A_u, _ = _fit_intercept(sx_fit, phi_ry_upper[i_eff:i_end])
-        A_l, _ = _fit_intercept(sx_fit, phi_ry_lower[i_eff:i_end])
-        val_u, val_l = A_u, A_l
-    else:
-        raise ValueError(f"apply_step_d_le_closure: unknown method '{method}'")
-
-    phi_ry_upper[:i_eff] = val_u
-    phi_ry_lower[:i_eff] = val_l
-
-    return phi_ry_upper.astype(np.float32), phi_ry_lower.astype(np.float32)
-
-
-def _fit_intercept(x: np.ndarray, y: np.ndarray):
-    """Least-squares linear fit y = A + B*x; return (A, B)."""
-    n = len(x)
-    if n < 2:
-        return float(y[0]), 0.0
-    sx  = float(np.sum(x));  sx2 = float(np.sum(x ** 2))
-    sy  = float(np.sum(y));  sxy = float(np.sum(x * y))
-    det = n * sx2 - sx ** 2
-    if abs(det) < 1e-30:
-        return float(y[0]), 0.0
-    A = (sx2 * sy - sx * sxy) / det
-    B = (n  * sxy - sx * sy)  / det
-    return A, B
+    return phi_ry_upper, phi_ry_lower
 
 
 def compute_phi_s_2d(
@@ -230,6 +182,8 @@ def compute_phi_s_2d(
     chi = _window(r, r1, r2)
 
     # phi_s = A * X^{2/3} * chi  (zero where X <= 0)
-    phi_s = np.where(XX > 0.0, A * XX ** (2.0 / 3.0) * chi, 0.0)
+    # np.maximum clamps negatives to 0 before the fractional power to avoid
+    # nan from (-x)^(2/3) in float arithmetic (np.where evaluates both branches)
+    phi_s = A * np.maximum(XX, 0.0) ** (2.0 / 3.0) * chi
 
     return phi_s.astype(np.float32)
