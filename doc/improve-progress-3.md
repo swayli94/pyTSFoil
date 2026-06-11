@@ -221,3 +221,62 @@ TSD 把边界条件投影到 $y=0$，无法正确表示驻点附近的流动，
 1. **MAE 后处理目前是正确思路**，但前提是在复合公式中使用**未截断的** TSD 速度 $U$（即 `cp_tsd_linear = -2U·cpfact`，绕过 EMACH1 截断），以保证对消机制正确工作。
 2. **MAE 的局限性**也是结构性的：它只是后处理，无法改变 CIRCFF 本身的计算。当 TSD 外区的环量（CL）因大 M=0 区域而本身就存在误差时，MAE 也无法完全补偿。
 3. 真正的改进方向可能需要在**迭代内部**引入内区解的约束，即用 MAE 内区解修正前缘附近的边界条件（而非仅用于后处理），让 TSD 外区解在大攻角下本身更准确。但这是侵入性修改，复杂度较高。
+
+
+## 下一阶段
+
+基于 12.4 节的分析，奇性扣除对大攻角问题无实质帮助，决定将其从代码中移除，仅保留 MAE 前缘修正功能，
+然后在新 branch `aoa` 上开展下一阶段工作。
+
+### 清理计划
+
+#### 第一步：新建 branch
+
+从当前 `fortran` branch 创建新 branch：
+
+```bash
+git checkout -b aoa
+```
+
+#### 第二步：删除 Python 侧奇性扣除代码
+
+**删除文件：**
+
+- `pytsfoil/leading_edge/singularity_subtraction.py`（整个文件）
+
+**修改 `pytsfoil/leading_edge/__init__.py`：**
+
+- 删除 `singularity_subtraction` 的 import 及 `__all__` 中对应项，只保留 `solve_inner_problem` 和 `apply_composite_correction`。
+
+**修改 `pytsfoil/pytsfoil.py`（多处）：**
+
+1. **import 块**（约第 46–48 行）：删除 `compute_surface_corrections`、`compute_phi_s_2d`、`calculate_phi_ry` 的 import。
+2. **`_default_config`**（约第 253–267 行）：删除三个配置项 `apply_singularity_subtraction`、`apply_step_d`、`apply_step_e` 及其注释。
+3. **`run_fortran_solver`**（约第 189–194 行）：删除 `_apply_singularity_subtraction_bc` 的调用逻辑及 `_phi_sx_surface` 属性初始化。
+4. **`_apply_singularity_subtraction_bc` 方法**（约第 683 行起）：整个方法删除。
+5. **`output_surface`**（约第 1107–1117 行）：删除 Step E（`_phi_sx_surface` 叠加）的逻辑。
+
+#### 第三步：清理 Fortran 侧奇性扣除代码
+
+**修改 `pytsfoil/src/solver_data.f90`：**
+
+- 删除 `PHI_SX_C1TERM` 和 `PHI_S` 数组的声明及 `initialize_solver_data` 中的清零语句。
+
+**修改 `pytsfoil/src/main_iteration.f90`：**
+
+- 删除 `use solver_data, only: PHI_SX_C1TERM, PHI_S` 的 use 语句。
+- 删除 Step A：`VC(J)` 计算中的 `PHI_S(J,I-1/I/I+1)` 叠加项，恢复为原始写法 `VC(J) = C1(I) - (CXL*P_left + CXC*P + CXR*P_right)`。
+- 删除 Step C：`RHS` 中所有 `L[phi_s]` 强迫项（约 10 余行）。
+
+**修改 `pytsfoil/tsfoil_fortran.pyf`：**
+
+- 删除 `phi_sx_c1term` 和 `phi_s` 两个可选参数的声明。
+
+#### 第四步：重新编译并验证
+
+```bash
+python pytsfoil/compile_f2py.py
+```
+
+运行一个已有测试（如 `test_6_le_correction/` 或 `test_12_correction_components/`），
+验证 `apply_le_correction=True` 路径输出与删除前相同（MAE 功能不受影响）。
