@@ -19,7 +19,6 @@ contains
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
         use solver_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD
-        use solver_data, only: PHI_SX_C1TERM, PHI_S
         implicit none
         integer, intent(inout) :: I1, I2  ! Indices for potential values
         logical, intent(inout) :: OUTERR  ! outer iteration error (logical)
@@ -42,13 +41,10 @@ contains
             EPSX = EPS / ((X(I) - X(I-1))**2)
             
             ! Compute VC = 1 - M**2
-            ! Step A: add PHI_S stencil so VC uses phi_tot,x = phi_r,x + phi_s,x.
-            ! PHI_S is zero by default; populated by Python when singularity subtraction enabled.
-            ! PHI_SX_C1TERM kept for backward compatibility but superseded by PHI_S.
             do J = JBOT, JTOP
-                VC(J) = C1(I) - (CXL(I)*(POLD(J,I2) + PHI_S(J,I-1)) &
-                               + CXC(I)*(P(J,I)    + PHI_S(J,I))   &
-                               + CXR(I)*(P(J,I+1)  + PHI_S(J,I+1)))
+                VC(J) = C1(I) - (CXL(I)*POLD(J,I2) &
+                               + CXC(I)*P(J,I)      &
+                               + CXR(I)*P(J,I+1))
                 EMU(J,I1) = 0.0
                 POLD(J,I1) = P(J,I)
             end do
@@ -87,30 +83,6 @@ contains
             RHS(JTOP) = RHS(JTOP) - (CYYD(JTOP)*P(JTOP-1,I) - CYYC(JTOP)*P(JTOP,I))
             if (JTOP /= JMAX) then
                 RHS(JTOP) = RHS(JTOP) - CYYU(JTOP)*P(JTOP+1,I)
-            end if
-
-            ! Step C: add L[phi_s] residual forcing so solver solves L[phi_r] = -L[phi_s].
-            ! C1 - x second-derivative term (subsonic part)
-            do J = JBOT, JTOP
-                RHS(J) = RHS(J) - (VC(J) - EMU(J,I1)) * &
-                    (CXXL(I)*PHI_S(J,I-1) - CXXC(I)*PHI_S(J,I) + CXXR(I)*PHI_S(J,I+1))
-            end do
-            ! C2 - x upwind supersonic correction term
-            do J = JBOT, JTOP
-                RHS(J) = RHS(J) - EMU(J,I2) * &
-                    (CXXL(I-1)*PHI_S(J,IM2) - CXXC(I-1)*PHI_S(J,I-1) + CXXR(I-1)*PHI_S(J,I))
-            end do
-            ! C3 - y second-derivative term (interior points only; zero for Y-independent PHI_S)
-            do J = JA, JB
-                RHS(J) = RHS(J) - (CYYD(J)*PHI_S(J-1,I) - CYYC(J)*PHI_S(J,I) + CYYU(J)*PHI_S(J+1,I))
-            end do
-            RHS(JBOT) = RHS(JBOT) - (-CYYC(JBOT)*PHI_S(JBOT,I) + CYYU(JBOT)*PHI_S(JBOT+1,I))
-            if (JBOT /= JMIN) then
-                RHS(JBOT) = RHS(JBOT) - CYYD(JBOT)*PHI_S(JBOT-1,I)
-            end if
-            RHS(JTOP) = RHS(JTOP) - (CYYD(JTOP)*PHI_S(JTOP-1,I) - CYYC(JTOP)*PHI_S(JTOP,I))
-            if (JTOP /= JMAX) then
-                RHS(JTOP) = RHS(JTOP) - CYYU(JTOP)*PHI_S(JTOP+1,I)
             end if
 
             ! Check for airfoil B.C. and Kutta slice

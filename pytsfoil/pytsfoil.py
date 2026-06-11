@@ -43,15 +43,10 @@ import matplotlib.pyplot as plt
 from typing import Dict, Any
 
 try:
-    from .leading_edge import (solve_inner_problem, apply_composite_correction,
-                               compute_surface_corrections, compute_phi_s_2d,
-                               calculate_phi_ry)
+    from .leading_edge import (solve_inner_problem, apply_composite_correction)
 except ImportError:
     solve_inner_problem = None
     apply_composite_correction = None
-    compute_surface_corrections = None
-    compute_phi_s_2d = None
-    calculate_phi_ry = None
 
 try:
     import tsfoil_fortran as tsf
@@ -185,14 +180,6 @@ class PyTSFoil(object):
 
         self.compute_geometry_derivatives()
 
-        # Singularity subtraction / step-D BC regularisation before SETBC/SOLVE.
-        # Called when either apply_singularity_subtraction (A+C+D+E) or apply_step_d
-        # alone (D only, iterating phi) is requested.
-        self._phi_sx_surface = None
-        if (self.config.get('apply_singularity_subtraction', False) or
-                self.config.get('apply_step_d', False)):
-            self._apply_singularity_subtraction_bc()
-
         # Compute finite difference coefficients
         tsf.solver_base.difcoe()
 
@@ -201,13 +188,6 @@ class PyTSFoil(object):
 
         # Solve transonic flow equations
         tsf.main_iteration.solve()
-
-        # Restore original FXU/FXL so downstream computations (cdcole, etc.) are unaffected.
-        # _flag_step_d_applied is saved by step D regardless of apply_singularity_subtraction.
-        if hasattr(self, '_flag_step_d_applied'):
-            nfoil = self.mesh['nfoil']
-            tsf.common_data.fxu[:nfoil] = self.mesh['fxu'].astype(np.float32)
-            tsf.common_data.fxl[:nfoil] = self.mesh['fxl'].astype(np.float32)
     
     def _default_config(self):
         '''
@@ -246,25 +226,6 @@ class PyTSFoil(object):
 
             # MAE leading-edge correction (post-processing, non-invasive)
             'apply_le_correction': False,
-
-            # Singularity subtraction: regularise TSD outer solve at LE (steps A+C+E)
-            # Populates 2D PHI_S for SYOR and stores phi_s,x for output_surface.
-            # Should be combined with apply_le_correction for correct near-LE cp.
-            'apply_singularity_subtraction': False,
-
-            # Step D LE closure: modify FXU/FXL so the iterating variable has
-            # a bounded body slope at x=0 (removes the x^{-1/2} spike).
-            # Works independently of apply_singularity_subtraction:
-            #   apply_singularity_subtraction=True  → iterate phi_r (A+C+D+E)
-            #   apply_singularity_subtraction=False → iterate phi   (only D, optionally E)
-            'apply_step_d': False,
-            
-            # Step E: restore phi_s,x in post-processing so that the surface
-            # velocity reflects the full phi_tot,x = phi_r,x + phi_s,x.
-            # When apply_singularity_subtraction=True this is always active.
-            # Set apply_step_e=True to activate it independently (e.g. with only
-            # step D on, iterating phi instead of phi_r).
-            'apply_step_e': False,
 
         }
         
@@ -680,92 +641,6 @@ class PyTSFoil(object):
             if iflap != 0:
                 print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
     
-    def _apply_singularity_subtraction_bc(self) -> None:
-        """
-        Steps A+C+E (always) and optional D: populate 2D PHI_S for SYOR.
-
-        Steps always applied:
-          A - PHI_S 2D array filled so SYOR uses phi_tot,x = phi_r,x + phi_s,x
-              for VC type-switching (restores correct subsonic/supersonic flag).
-          C - SYOR Step C (already in Fortran) adds -L[phi_s] forcing so the
-              combined equation is L[phi_1] = 0 (same physics as baseline, but
-              solved via the bounded variable phi_r = phi_1 - phi_s).
-          E - phi_s,x stored for post-processing velocity restoration.
-
-        Step D (enabled by config 'apply_step_d': True):
-          Modifies FXU/FXL so phi_r = phi_1 - phi_s has a bounded body slope.
-          Uses the parabolic-nose formula phi_s,y = chi*h/(delta*sqrt(x)) with
-          LE closure to remove the x=0 spike (where phi_s,y = 0 by construction).
-          Original FXU/FXL are saved in _fxu_orig/_fxl_orig and restored after
-          the solver finishes.
-
-        Stores phi_sx_surface for step E in _phi_sx_surface.
-        """
-        if compute_surface_corrections is None:
-            print("WARNING: leading_edge module unavailable; skipping singularity subtraction.")
-            return
-
-        h   = self.airfoil.get('h_nose', None)
-        R_c = self.airfoil.get('R_c',    None)
-        slope_le = self.airfoil.get('slope_le', None)
-        if h is None or R_c is None or R_c <= 0:
-            print("WARNING: Nose geometry not fitted; skipping singularity subtraction.")
-            return
-
-        nfoil  = self.mesh['nfoil']
-        x_foil = self.mesh['xx_airfoil'][:nfoil]
-        delta  = float(tsf.common_data.delta)
-
-        _phi_sy_upper, phi_sx_surface = compute_surface_corrections(
-            x_foil, h, delta, R_c, self._cpfact, self._gamma,
-        )
-
-        # Step D: body-BC regularisation with LE closure.
-        # Subtract phi_s,y from FXU/FXL so phi_r has a bounded surface slope.
-        # At x=0 phi_s,y = 0 by construction (spike); the LE closure extrapolates
-        # phi_ry from the first non-zero correction point back to x=0.
-        '''
-        Since phi_s,y is the same on upper and lower surfaces, subtract it from
-        both FXU and FXL to maintain the correct camber slope (FX_CAMBER = 0.5*(FXU+FXL))
-        and thus the correct near-LE pressure distribution. 
-        The original FXU/FXL are saved in self.mesh for restoration after the solver
-        finishes, ensuring that post-processing calculations like cdcole
-        use the correct geometry.
-        '''
-        
-        if self.config.get('apply_step_d', False) and calculate_phi_ry is not None:
-            
-            self._flag_step_d_applied = True
-
-            fxu_mod, fxl_mod = calculate_phi_ry(
-                fxu=self.mesh['fxu'], fxl=self.mesh['fxl'],
-                fx_camber=self.mesh['fx_camber'],
-                phi_sy=_phi_sy_upper.astype(np.float64),
-                x_foil=x_foil.astype(np.float64),
-            )
-            tsf.common_data.fxu[:nfoil] = fxu_mod.astype(np.float32)
-            tsf.common_data.fxl[:nfoil] = fxl_mod.astype(np.float32)
-
-        # Store step-E correction for output_surface
-        self._phi_sx_surface = phi_sx_surface
-
-        # ── Steps A+C: fill 2D PHI_S on the full outer grid ──────────────────
-        # Only active when apply_singularity_subtraction=True (iterate phi_r).
-        # When only step D (and optionally E) is requested, PHI_S stays zero
-        # and the solver iterates the full phi directly.
-        if self.config.get('apply_singularity_subtraction', False):
-            if compute_phi_s_2d is not None:
-                imax = int(tsf.common_data.imax)
-                jmax = int(tsf.common_data.jmax)
-                X_1d = np.array(tsf.common_data.x[:imax], dtype=np.float64)
-                Y_1d = np.array(tsf.common_data.y[:jmax], dtype=np.float64)
-                phi_s_2d = compute_phi_s_2d(
-                    X_1d, Y_1d, R_c, self._cpfact, self._gamma
-                )  # shape (jmax, imax), float32
-                tsf.solver_data.phi_s[:jmax, :imax] = phi_s_2d
-            else:
-                print("WARNING: compute_phi_s_2d unavailable; PHI_S stays zero.")
-    
     def compute_scale(self) -> None:
         '''
         Scale physical variables to transonic similarity variables
@@ -1103,22 +978,6 @@ class PyTSFoil(object):
             uu_arr[i_py] = uu_p1
             vl_arr[i_py] = tsf.solver_base.py(i_p1, jlow)
             vu_arr[i_py] = tsf.solver_base.py(i_p1, jup)
-
-        # Step E: restore phi_s,x so ul/uu = phi_tot,x = phi_r,x + phi_s,x.
-        # Active when apply_singularity_subtraction=True (full phi_r solve) OR
-        # when apply_step_e=True (step D only, iterate phi but restore phi_s,x).
-        _apply_step_e = (self.config.get('apply_singularity_subtraction', False) or
-                         self.config.get('apply_step_e', False))
-        if (_apply_step_e and self._phi_sx_surface is not None):
-            ile_0b = ile - 1   # 0-based
-            ite_0b = ite - 1   # 0-based (inclusive)
-            phi_sx = self._phi_sx_surface
-            ul_arr[ile_0b:ite_0b + 1] += phi_sx
-            uu_arr[ile_0b:ite_0b + 1] += phi_sx
-            # Recompute Mach numbers for airfoil region with restored total velocity
-            for k in range(ile_0b, ite_0b + 1):
-                em1l[k] = tsf.solver_functions.emach1(float(ul_arr[k]), delta)
-                em1u[k] = tsf.solver_functions.emach1(float(uu_arr[k]), delta)
 
         self.data_summary['cpu'] = self._cp_isentropic(em1u, emach)
         self.data_summary['cpl'] = self._cp_isentropic(em1l, emach)

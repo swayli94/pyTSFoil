@@ -55,16 +55,6 @@ module solver_data
 
     real :: WSLP(N_MESH_POINTS,2)   ! Viscous wedge slopes
 
-    ! Singularity subtraction step A: VC correction term = GAM1 * phi_s,x / DXC
-    ! Set to zero (no correction) by default; populated by Python before SOLVE when
-    ! apply_singularity_subtraction is enabled.
-    real :: PHI_SX_C1TERM(N_MESH_POINTS) = 0.0
-
-    ! Full 2D singular potential phi_s(J,I) for singularity subtraction steps A+C.
-    ! Populated by Python (compute_phi_s_2d) before SOLVE when enabled; zero otherwise.
-    ! Dimensions match P(NMP_plus2, NMP_plus1).
-    real :: PHI_S(NMP_plus2, NMP_plus1) = 0.0
-
 contains
 
     subroutine initialize_solver_data()
@@ -126,8 +116,6 @@ contains
 
         ABORT1 = .false.
         WSLP = 0.0
-        PHI_SX_C1TERM = 0.0
-        PHI_S = 0.0
 
     end subroutine initialize_solver_data
 
