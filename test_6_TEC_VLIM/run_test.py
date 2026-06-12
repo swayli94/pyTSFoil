@@ -47,9 +47,8 @@ os.makedirs(path_figs, exist_ok=True)
 
 # ── parameters ────────────────────────────────────────────────────────────────
 
-LIST_CASES     = [0, 1, 2, 3, 4, 6, 7, 10, 11, 12]
-LIST_CASES     = [i for i in range(20)]
-N_PROCESS      = 10
+LIST_CASES     = [0, 1, 2, 3, 4, 6, 7, 10, 11, 12] + [5, 8, 9]
+N_PROCESS      = 16
 N_OUTER        = 10
 IBL_RELAX      = 0.5
 MAXIT_INNER    = 200
@@ -75,6 +74,12 @@ BASE_CFG = {
     'n_point_x':        200,
     'n_point_y':         80,
     'n_point_airfoil':  100,
+    #* ------------------------------------
+    'vel_lim_enabled':       True,
+    'vel_lim_d':             5.0,
+    'vel_lim_theta':         1.0,
+    'vel_lim_elliptic_only': True,
+    #* ------------------------------------
     'flag_output':          False,
     'flag_output_summary':  False,
     'flag_output_shock':    False,
