@@ -1365,12 +1365,16 @@ class PyTSFoil(object):
                 self.config[_k] = _v
 
             cd_f = ibl.friction_drag(upper, lower)
-            history.append({
+            entry = {
                 'upper': upper,
                 'lower': lower,
                 'cl':    self.data_summary['cl'],
                 'cd_f':  cd_f,
-            })
+            }
+            if self.config['vel_lim_enabled']:
+                entry['vel_lim_n_clipped']    = self.data_summary.get('vel_lim_n_clipped', 0)
+                entry['vel_lim_max_u_before'] = self.data_summary.get('vel_lim_max_u_before', float('nan'))
+            history.append(entry)
 
             if self.config['flag_print_info']:
                 print(f"[IBL {k + 1}/{n_outer}] "
@@ -1390,6 +1394,25 @@ class PyTSFoil(object):
         self.data_summary['ibl_cd_f']  = cd_f
 
         return history
+
+    def compute_wave_drag(self) -> float:
+        '''
+        Compute and store wave drag via the momentum integral method.
+
+        Convenience wrapper around ``cdcole_python`` that reads the required
+        scaling factors from the Fortran module so callers do not need to
+        supply them explicitly.  Populates ``data_summary['cd']``,
+        ``data_summary['cd_wave']``, and ``data_summary['cd_int']``.
+
+        Returns
+        -------
+        cd : float
+            Total drag coefficient (wave + body terms).
+        '''
+        sonvel = float(tsf.solver_data.sonvel)
+        delta  = float(tsf.common_data.delta)
+        self.cdcole_python(sonvel, self._yfact, delta)
+        return float(self.data_summary['cd'])
 
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """
