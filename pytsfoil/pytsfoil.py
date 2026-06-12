@@ -1172,7 +1172,7 @@ class PyTSFoil(object):
 
     def run_ibl_coupled(self,
                         ibl: IBL,
-                        n_outer: int = 5,
+                        n_outer: int = 10,
                         x_tr_upper: float | None = None,
                         x_tr_lower: float | None = None,
                         ibl_relax: float = 0.5,
@@ -1181,7 +1181,10 @@ class PyTSFoil(object):
                         delta_star_max: float = 0.05,
                         slope_correction_max: float = 0.1,
                         maxit_inner: int = 200,
-                        i_outer_repair: int = 2
+                        i_outer_repair: int = 3,
+                        use_te_correction: bool = False,
+                        d_angle_TE: float = 0.0,
+                        x_blend_start: float = 0.8,
                         ) -> list:
         '''
         Viscous-inviscid coupling via IBL displacement-thickness wall-slope correction.
@@ -1270,6 +1273,8 @@ class PyTSFoil(object):
         self.output_surface()
         for k, v in _io.items():
             self.config[k] = v
+            
+        aoa = self.config['ALPHA']
 
         # Geometry and mesh constants (fixed across outer iterations)
         ile     = self.mesh['ile']           # 0-based Python index
@@ -1286,6 +1291,7 @@ class PyTSFoil(object):
         fxl_base = self.mesh['fxl'].copy()
 
         history = []
+        k_start_repair = min(i_outer_repair - 1, n_outer - 1)
 
         # Outer coupling loop
         for k in range(n_outer):
@@ -1302,13 +1308,36 @@ class PyTSFoil(object):
             lower = ibl.run(xx_foil, mal_ibl, yy=yl_foil,
                             x_tr_forced=x_tr_lower)
 
-            # Clip δ* to physically reasonable range; on the last iteration also
-            # repair trailing-edge blow-up so the final BC and stored result are clean.
+            # Clip δ* to physically reasonable range.
             dstar_u = np.clip(upper['delta_star'], 0.0, delta_star_max)
             dstar_l = np.clip(lower['delta_star'], 0.0, delta_star_max)
-            if k == min(i_outer_repair - 1, n_outer - 1):
-                dstar_u = IBL.repair_dstar(xx_foil, dstar_u)
-                dstar_l = IBL.repair_dstar(xx_foil, dstar_l)
+
+            # Repair trailing-edge blow-up on the designated repair iteration.
+            if k >= k_start_repair:
+                dstar_u, i_break_u = IBL.repair_dstar(xx_foil, dstar_u)
+                dstar_l, i_break_l = IBL.repair_dstar(xx_foil, dstar_l)
+            else:
+                i_break_u = -1
+                i_break_l = -1
+
+            # Store pre-correction δ* (always); apply TE correction on last iteration.
+            upper['delta_star_raw'] = dstar_u.copy()
+            lower['delta_star_raw'] = dstar_l.copy()
+
+            if use_te_correction and k >= k_start_repair:
+                dstar_u = ibl.correction_dstar(
+                    xx=xx_foil, yy=yu_foil, dstar=dstar_u,
+                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    x_blend_start=min(xx_foil[i_break_u], x_blend_start),
+                    upper=True
+                )
+                dstar_l = ibl.correction_dstar(
+                    xx=xx_foil, yy=yl_foil, dstar=dstar_l,
+                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    x_blend_start=min(xx_foil[i_break_l], x_blend_start),
+                    upper=False
+                )
+
             upper['delta_star'] = dstar_u
             lower['delta_star'] = dstar_l
 
@@ -1385,8 +1414,8 @@ class PyTSFoil(object):
                       f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}")
 
         # Final repair of δ* to remove any numerical artefacts before storing in data_summary
-        upper['theta'] = IBL.repair_dstar(xx_foil, upper['theta'])
-        lower['theta'] = IBL.repair_dstar(xx_foil, lower['theta'])
+        upper['theta'], _ = IBL.repair_dstar(xx_foil, upper['theta'])
+        lower['theta'], _ = IBL.repair_dstar(xx_foil, lower['theta'])
 
         # Store final IBL results in data_summary
         self.data_summary['ibl_upper'] = upper

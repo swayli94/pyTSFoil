@@ -29,6 +29,7 @@ import warnings
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
+from scipy.interpolate import CubicSpline
 from typing import Dict, Optional, Tuple, Any
 
 
@@ -222,7 +223,7 @@ class IBL(object):
     @staticmethod
     def repair_dstar(xx: np.ndarray,
                      dstar: np.ndarray,
-                     outlier_sigma: float = 5.0) -> np.ndarray:
+                     outlier_sigma: float = 5.0) -> Tuple[np.ndarray, int]:
         '''
         Detect trailing-edge blow-up in a δ* (or θ) distribution and replace
         the outlier tail with linear extrapolation from the last stable points.
@@ -241,11 +242,12 @@ class IBL(object):
 
         Returns
         -------
-        (n,) repaired array (values clipped to ≥ 0)
+        dstar_repaired  : (n,) repaired array (values clipped to ≥ 0)
+        i_break         : index of the first outlier point (or None if no outliers)
         '''
         n = len(dstar)
         if n < 6:
-            return dstar.copy()
+            return dstar.copy(), n-1
         grad = np.gradient(dstar, xx)
         i_ref = max(int(0.7 * n), 4)
         ref = np.median(np.abs(grad[:i_ref])) + 1e-10
@@ -257,15 +259,216 @@ class IBL(object):
                 i_break = i
                 break
         if i_break is None or i_break < 2:
-            return dstar.copy()
+            return dstar.copy(), n-1
         result = dstar.copy()
         dx = xx[i_break - 1] - xx[i_break - 2]
         if abs(dx) < 1e-12:
-            return dstar.copy()
+            return dstar.copy(), n-1
         slope = (dstar[i_break - 1] - dstar[i_break - 2]) / dx
         for i in range(i_break, n):
             result[i] = dstar[i_break - 1] + slope * (xx[i] - xx[i_break - 1])
-        return np.maximum(result, 0.0)
+        return np.maximum(result, 0.0), i_break
+
+    @staticmethod
+    def smooth_correction(x, y, D, d_end='min', shape="quadratic",
+                    d_min=None, k=5, robust=False) -> Tuple[np.ndarray, bool]:
+        """
+        Smooth correction d(x) added to y(x), pinned at the left end and
+        matching a target slope (and optionally a target value) at the right end.
+
+        Always enforced:
+            d(x[0])         = 0          # left endpoint unchanged
+            (y + d)'(x[-1]) = D          # corrected curve has slope D at the right end
+
+        The correction is a polynomial blend in the normalized coordinate
+        s = (x - x0) / L, with L = x[-1] - x0. Since ds/dx = 1/L is constant, the
+        right-end slope constraint holds exactly on any monotonic grid. The slope
+        the correction must supply, expressed in s, is m = g * L with
+        g = D - y'(x[-1]).
+
+        Two regimes
+        -----------
+        1. d_end is None  -> amplitude is *not* prescribed; the original blend
+        menu (`shape`) is used:
+            "linear"    d = m*s            (constant slope; min bending energy)
+            "quadratic" d = m*s**2 / 2     (d = d' = 0 at left)            [default]
+            "cubic"     d = m*s**3 / 3     (d = d' = d'' = 0 at left)
+
+        2. d_end is given -> a cubic Hermite blend pins the right-end *value* too:
+            d(0) = 0, d'(0) = 0, d(x[-1]) = d_end, (y+d)'(x[-1]) = D
+            d(s) = (3*A - m)*s**2 + (m - 2*A)*s**3,   A = d_end
+        Because d' = 0 at the left, the curve eases in flatly and rises to d_end.
+
+        Monotonicity (only meaningful in regime 2, where amplitude is fixed)
+        -------------------------------------------------------------------
+        The cubic is monotone on [0, 1] iff  m * (3*A - m) >= 0, i.e. d_end must
+        share the sign of the end slope and satisfy |d_end| >= |m| / 3. When this
+        holds, d is monotone and max|d| occurs at the right end (max|d| = |d_end|),
+        so constraining the maximum is the same as setting d_end. If
+        `enforce_monotonic` is True and the condition fails, a ValueError reports
+        the feasible bound instead of silently returning a non-monotone curve.
+
+        Parameters
+        ----------
+        x, y : ndarray
+            Baseline curve; x monotonic, possibly non-uniform; same shape.
+        D : float
+            Target slope of (y + d) at the right endpoint.
+        d_end : float, optional
+            Target value of d at the right endpoint (= the maximum of d when the
+            result is monotone). If None, amplitude is left free (regime 1).
+        shape : {"linear", "quadratic", "cubic"}, optional
+            Blend used only when d_end is None.
+        d_min : float, optional
+            Minimum value of d_end when d_end='min'.
+        k : int, optional
+            Trailing points used for the end-slope fit when robust=True.
+        robust : bool, optional
+            If True, estimate y'(x[-1]) from a quadratic fit over the last k points
+            (better for noisy data); otherwise use np.gradient (2nd-order one-sided).
+
+        Returns
+        -------
+        d : ndarray
+            The correction, same shape as x. The corrected curve is y + d.
+        success : bool
+            True if the monotonicity condition is satisfied or not enforced; False
+            if the condition is violated but not enforced (in which case a warning
+            is printed and the non-monotone curve is returned).
+        """
+        x = np.asarray(x, float)
+        y = np.asarray(y, float)
+        L = x[-1] - x[0]
+
+        # slope of the baseline at the right endpoint
+        if robust:                                    # noisy data: local quadratic fit
+            p = np.polyfit(x[-k:], y[-k:], 2)
+            yp_end = np.polyval(np.polyder(p), x[-1])
+        else:                                         # clean data: one-sided difference
+            yp_end = np.gradient(y, x)[-1]
+
+        g = D - yp_end                                # slope d must add at x[-1]
+        m = g * L                                     # same slope in the s-coordinate
+        s = (x - x[0]) / L                            # normalized coordinate in [0, 1]
+
+        success = True
+        if d_end is None:
+            # --- regime 1: amplitude free, pick a blend shape ---
+            if shape == "linear":
+                d = m * s
+            elif shape == "quadratic":
+                d = 0.5 * m * s**2
+            elif shape == "cubic":
+                d = (m / 3.0) * s**3
+            else:
+                raise ValueError("shape must be 'linear', 'quadratic', or 'cubic'")
+        else:
+            # --- regime 2: cubic Hermite pins value (+ slope) at the right end ---
+            if d_end == "min":
+                # Smallest-magnitude monotone end value. Feasibility requires
+                # sign(d_end)=sign(m) and |d_end| >= |m|/3, so the minimum is m/3.
+                # (At this bound the cubic collapses to d = (m/3)*s**3, i.e. it is
+                #  exactly the shape="cubic" blend — the critically-monotone case.)
+                A = m / 3.0
+                A = max(A, d_min) if d_min is not None else A
+            else:
+                A = float(d_end)
+                if m * (3.0 * A - m) < 0.0:
+                    bound = m / 3.0
+                    rel = ">=" if m > 0 else "<="
+                    print(
+                        "[Warning] Monotonic correction infeasible: with end slope D=%g "
+                        "(m = g*L = %g), d_end must satisfy d_end %s %g."
+                        % (D, m, rel, bound)
+                    )
+                    success = False
+                    
+            d = (3.0 * A - m) * s**2 + (m - 2.0 * A) * s**3
+
+        return d, success
+
+    @staticmethod
+    def correction_dstar(xx: np.ndarray, yy: np.ndarray,
+                dstar: np.ndarray, AoA: float,
+                d_angle_TE: float = 0.0,
+                x_blend_start: float = 0.9,
+                min_delta: float = -0.01,
+                upper: bool = True
+                ) -> np.ndarray:
+        '''
+        Trailing-edge correction for displacement thickness δ*.
+
+        Adjusts δ* near the trailing edge so that the effective upper/lower surface
+        (y_eff = y ± δ*) has its slope at x = 1 equal to tan(AoA + d_angle_TE).
+
+        Parameters
+        ----------
+        xx: (n,)
+            x/c grid (shared for upper and lower surfaces)
+        yy: (n,)
+            upper/lower surface y/c coordinates
+        dstar: (n,)
+            δ* from IBL.run()
+        AoA: float
+            angle of attack (degrees)
+        d_angle_TE: float
+            target TE deviation from free-stream (degrees).
+            0 → effective TE camber slope = tan(AoA) (free-stream-aligned).
+            Negative → effective TE below free-stream direction.
+        x_blend_start : float
+            x/c where the correction ramp begins (default 0.8).
+        upper : bool
+            True for upper surface correction, False for lower surface.
+
+        Returns
+        -------
+        dstar_corr: (n,)
+            corrected upper/lower displacement thickness
+
+        Notes
+        -----
+        The correction Δ is added to the effective surface definition:
+        
+        - y_cor = y_eff + Δ;
+        - dy_cor = dy_eff + dΔ (denote d = d(·)/dx);
+        - dy_cor[x=1] = target_slope;
+        - dΔ = dy_cor - dy_eff
+            
+        where Δ is zero before x_blend_start and ramps to the correction
+        needed to achieve target_slope at TE.
+        
+        So, we can have dΔ as a smooth function, where dΔ is zero before x_blend_start
+        and ramps to `target_slope - dy_eff[x=1]` at TE.
+        
+        - y_eff = y ± δ*
+        - y_cor = y_eff + Δ = y ± δ* + Δ
+        - dstar_corr = δ* ± Δ
+        '''
+        if upper:
+            y_eff = yy + dstar
+            target_slope = np.tan(np.deg2rad(AoA + d_angle_TE))
+        else:
+            y_eff = - yy + dstar
+            target_slope = - np.tan(np.deg2rad(AoA + d_angle_TE))
+
+        mask = xx >= x_blend_start
+        _x = xx[mask]
+        _y = y_eff[mask]
+        _delta, success = IBL.smooth_correction(_x, _y, target_slope, d_min=-dstar[-1]*0.5)
+        if not success:
+            return dstar
+
+        delta = np.zeros_like(xx)
+        delta[mask] = _delta
+        delta = np.clip(delta, min_delta, None)
+
+        if upper:
+            dstar_corr = dstar + delta
+        else:
+            dstar_corr = dstar + delta
+            
+        return dstar_corr
+
 
     # ------------------------------------------------------------------
     # Private API
