@@ -188,6 +188,25 @@ class PyTSFoil(object):
 
         # Solve transonic flow equations
         tsf.main_iteration.solve()
+
+        # Export P field for all runs (used by field plots)
+        imax = int(tsf.common_data.imax)
+        jmax = int(tsf.common_data.jmax)
+        self.data_summary['P_field'] = np.array(
+            tsf.solver_data.p[1:jmax+1, 1:imax+1], dtype=np.float64)
+
+        # Read velocity limiter diagnostics (last sweep)
+        if self.config['vel_lim_enabled']:
+            self.data_summary['vel_lim_n_clipped']    = int(tsf.solver_data.vel_lim_n_clipped)
+            self.data_summary['vel_lim_max_u_before'] = float(tsf.solver_data.vel_lim_max_u_before)
+            self.data_summary['vel_lim_n_infeasible'] = int(tsf.solver_data.vel_lim_n_infeasible)
+            # Per-node clip count from the last SYOR sweep, shape (jmax, imax)
+            self.data_summary['vel_lim_clip_map'] = np.array(
+                tsf.solver_data.vel_lim_clip_map[:jmax, :imax], dtype=np.int32)
+            if self.config['flag_print_info']:
+                print(f"[Limiter] last-sweep: n_clipped={self.data_summary['vel_lim_n_clipped']}, "
+                      f"max_u_before={self.data_summary['vel_lim_max_u_before']:.4f}, "
+                      f"n_infeasible={self.data_summary['vel_lim_n_infeasible']}")
     
     def _default_config(self):
         '''
@@ -226,6 +245,12 @@ class PyTSFoil(object):
 
             # MAE leading-edge correction (post-processing, non-invasive)
             'apply_le_correction': False,
+
+            # Velocity limiter (projected SOR clip, see TSD_velocity_limiter_projected_SOR.md)
+            'vel_lim_enabled': False,       # Master switch (off by default)
+            'vel_lim_d': 5.0,               # Velocity upper bound D (solver P_x units, Krupp scaling)
+            'vel_lim_theta': 1.0,           # Clip under-relaxation coefficient (0 < theta <= 1)
+            'vel_lim_elliptic_only': False, # Only apply limiter at elliptic (subsonic) nodes
 
         }
         

@@ -15,10 +15,13 @@ contains
     subroutine SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
         use common_data, only: X, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
         use common_data, only: AK, EPS, N_MESH_POINTS
+        use common_data, only: VEL_LIM_ENABLED
         use solver_functions, only: BCEND
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
         use solver_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD
+        use solver_data, only: VEL_LIM_N_CLIPPED, VEL_LIM_MAX_U_BEFORE, VEL_LIM_N_INFEASIBLE, &
+                               VEL_LIM_CLIP_MAP
         implicit none
         integer, intent(inout) :: I1, I2  ! Indices for potential values
         logical, intent(inout) :: OUTERR  ! outer iteration error (logical)
@@ -33,6 +36,14 @@ contains
         real :: SUB(N_MESH_POINTS)=0.0, SUP(N_MESH_POINTS)=0.0
 
         BIGRL = 0.0
+
+        ! Reset velocity limiter diagnostics for this sweep
+        if (VEL_LIM_ENABLED) then
+            VEL_LIM_N_CLIPPED    = 0
+            VEL_LIM_MAX_U_BEFORE = 0.0
+            VEL_LIM_N_INFEASIBLE = 0
+            VEL_LIM_CLIP_MAP     = 0
+        end if
 
         IM2 = IUP - 1
         if (AK < 0.0) IM2 = IUP - 2
@@ -165,6 +176,9 @@ contains
                 end if
             end do
             
+            ! Apply velocity limiter (projected clip) to this column
+            call CLIPLN(I, JBOT, JTOP, VC)
+
             ! Supersonic freestream flow condition
             if (AK <= 0.0 .and. I == IDOWN-1) then
                 ! Set P(IDOWN+1) = P(IDOWN-1) to obtain centered velocity at IDOWN for supersonic freestream flow
@@ -187,8 +201,10 @@ contains
         use common_data, only: Y, AK, NWDGE, IPRTER, MAXIT
         use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
         use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
+        use common_data, only: VEL_LIM_ENABLED
         use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
         use solver_data, only: POLD, EMU, THETA
+        use solver_data, only: VEL_LIM_N_CLIPPED, VEL_LIM_MAX_U_BEFORE, VEL_LIM_N_INFEASIBLE
         use solver_base, only: LIFT, PITCH
         use solver_functions, only: VWEDGE, SETBC
         implicit none
@@ -301,6 +317,11 @@ contains
 
                 write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
                     ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
+
+                if (VEL_LIM_ENABLED) then
+                    write(*, '(3X,"LIMITER: n_clipped=",I6,2X,"max_u_before=",E11.4,2X,"n_infeasible=",I5)') &
+                        VEL_LIM_N_CLIPPED, VEL_LIM_MAX_U_BEFORE, VEL_LIM_N_INFEASIBLE
+                end if
 
                 ! Output viscous wedge quantities if enabled
                 if (NWDGE > 0) then
@@ -493,5 +514,77 @@ contains
         end do
 
     end subroutine RESET
+
+    ! Clip one x-column of P to enforce |P_x|, |P_y| <= VEL_LIM_D (velocity limiter).
+    ! Called by SYOR after each column's Thomas solve.
+    ! Boundary nodes (JMIN/JMAX rows and IMIN/IMAX columns) are never clipped;
+    ! they enter only as fixed neighbor constraints in the L/U bound calculation.
+    ! JUP and JLOW are also excluded: their y-direction neighbors cross the airfoil/wake
+    ! circulation slit (PJUMP discontinuity), making the y-constraint non-physical.
+    subroutine CLIPLN(I_col, JBOT_loc, JTOP_loc, VC_col)
+        use common_data, only: X, Y, N_MESH_POINTS, &
+                               VEL_LIM_ENABLED, VEL_LIM_D, VEL_LIM_THETA, &
+                               VEL_LIM_ELLIPTIC_ONLY, JUP, JLOW
+        use solver_data, only: P, VEL_LIM_N_CLIPPED, VEL_LIM_MAX_U_BEFORE, &
+                               VEL_LIM_N_INFEASIBLE, VEL_LIM_CLIP_MAP
+        implicit none
+        integer, intent(in) :: I_col, JBOT_loc, JTOP_loc
+        real,    intent(in) :: VC_col(N_MESH_POINTS)  ! 1 - M^2 at each J for elliptic_only check
+
+        integer :: J
+        real    :: hE, hW, hN, hS, D, Lbound, Ubound, P_cur, target
+
+        if (.not. VEL_LIM_ENABLED) return
+
+        D = VEL_LIM_D
+
+        ! Local x-spacings are constant across J for a given column
+        hE = X(I_col+1) - X(I_col)
+        hW = X(I_col)   - X(I_col-1)
+
+        do J = JBOT_loc, JTOP_loc
+
+            ! Skip body-surface slit nodes: their y-neighbor across the slit carries PJUMP
+            ! (circulation discontinuity), making the y-direction bound non-physical.
+            if (J == JUP .or. J == JLOW) cycle
+
+            ! Skip hyperbolic (supersonic) nodes when elliptic_only is set
+            if (VEL_LIM_ELLIPTIC_ONLY .and. VC_col(J) < 0.0) cycle
+
+            ! Local y-spacings (non-uniform grid)
+            hN = Y(J+1) - Y(J)
+            hS = Y(J)   - Y(J-1)
+
+            ! Track max streamwise velocity before clipping (diagnostic)
+            VEL_LIM_MAX_U_BEFORE = max(VEL_LIM_MAX_U_BEFORE, &
+                                       abs(P(J, I_col+1) - P(J, I_col))   / hE, &
+                                       abs(P(J, I_col)   - P(J, I_col-1)) / hW)
+
+            ! Feasible interval [Lbound, Ubound] from all four neighbors
+            Lbound = max(P(J, I_col+1) - D*hE, P(J, I_col-1) - D*hW, &
+                         P(J+1, I_col) - D*hN, P(J-1, I_col) - D*hS)
+            Ubound = min(P(J, I_col+1) + D*hE, P(J, I_col-1) + D*hW, &
+                         P(J+1, I_col) + D*hN, P(J-1, I_col) + D*hS)
+
+            P_cur = P(J, I_col)
+
+            if (Lbound > Ubound) then
+                ! Infeasible interval: a neighbor already violates the bound.
+                ! Snap to midpoint and count as warning.
+                target = 0.5*(Lbound + Ubound)
+                VEL_LIM_N_INFEASIBLE = VEL_LIM_N_INFEASIBLE + 1
+            else
+                target = min(max(P_cur, Lbound), Ubound)
+            end if
+
+            if (target /= P_cur) then
+                P(J, I_col) = P_cur + VEL_LIM_THETA * (target - P_cur)
+                VEL_LIM_N_CLIPPED = VEL_LIM_N_CLIPPED + 1
+                VEL_LIM_CLIP_MAP(J, I_col) = VEL_LIM_CLIP_MAP(J, I_col) + 1
+            end if
+
+        end do
+
+    end subroutine CLIPLN
 
 end module main_iteration

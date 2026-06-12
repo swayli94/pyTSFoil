@@ -55,6 +55,13 @@ module solver_data
 
     real :: WSLP(N_MESH_POINTS,2)   ! Viscous wedge slopes
 
+    ! Velocity limiter diagnostics (reset at the start of each SYOR sweep)
+    integer :: VEL_LIM_N_CLIPPED    = 0    ! Number of nodes clipped in this sweep
+    real    :: VEL_LIM_MAX_U_BEFORE = 0.0  ! Max |P_x| before clipping (streamwise component)
+    integer :: VEL_LIM_N_INFEASIBLE = 0    ! Number of infeasible-interval nodes in this sweep
+    ! Per-node clip count for the last SYOR sweep (reset each sweep, shape: J x I)
+    integer :: VEL_LIM_CLIP_MAP(N_MESH_POINTS, N_MESH_POINTS) = 0
+
 contains
 
     subroutine initialize_solver_data()
@@ -116,6 +123,11 @@ contains
 
         ABORT1 = .false.
         WSLP = 0.0
+
+        VEL_LIM_N_CLIPPED    = 0
+        VEL_LIM_MAX_U_BEFORE = 0.0
+        VEL_LIM_N_INFEASIBLE = 0
+        VEL_LIM_CLIP_MAP     = 0
 
     end subroutine initialize_solver_data
 
