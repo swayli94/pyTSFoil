@@ -64,6 +64,8 @@ if not os.environ.get('PEP517_BUILD_BACKEND'):
 else:
     _fortran_available = False
 
+from .ibl import IBL
+
 if _fortran_available:
     from .pytsfoil import PyTSFoil
 else:
@@ -79,4 +81,4 @@ else:
 
 __version__ = (files(__package__) / "VERSION").read_text().strip()
 
-__all__ = ['PyTSFoil', '__version__']
+__all__ = ['PyTSFoil', 'IBL', '__version__']

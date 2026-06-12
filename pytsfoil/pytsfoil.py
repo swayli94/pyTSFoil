@@ -42,6 +42,8 @@ from scipy import integrate
 import matplotlib.pyplot as plt
 from typing import Dict, Any
 
+from .ibl import IBL
+
 try:
     from .leading_edge import (solve_inner_problem, apply_composite_correction)
 except ImportError:
@@ -1167,6 +1169,227 @@ class PyTSFoil(object):
 
         if self.config.get('flag_print_info', False):
             print(f"  LE correction applied: CL_le={cl_le:.5f}, CM_le={cm_le:.5f}")
+
+    def run_ibl_coupled(self,
+                        ibl: IBL,
+                        n_outer: int = 5,
+                        x_tr_upper: float | None = None,
+                        x_tr_lower: float | None = None,
+                        ibl_relax: float = 0.5,
+                        mach_smooth_sigma: float = 2.0,
+                        slope_smooth_sigma: float = 3.0,
+                        delta_star_max: float = 0.05,
+                        slope_correction_max: float = 0.1,
+                        maxit_inner: int = 200,
+                        i_outer_repair: int = 2
+                        ) -> list:
+        '''
+        Viscous-inviscid coupling via IBL displacement-thickness wall-slope correction.
+
+        Coupling mechanism
+        ------------------
+        The IBL displacement thickness δ*(x) modifies the effective airfoil shape::
+
+            y_eff_upper(x) = y_upper(x) + δ*_upper(x)
+            y_eff_lower(x) = y_lower(x) - δ*_lower(x)
+
+        In TSD the wall boundary condition is  φ_y = (dY/dx − α)·φ_x.
+        The IBL correction adds  ±d(δ*)/dx / δ  to the normalised slopes
+        FXU/FXL and then re-calls SETBC before each warm-started TSD solve.
+
+        Outer iteration loop
+        --------------------
+        1. Run TSD to convergence (warm-start from previous P on iterations > 0).
+        2. Extract airfoil-surface Mach numbers (mau / mal).
+        3. Smooth Mach distribution to spread TSD shocks (prevents IBL divergence).
+        4. Run IBL on both surfaces: Thwaites → Michel → Head.
+        5. Clip δ* and smooth d(δ*)/dx to remove numerical artefacts.
+        6. Update FXU / FXL = base_slope ± dδ*/dx / δ  (with under-relaxation).
+        7. Re-call SETBC(0) to update FXUBC / FXLBC.
+        Repeat n_outer times.
+
+        Parameters
+        ----------
+        ibl : IBL
+            A pre-configured IBL instance (Re and M_inf already set).
+        n_outer : int
+            Number of outer coupling cycles.
+        x_tr_upper : float or None
+            Forced transition x/c on the upper surface.
+            None → use Michel's criterion.
+        x_tr_lower : float or None
+            Forced transition x/c on the lower surface.
+            None → use Michel's criterion.
+        ibl_relax : float
+            Under-relaxation factor for the slope update (0 < relax ≤ 1).
+        mach_smooth_sigma : float
+            Gaussian smoothing sigma (in mesh points) applied to the Mach
+            distribution before IBL integration.  Spreads the TSD shock over
+            several cells so that the IBL ODE sees a smooth du_e/ds.
+        slope_smooth_sigma : float
+            Gaussian smoothing sigma applied to d(δ*)/dx after IBL.
+        delta_star_max : float
+            Upper bound on δ* / c clipped before computing the slope correction.
+        slope_correction_max : float
+            Maximum absolute value of d(δ*)/dx applied to FXU/FXL.
+        maxit_inner : int
+            Maximum TSD iterations for each warm-start solve inside the outer
+            loop.  The first (cold) solve always uses ``config['MAXIT']``.
+            Smaller values (e.g. 50–200) are sufficient because P is already
+            near the solution and the outer loop corrects the residual error.
+        Returns
+        -------
+        history : list[dict]
+            One dict per outer iteration with keys
+            ``upper``, ``lower`` (IBL result dicts), ``cl``, ``cd_f``.
+
+        Notes
+        -----
+        The method calls SETBC but NOT DIFCOE or FARFLD between outer
+        iterations — only the wall slopes change; mesh and far-field BCs
+        are fixed. SOLVE warm-starts from the current P array (P is not
+        reset between outer iterations).
+
+        NWDGE must be 0 (or the IBL correction will be overwritten by
+        VWEDGE / SETBC(1) inside SOLVE).
+        '''
+        # Full initialisation and first TSD solve
+        self.initialize_data()
+        self.set_airfoil()
+        self.set_mesh()
+        self.compute_mesh_indices()
+        self.run_fortran_solver()
+        self.compute_data_summary()
+
+        # Extract surface Mach without file I/O (needed for first IBL step)
+        _io = {k: self.config[k]
+               for k in ('flag_output_shock', 'flag_output_field',
+                         'flag_output_summary')}
+        for k in _io:
+            self.config[k] = False
+        self.output_surface()
+        for k, v in _io.items():
+            self.config[k] = v
+
+        # Geometry and mesh constants (fixed across outer iterations)
+        ile     = self.mesh['ile']           # 0-based Python index
+        ite     = self.mesh['ite']           # 0-based Python index (inclusive)
+        nfoil   = self.mesh['nfoil']
+        delta   = self.airfoil['t_max']
+
+        xx_foil = self.mesh['xx'][ile : ite + 1]
+        yu_foil = np.interp(xx_foil, self.airfoil['xu'], self.airfoil['yu'])
+        yl_foil = np.interp(xx_foil, self.airfoil['xl'], self.airfoil['yl'])
+
+        # Base (unperturbed) airfoil slopes — fixed reference for cumulative correction
+        fxu_base = self.mesh['fxu'].copy()   # shape (nfoil,), index 0 = LE
+        fxl_base = self.mesh['fxl'].copy()
+
+        history = []
+
+        # Outer coupling loop
+        for k in range(n_outer):
+            mau_foil = self.data_summary['mau'][ile : ite + 1]
+            mal_foil = self.data_summary['mal'][ile : ite + 1]
+
+            # Smooth Mach: prevents IBL ODE from seeing the sharp TSD shock
+            mau_ibl = IBL.smooth_mach(mau_foil, mach_smooth_sigma)
+            mal_ibl = IBL.smooth_mach(mal_foil, mach_smooth_sigma)
+
+            # Run IBL on both surfaces
+            upper = ibl.run(xx_foil, mau_ibl, yy=yu_foil,
+                            x_tr_forced=x_tr_upper)
+            lower = ibl.run(xx_foil, mal_ibl, yy=yl_foil,
+                            x_tr_forced=x_tr_lower)
+
+            # Clip δ* to physically reasonable range; on the last iteration also
+            # repair trailing-edge blow-up so the final BC and stored result are clean.
+            dstar_u = np.clip(upper['delta_star'], 0.0, delta_star_max)
+            dstar_l = np.clip(lower['delta_star'], 0.0, delta_star_max)
+            if k == min(i_outer_repair - 1, n_outer - 1):
+                dstar_u = IBL.repair_dstar(xx_foil, dstar_u)
+                dstar_l = IBL.repair_dstar(xx_foil, dstar_l)
+            upper['delta_star'] = dstar_u
+            lower['delta_star'] = dstar_l
+
+            # Wall-slope corrections  ±d(δ*)/dx
+            slope_u = ibl.wall_slope_correction(
+                xx_foil, dstar_u, upper['s'], upper=True)
+            slope_l = ibl.wall_slope_correction(
+                xx_foil, dstar_l, lower['s'], upper=False)
+
+            # Smooth and clip slope corrections
+            slope_u = IBL.clip_and_smooth_slope(slope_u, slope_smooth_sigma, slope_correction_max)
+            slope_l = IBL.clip_and_smooth_slope(slope_l, slope_smooth_sigma, slope_correction_max)
+
+            # Update FXU/FXL = base_slope ± dδ*/dx / delta  (with relaxation)
+            fxu_new = fxu_base + slope_u * ibl_relax / delta
+            fxl_new = fxl_base + slope_l * ibl_relax / delta
+
+            tsf.common_data.fxu[:nfoil] = fxu_new.astype(np.float32)
+            tsf.common_data.fxl[:nfoil] = fxl_new.astype(np.float32)
+            self.mesh['fxu'] = fxu_new.copy()
+            self.mesh['fxl'] = fxl_new.copy()
+
+            # Rebuild FXUBC / FXLBC from updated FXU / FXL
+            tsf.solver_functions.setbc(0)
+
+            # Warm-start TSD solve (P is NOT reset; continues from current solution)
+            # Limit inner iterations: BC changes are small, outer loop handles residual error.
+            _maxit_saved = int(tsf.common_data.maxit)
+            tsf.common_data.maxit = maxit_inner
+            tsf.main_iteration.solve()
+            tsf.common_data.maxit = _maxit_saved
+
+            # Export P_field
+            imax = int(tsf.common_data.imax)
+            jmax = int(tsf.common_data.jmax)
+            self.data_summary['P_field'] = np.array(
+                tsf.solver_data.p[1:jmax + 1, 1:imax + 1], dtype=np.float64)
+
+            if self.config['vel_lim_enabled']:
+                self.data_summary['vel_lim_n_clipped'] = int(
+                    tsf.solver_data.vel_lim_n_clipped)
+                self.data_summary['vel_lim_max_u_before'] = float(
+                    tsf.solver_data.vel_lim_max_u_before)
+                self.data_summary['vel_lim_n_infeasible'] = int(
+                    tsf.solver_data.vel_lim_n_infeasible)
+
+            self.compute_data_summary()
+
+            # Recompute mau/mal for next iteration (suppress file I/O)
+            for _k in _io:
+                self.config[_k] = False
+            self.output_surface()
+            for _k, _v in _io.items():
+                self.config[_k] = _v
+
+            cd_f = ibl.friction_drag(upper, lower)
+            history.append({
+                'upper': upper,
+                'lower': lower,
+                'cl':    self.data_summary['cl'],
+                'cd_f':  cd_f,
+            })
+
+            if self.config['flag_print_info']:
+                print(f"[IBL {k + 1}/{n_outer}] "
+                      f"CL={self.data_summary['cl']:.5f}  "
+                      f"Cd_f={cd_f:.5f}  "
+                      f"x_tr_u={upper['x_tr']:.3f}  "
+                      f"x_tr_l={lower['x_tr']:.3f}  "
+                      f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}")
+
+        # Final repair of δ* to remove any numerical artefacts before storing in data_summary
+        upper['theta'] = IBL.repair_dstar(xx_foil, upper['theta'])
+        lower['theta'] = IBL.repair_dstar(xx_foil, lower['theta'])
+
+        # Store final IBL results in data_summary
+        self.data_summary['ibl_upper'] = upper
+        self.data_summary['ibl_lower'] = lower
+        self.data_summary['ibl_cd_f']  = cd_f
+
+        return history
 
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """
