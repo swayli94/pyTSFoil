@@ -1,26 +1,25 @@
 """
-Test 1: TSD leading-edge M=0 region decomposition.
+Test 1: TSD decomposition — thickness, camber, angle-of-attack contributions.
 
-Decomposes the contributions of thickness, camber, and angle of attack
-to the leading-edge Ma=0 region in the TSD solution.
+For each Mach number one 4×5 figure is produced:
 
-For each (Ma, AoA) combination, four cases are run:
-  - thickness_only : AoA=0, original thickness, no camber
-  - camber_only    : AoA=0, original camber + small reference thickness
-  - aoa_only       : flat plate + small reference thickness
-  - full           : original geometry, non-zero AoA
+  Col 1 — Thickness effect  : AoA=0, no camber,       t_scale = 0.1 / 0.5 / 1.0
+  Col 2 — Camber effect     : AoA=0, t_scale=0.1,     camber_scale = 0.1 / 0.5 / 1.0
+  Col 3 — AoA effect        : t_scale=0.1, no camber, AoA = 0° / 1° / 2°
+  Col 4 — AoA + Camber      : t_scale=0.1, full cam,  AoA = 0° / 1° / 2°
+  Col 5 — Full airfoil (ref): t_scale=1.0, full cam,  AoA = 0° / 1° / 2°
 
-camber_only and aoa_only require delta>0 for TSD scaling.  They are run with
-the smallest thickness-scale (fraction of original half-thickness) that
-achieves convergence, sweeping [0.5, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01].
-
-No MAE leading-edge correction is applied.
+Rows 1-3: Mach-number surface distributions (upper solid, lower dashed).
+Row  4  : Geometry illustration.
+           Cols 1-2 — overlay of the 3 geometries + single 0° inflow line.
+           Cols 3-5 — single geometry + 3 inflow lines at 0°/1°/2°.
 """
 
 import os
 import sys
 import copy
 import time
+import traceback
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing as mp
@@ -32,20 +31,55 @@ sys.path.insert(0, path_root)
 from cst_modeling.section import cst_foil
 from pytsfoil import PyTSFoil
 
-# ── airfoil (RAE2822) ─────────────────────────────────────────────────────────
+# ── airfoil (RAE2822-like CST) ────────────────────────────────────────────────
 CST_U = np.array([ 0.12829643,  0.12670863,  0.16065898,  0.14942386,  0.15102884,
                    0.22416928,  0.16078175,  0.20998555,  0.18608795,  0.21052324])
 CST_L = np.array([-0.12927128, -0.13176061, -0.17044964, -0.07045476, -0.33888064,
                    0.00991923, -0.20070721, -0.03536713, -0.04397496,  0.06436195])
-T_MAX = 0.15 # RAE2822 original maximum thickness = 0.1211
+T_MAX  = 0.15
+N_FOIL = 201
 
-# ── sweep parameters ──────────────────────────────────────────────────────────
-AOA_LIST  = [0.0, 1.0, 2.0, 3.0]   # degrees
 MACH_LIST = [0.70, 0.75, 0.80]
-N_FOIL    = 201
 
-# Thickness-scale candidates for camber_only / aoa_only (fraction of original half-thk)
-T_SCALE_CANDIDATES = [0.1]
+# ── column definitions ────────────────────────────────────────────────────────
+# Each case is (t_scale, camber_scale, aoa_deg).
+# geo_mode = 'vary_geom' → row-4 overlays 3 shapes + single 0° inflow line.
+# geo_mode = 'vary_aoa'  → row-4 shows 1 shape + 3 inflow lines at 0°/1°/2°.
+COLUMNS = [
+    {
+        'title':      'Thickness effect',
+        'cases':      [(0.1, 0.0, 0.0), (0.5, 0.0, 0.0), (1.0, 0.0, 0.0)],
+        'row_labels': ['t×0.1', 't×0.5', 't×1.0'],
+        'geo_mode':   'vary_geom',
+    },
+    {
+        'title':      'Camber effect',
+        'cases':      [(0.1, 0.1, 0.0), (0.1, 0.5, 0.0), (0.1, 1.0, 0.0)],
+        'row_labels': ['c×0.1', 'c×0.5', 'c×1.0'],
+        'geo_mode':   'vary_geom',
+    },
+    {
+        'title':      'AoA effect',
+        'cases':      [(0.1, 0.0, 0.0), (0.1, 0.0, 1.0), (0.1, 0.0, 2.0)],
+        'row_labels': ['α=0°', 'α=1°', 'α=2°'],
+        'geo_mode':   'vary_aoa',
+    },
+    {
+        'title':      'AoA + Camber',
+        'cases':      [(0.1, 1.0, 0.0), (0.1, 1.0, 1.0), (0.1, 1.0, 2.0)],
+        'row_labels': ['α=0°', 'α=1°', 'α=2°'],
+        'geo_mode':   'vary_aoa',
+    },
+    {
+        'title':      'Full airfoil (ref)',
+        'cases':      [(1.0, 1.0, 0.0), (1.0, 1.0, 1.0), (1.0, 1.0, 2.0)],
+        'row_labels': ['α=0°', 'α=1°', 'α=2°'],
+        'geo_mode':   'vary_aoa',
+    },
+]
+
+# colors for the three rows when overlaying geometry or inflow lines
+ROW_COLORS = ['tab:blue', 'tab:green', 'tab:red']
 
 # ── solver config ─────────────────────────────────────────────────────────────
 BASE_CFG = {
@@ -78,299 +112,242 @@ path_figs = os.path.join(path, 'figures')
 os.makedirs(path_figs, exist_ok=True)
 
 
-# ── airfoil geometry builders ─────────────────────────────────────────────────
+# ── geometry ──────────────────────────────────────────────────────────────────
 
 def _base_components(cst_u, cst_l):
-    """Return (x, camber, half_thk, tmax) for the original CST airfoil."""
     x, yu, yl, tmax, _ = cst_foil(N_FOIL, cst_u, cst_l, t=T_MAX)
     return x, 0.5 * (yu + yl), 0.5 * (yu - yl), tmax
 
 
-def _make_coords(x, camber, half_thk, variant, t_scale=1.0):
-    """
-    Build closed-loop coordinate array for a geometry variant.
-
-    variant:
-      'thickness_only' — symmetric, full thickness, no camber
-      'camber_only'    — camber line + t_scale * half_thk as symmetric thickness
-      'aoa_only'       — flat plate + t_scale * half_thk as symmetric thickness
-      'full'           — original camber + full thickness
-    t_scale: fraction of original half_thk to use as symmetric thickness
-             (only applies to camber_only / aoa_only)
-    """
+def _make_coords(x, camber, half_thk, t_scale, camber_scale):
     thk = half_thk * t_scale
-
-    if variant in ('thickness_only', 'thickness_half'):
-        yu = thk
-        yl = -thk
-    elif variant == 'camber_only':
-        yu = camber + thk
-        yl = camber - thk
-    elif variant == 'aoa_only':
-        yu = thk
-        yl = -thk
-    elif variant == 'full':
-        yu = camber + half_thk
-        yl = camber - half_thk
-    else:
-        raise ValueError(f'Unknown variant: {variant}')
-
-    xx = np.concatenate([x[::-1], x[1:]])
-    yy = np.concatenate([yu[::-1], yl[1:]])
+    cam = camber  * camber_scale
+    yu  = cam + thk
+    yl  = cam - thk
+    xx  = np.concatenate([x[::-1], x[1:]])
+    yy  = np.concatenate([yu[::-1], yl[1:]])
     return np.column_stack([xx, yy])
 
 
-# ── single worker ─────────────────────────────────────────────────────────────
+# ── solver worker (must be top-level for multiprocessing pickling) ─────────────
 
-def _solve(coords, ma, aoa):
-    """Run one PyTSFoil solve; return ts object or raise."""
+def _run_one(job: dict) -> dict:
+    key          = job['key']
+    t_scale      = job['t_scale']
+    camber_scale = job['camber_scale']
+    ma           = job['ma']
+    aoa          = job['aoa']
+    x            = job['x']
+    camber       = job['camber']
+    half_thk     = job['half_thk']
+
+    coords = _make_coords(x, camber, half_thk, t_scale, camber_scale)
     cfg = copy.deepcopy(BASE_CFG)
     cfg['EMACH'] = ma
     cfg['ALPHA'] = aoa
-    ts = PyTSFoil(airfoil_coordinates=coords, work_dir=path)
-    ts.set_config(**cfg)
-    ts.run()
-    return ts
-
-
-def _extract(ts, ma, aoa, variant, t_scale, elapsed):
-    ile = ts.mesh['ile']
-    ite = ts.mesh['ite']
-    mal = ts.data_summary['mal']
-    mau = ts.data_summary['mau']
-    return {
-        'success':      True,
-        'ma':           ma,
-        'aoa':          aoa,
-        'variant':      variant,
-        't_scale':      t_scale,
-        'elapsed':      elapsed,
-        'cl':           ts.data_summary['cl'],
-        'cd':           ts.data_summary['cd'],
-        'cm':           ts.data_summary['cm'],
-        'n_ma0_upper':  int(np.sum(mau[ile:ite + 1] == 0.0)),
-        'n_ma0_lower':  int(np.sum(mal[ile:ite + 1] == 0.0)),
-        'xx':           ts.mesh['xx'].copy(),
-        'mau':          mau.copy(),
-        'mal':          mal.copy(),
-        'cpu':          ts.data_summary['cpu'].copy(),
-        'cpl':          ts.data_summary['cpl'].copy(),
-    }
-
-
-def _run_one(job: dict) -> dict:
-    """
-    Run one (Ma, AoA, variant) case.
-
-    For thickness_only / full: single solve with t_scale=1.0.
-    For camber_only / aoa_only: retry across T_SCALE_CANDIDATES (smallest first),
-    report result for the first scale that converges.
-    """
-    ma      = job['ma']
-    aoa     = job['aoa']
-    variant = job['variant']
-    x       = job['x']
-    camber  = job['camber']
-    half_thk = job['half_thk']
-
-    import traceback
-
-    if variant in ('camber_only', 'aoa_only'):
-        scales = T_SCALE_CANDIDATES
-    elif variant == 'thickness_half':
-        scales = [0.5]
-    else:
-        scales = [1.0]
 
     t0 = time.time()
-    last_err = ''
-    for t_scale in scales:
-        coords = _make_coords(x, camber, half_thk, variant, t_scale)
-        try:
-            ts = _solve(coords, ma, aoa)
-            return _extract(ts, ma, aoa, variant, t_scale, time.time() - t0)
-        except Exception:
-            last_err = traceback.format_exc()
-            continue
+    try:
+        ts = PyTSFoil(airfoil_coordinates=coords, work_dir=path)
+        ts.set_config(**cfg)
+        ts.run()
 
-    return {
-        'success': False,
-        'ma': ma, 'aoa': aoa, 'variant': variant, 't_scale': None,
-        'error': last_err,
-    }
+        ile = ts.mesh['ile']
+        ite = ts.mesh['ite']
+        mau = ts.data_summary['mau']
+        mal = ts.data_summary['mal']
+
+        return {
+            'success':      True,
+            'key':          key,
+            't_scale':      t_scale,
+            'camber_scale': camber_scale,
+            'ma':           ma,
+            'aoa':          aoa,
+            'elapsed':      time.time() - t0,
+            'cl':           ts.data_summary['cl'],
+            'cd':           ts.data_summary['cd'],
+            'cm':           ts.data_summary['cm'],
+            'n_ma0_upper':  int(np.sum(mau[ile:ite + 1] == 0.0)),
+            'n_ma0_lower':  int(np.sum(mal[ile:ite + 1] == 0.0)),
+            'xx':           ts.mesh['xx'].copy(),
+            'mau':          mau.copy(),
+            'mal':          mal.copy(),
+        }
+    except Exception:
+        return {
+            'success': False,
+            'key':     key,
+            'ma':      ma,
+            'aoa':     aoa,
+            'error':   traceback.format_exc(),
+        }
 
 
-# ── plotting ──────────────────────────────────────────────────────────────────
+# ── plotting helpers ──────────────────────────────────────────────────────────
 
-# color per variant; upper → solid, lower → dashed
-VARIANT_CONFIG = {
-    'thickness_only': {'color': 'b', 'linewidth': 1.5, 'alpha': 1.0, 'label': 'Thickness only'},
-    'thickness_half': {'color': 'b', 'linewidth': 1.0, 'alpha': 0.5, 'label': 'Thickness half'},
-    'camber_only':    {'color': 'g', 'linewidth': 1.5, 'alpha': 1.0, 'label': 'Camber only'},
-    'aoa_only':       {'color': 'r', 'linewidth': 1.0, 'alpha': 1.0, 'label': 'AoA only'},
-    'full':           {'color': 'k', 'linewidth': 4.0, 'alpha': 0.5, 'label': 'Full'},
-}
+def _mach_ax(ax, r, row_label):
+    """Fill one Mach-distribution subplot."""
+    ax.text(0.03, 0.97, row_label, transform=ax.transAxes, fontsize=8,
+            va='top', ha='left',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='gray', alpha=0.7))
+
+    if not r['success']:
+        ax.text(0.5, 0.5, 'FAILED', transform=ax.transAxes,
+                ha='center', va='center', color='red', fontsize=9)
+    else:
+        ax.plot(r['xx'], r['mau'], color='tab:blue', ls='-',  lw=1.0, label='Upper')
+        ax.plot(r['xx'], r['mal'], color='tab:blue', ls='--', lw=1.0, label='Lower')
+        ax.axhline(1.0, color='k', lw=0.5, ls=':')
+        ax.axhline(0.0, color='k', lw=0.5, ls=':')
+        info = (f"CL={r['cl']:.4f}  CD={r['cd']:.5f}\n"
+                f"Ma0_u={r['n_ma0_upper']}  Ma0_l={r['n_ma0_lower']}")
+        ax.text(0.97, 0.97, info, transform=ax.transAxes, fontsize=6,
+                va='top', ha='right', family='monospace')
+
+        ax.axhline(r['ma'], color='k', lw=0.5, ls='--')
+
+    ax.set_xlim(-0.1, 1.1)
+    ax.set_ylim(-0.05, 1.55)
+    ax.grid(alpha=0.3)
+    ax.tick_params(labelsize=7)
 
 
-def _base_label(r):
-    label = VARIANT_CONFIG[r['variant']]['label']
-    if r['variant'] in ('camber_only', 'aoa_only') and r.get('t_scale') is not None:
-        label += f' (t={r["t_scale"]:.2f})'
-    return label
+def _geo_vary_geom(ax, x, camber, half_thk, cases, row_labels):
+    """Geometry subplot: overlay 3 shapes + single 0° inflow line (cols 1-2)."""
+    for i, (t_s, c_s, _) in enumerate(cases):
+        coords = _make_coords(x, camber, half_thk, t_s, c_s)
+        ax.plot(coords[:, 0], coords[:, 1],
+                color=ROW_COLORS[i], lw=1.0, label=row_labels[i])
+    x_ref = np.array([-0.1, 1.1])
+    ax.plot(x_ref, np.zeros(2), 'k--', lw=0.8, label='Inflow 0°')
 
 
-def _plot_mach(ma, aoa, cases_by_variant, x, camber, half_thk):
-    """
-    Two subplots:
-      left  — airfoil geometry for each variant + inflow reference line through (1, 0)
-      right — Mach distribution, full chord
-    Each variant: solid = upper surface, dashed = lower surface (Mach subplot).
-    """
-    fig, (ax_geo, ax_mach) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f'Mach Distribution  Ma={ma:.2f}, AoA={aoa:.1f}°', fontsize=11)
+def _geo_vary_aoa(ax, x, camber, half_thk, cases, row_labels):
+    """Geometry subplot: single shape + 3 inflow lines (cols 3-5)."""
+    t_s, c_s, _ = cases[0]
+    coords = _make_coords(x, camber, half_thk, t_s, c_s)
+    ax.plot(coords[:, 0], coords[:, 1], 'k-', lw=1.2, label='Geometry')
+    x_ref = np.array([-0.1, 1.1])
+    for i, (_, _, aoa) in enumerate(cases):
+        y_ref = np.tan(np.deg2rad(aoa)) * (x_ref - 1.0)
+        ax.plot(x_ref, y_ref, ls='--', color=ROW_COLORS[i], lw=0.9,
+                label=row_labels[i])
 
-    # ── geometry subplot ──────────────────────────────────────────────────────
-    for variant, r in cases_by_variant.items():
-        if not r['success']:
-            continue
-        color = VARIANT_CONFIG[variant]['color']
-        linewidth = VARIANT_CONFIG[variant]['linewidth']
-        alpha = VARIANT_CONFIG[variant]['alpha']
-        label  = _base_label(r)
-        t_scale = r.get('t_scale') or 1.0
-        coords = _make_coords(x, camber, half_thk, variant, t_scale)
-        ax_geo.plot(coords[:, 0], coords[:, 1], color=color, lw=linewidth, alpha=alpha, label=label)
 
-    # inflow reference line through trailing edge (1, 0) at angle AoA
-    aoa_rad = np.deg2rad(aoa)
-    x_ref   = np.array([-0.15, 1.25])
-    y_ref   = np.tan(aoa_rad) * (x_ref - 1.0)
-    ax_geo.plot(x_ref, y_ref, color='red', ls='--', lw=0.5,
-                label=f'Inflow dir. (AoA={aoa:.1f}°)')
+# ── main figure ───────────────────────────────────────────────────────────────
 
-    # ax_geo.set_aspect('equal')
-    ax_geo.set_xlim(-0.15, 1.25)
-    ax_geo.set_ylim(-0.2, 0.2)
-    ax_geo.set(title='Geometry', xlabel='x/c', ylabel='y/c')
-    ax_geo.legend(fontsize=7)
-    ax_geo.grid(alpha=0.3)
+def _plot_figure(ma, x, camber, half_thk, results_by_key):
+    fig, axes = plt.subplots(
+        4, 5, figsize=(20, 13),
+        gridspec_kw={'height_ratios': [1, 1, 1, 0.65]},
+    )
+    fig.suptitle(f'TSD Decomposition  —  Ma = {ma:.2f}', fontsize=13)
 
-    # ── Mach subplot ──────────────────────────────────────────────────────────
-    for variant, r in cases_by_variant.items():
-        if not r['success']:
-            continue
-        color = VARIANT_CONFIG[variant]['color']
-        linewidth = VARIANT_CONFIG[variant]['linewidth']
-        alpha = VARIANT_CONFIG[variant]['alpha']
-        label = _base_label(r)
-        ax_mach.plot(r['xx'], r['mau'], color=color, ls='-',  lw=linewidth, alpha=alpha, label=f'{label} upper')
-        ax_mach.plot(r['xx'], r['mal'], color=color, ls='--', lw=linewidth, alpha=alpha, label=f'{label} lower')
+    for col_idx, col in enumerate(COLUMNS):
 
-    ax_mach.axhline(1.0, color='gray', lw=0.8, ls=':', label='M=1')
-    ax_mach.axhline(0.0, color='gray', lw=0.5, ls=':')
-    ax_mach.set_xlim(-0.2, 1.2)
-    ax_mach.set_ylim(-0.05, 1.5)
-    ax_mach.set(title='Full chord', xlabel='x/c', ylabel='Mach')
-    ax_mach.legend(fontsize=7, ncol=2)
-    ax_mach.grid(alpha=0.3)
+        # rows 0-2: Mach distributions ----------------------------------------
+        for row_idx in range(3):
+            ax = axes[row_idx, col_idx]
+            t_s, c_s, aoa = col['cases'][row_idx]
+            key = (ma, t_s, c_s, aoa)
+            r   = results_by_key.get(key, {'success': False})
+            _mach_ax(ax, r, col['row_labels'][row_idx])
+
+            if row_idx == 0:
+                ax.set_title(col['title'], fontsize=9, pad=4)
+            if col_idx == 0:
+                ax.set_ylabel('Mach', fontsize=8)
+
+            # suppress x-tick labels on rows 0 and 1
+            ax.tick_params(labelbottom=(row_idx == 2))
+
+        # row 3: geometry illustration ----------------------------------------
+        ax = axes[3, col_idx]
+        if col['geo_mode'] == 'vary_geom':
+            _geo_vary_geom(ax, x, camber, half_thk, col['cases'], col['row_labels'])
+        else:
+            _geo_vary_aoa(ax, x, camber, half_thk, col['cases'], col['row_labels'])
+
+        ax.set_xlim(-0.1, 1.1)
+        ax.set_ylim(-0.1, 0.1)
+        ax.set_xlabel('x/c', fontsize=8)
+        ax.legend(fontsize=6, loc='upper right', framealpha=0.6)
+        ax.grid(alpha=0.3)
+        ax.tick_params(labelsize=7)
+        if col_idx == 0:
+            ax.set_ylabel('y/c', fontsize=8)
 
     fig.tight_layout()
-    fig.savefig(os.path.join(path_figs, f'mach_Ma{ma:.2f}_AoA{aoa:.1f}.png'),
-                dpi=120, bbox_inches='tight')
+    out = os.path.join(path_figs, f'decomposition_Ma{ma:.2f}.png')
+    fig.savefig(out, dpi=150, bbox_inches='tight')
     plt.close(fig)
 
 
-def _plot_n_ma0_heatmaps(all_results):
-    variants = list(VARIANT_CONFIG.keys())
+# ── summary table ─────────────────────────────────────────────────────────────
 
-    for surface, surf_key in (('upper', 'n_ma0_upper'), ('lower', 'n_ma0_lower')):
-        fig, axes = plt.subplots(1, len(variants), figsize=(5 * len(variants), 4))
-        fig.suptitle(f'Ma=0 point count — {surface} surface', fontsize=11)
-
-        for ax, variant in zip(axes, variants):
-            data = np.full((len(AOA_LIST), len(MACH_LIST)), np.nan)
-            for r in all_results:
-                if r['success'] and r['variant'] == variant:
-                    i_aoa  = AOA_LIST.index(r['aoa'])
-                    i_mach = MACH_LIST.index(r['ma'])
-                    data[i_aoa, i_mach] = r[surf_key]
-
-            valid = data[~np.isnan(data)]
-            vmax  = max(valid.max(), 1) if len(valid) else 1
-            im = ax.imshow(data, aspect='auto', origin='lower',
-                           cmap='YlOrRd', vmin=0, vmax=vmax)
-            ax.set_xticks(range(len(MACH_LIST)))
-            ax.set_xticklabels([f'{m:.2f}' for m in MACH_LIST])
-            ax.set_yticks(range(len(AOA_LIST)))
-            ax.set_yticklabels([f'{a:.1f}°' for a in AOA_LIST])
-            ax.set(xlabel='Mach', ylabel='AoA', title=VARIANT_CONFIG[variant]['label'])
-            for ii in range(len(AOA_LIST)):
-                for jj in range(len(MACH_LIST)):
-                    v = data[ii, jj]
-                    txt = f'{int(v)}' if not np.isnan(v) else 'F'
-                    ax.text(jj, ii, txt, ha='center', va='center', fontsize=9)
-            plt.colorbar(im, ax=ax)
-
-        fig.tight_layout()
-        fig.savefig(os.path.join(path_figs, f'n_ma0_{surface}.png'),
-                    dpi=120, bbox_inches='tight')
-        plt.close(fig)
-
-
-def print_summary(all_results, fname):
-    
+def _print_summary(results_by_key, fname):
+    hdr = (f'{"Ma":>5}  {"t_sc":>5}  {"c_sc":>5}  {"AoA":>5}  '
+           f'{"CL":>9}  {"CD":>9}  {"CM":>9}  '
+           f'{"Ma0_u":>5}  {"Ma0_l":>5}  {"t(s)":>6}\n')
+    sep = '=' * len(hdr.rstrip())
     with open(fname, 'w') as f:
-        
-        f.write('=' * 105 + '\n')
-
-        f.write(f'{"Ma":>5}  {"AoA":>5}  {"Variant":<18}  {"t_scale":>7}  '
-                f'{"n_Ma0_u":>7}  {"n_Ma0_l":>7}  '
-                f'{"CL":>8}  {"CD":>8}  {"CM":>8}  {"t(s)":>6}\n')
-        f.write('-' * 105 + '\n')
-        sort_key = lambda r: (r['ma'], r['aoa'], list(VARIANT_CONFIG.keys()).index(r['variant']))
-        for r in sorted(all_results, key=sort_key):
-            ts_str = f'{r["t_scale"]:.2f}' if r.get('t_scale') is not None else '  —  '
+        f.write(sep + '\n')
+        f.write(hdr)
+        f.write('-' * len(hdr.rstrip()) + '\n')
+        for key in sorted(results_by_key):
+            r = results_by_key[key]
+            ma, t_s, c_s, aoa = key
             if not r['success']:
-                f.write(f"  {r['ma']:.2f}  {r['aoa']:.1f}  {r['variant']:<18}  {ts_str:>7}  FAILED\n")
-                continue
-            f.write(f"  {r['ma']:.2f}  {r['aoa']:.1f}  {r['variant']:<18}  {ts_str:>7}  "
-                    f"{r['n_ma0_upper']:>7d}  {r['n_ma0_lower']:>7d}  "
-                    f"{r['cl']:>8.5f}  {r['cd']:>8.5f}  {r['cm']:>8.5f}  "
-                    f"{r['elapsed']:>6.1f}\n")
-        f.write('=' * 105 + '\n')
+                f.write(f"  {ma:.2f}  {t_s:.2f}  {c_s:.2f}  {aoa:.1f}  FAILED\n")
+            else:
+                f.write(f"  {ma:.2f}  {t_s:.2f}  {c_s:.2f}  {aoa:.1f}  "
+                        f"{r['cl']:>9.5f}  {r['cd']:>9.6f}  {r['cm']:>9.5f}  "
+                        f"{r['n_ma0_upper']:>5d}  {r['n_ma0_lower']:>5d}  "
+                        f"{r['elapsed']:>6.1f}\n")
+        f.write(sep + '\n')
 
+
+# ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
 
     x, camber, half_thk, tmax = _base_components(CST_U, CST_L)
     print(f"Airfoil: tmax={tmax:.4f}")
 
+    # collect unique (ma, t_scale, camber_scale, aoa) cases — avoid duplicates
+    seen = set()
     jobs = []
     for ma in MACH_LIST:
-        for aoa in AOA_LIST:
-            for variant in VARIANT_CONFIG.keys():
-                jobs.append({
-                    'ma': ma, 'aoa': aoa, 'variant': variant,
-                    'x': x, 'camber': camber, 'half_thk': half_thk,
-                })
+        for col in COLUMNS:
+            for t_s, c_s, aoa in col['cases']:
+                key = (ma, t_s, c_s, aoa)
+                if key not in seen:
+                    seen.add(key)
+                    jobs.append({
+                        'key':          key,
+                        'ma':           ma,
+                        't_scale':      t_s,
+                        'camber_scale': c_s,
+                        'aoa':          aoa,
+                        'x':            x,
+                        'camber':       camber,
+                        'half_thk':     half_thk,
+                    })
 
     n_proc = min(mp.cpu_count(), len(jobs))
-    print(f"Running {len(jobs)} cases with {n_proc} workers ...")
+    print(f"Running {len(jobs)} unique cases with {n_proc} workers ...")
 
     with mp.Pool(n_proc) as pool:
-        all_results = pool.map(_run_one, jobs)
+        raw = pool.map(_run_one, jobs)
+
+    results_by_key = {r['key']: r for r in raw}
+
+    n_ok = sum(1 for r in raw if r['success'])
+    print(f"Done — {n_ok}/{len(raw)} succeeded.")
 
     for ma in MACH_LIST:
-        for aoa in AOA_LIST:
-            cases_by_variant = {
-                r['variant']: r
-                for r in all_results
-                if r['ma'] == ma and r['aoa'] == aoa
-            }
-            _plot_mach(ma, aoa, cases_by_variant, x, camber, half_thk)
-            # _plot_cp(ma, aoa, cases_by_variant)
+        _plot_figure(ma, x, camber, half_thk, results_by_key)
 
-    _plot_n_ma0_heatmaps(all_results)
-
-    fname = os.path.join(path, 'summary.txt')
-    print_summary(all_results, fname)
+    _print_summary(results_by_key, os.path.join(path, 'summary.txt'))
+    print("Summary written.")
