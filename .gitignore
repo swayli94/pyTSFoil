@@ -15,6 +15,7 @@
 
 temp*
 *.egg-info
+.vscode
 
 cpxs.dat
 field.dat

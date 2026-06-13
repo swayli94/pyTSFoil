@@ -26,8 +26,6 @@ import matplotlib.patches as mpatches
 
 path      = os.path.abspath(os.path.dirname(__file__))
 path_root = os.path.abspath(os.path.join(path, '..', '..'))
-path_figs = os.path.join(path, 'figures')
-os.makedirs(path_figs, exist_ok=True)
 sys.path.insert(0, path_root)
 
 from pytsfoil import PyTSFoil, IBL
