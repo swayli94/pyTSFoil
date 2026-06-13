@@ -1,7 +1,5 @@
 from pathlib import Path
-
-# Version info - must be first to avoid import issues during build
-__version__ = (Path(__file__).parent / "VERSION").read_text().strip()
+from pytsfoil._version import __version__
 
 import os
 import sys
@@ -78,7 +76,5 @@ else:
                 f"  cd {Path(__file__).parent.parent}\n"
                 f"  python {Path(__file__).parent / 'compile_f2py.py'}"
             )
-
-__version__ = (files(__package__) / "VERSION").read_text().strip()
 
 __all__ = ['PyTSFoil', 'IBL', '__version__']

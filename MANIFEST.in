@@ -4,7 +4,6 @@ include pyproject.toml
 include setup.py
 
 # Package files  
-include pytsfoil/VERSION
 recursive-include pytsfoil *.py
 
 # Fortran source files (needed for runtime compilation)

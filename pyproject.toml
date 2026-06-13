@@ -51,13 +51,13 @@ Repository = "https://github.com/swayli94/pyTSFoil"
 Documentation = "https://github.com/swayli94/pyTSFoil/blob/main/README.md"
 
 [tool.setuptools.dynamic]
-version = {attr = "pytsfoil.__version__"}
+version = {attr = "pytsfoil._version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["pytsfoil*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.f", "*.exe", "*.f90", "*.pyf", "VERSION"]
+"*" = ["*.f", "*.exe", "*.f90", "*.pyf"]
 
 [tool.setuptools]
 license-files = []  # Disable automatic license file inclusion
