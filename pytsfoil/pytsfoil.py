@@ -2,7 +2,6 @@
 This is a python interface for TSFOIL.
 
 The wind tunnel option is not implemented.
-The 'CLSET' option is not implemented.
 
 Note
 ------
@@ -41,6 +40,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy import integrate
 import matplotlib.pyplot as plt
+from .ibl import IBL
 
 try:
     import tsfoil_fortran as tsf
@@ -51,6 +51,31 @@ except ImportError as e:
     print("Make sure you have compiled the Fortran modules with f2py:")
     print("  python3 pyTSFoil/compile_f2py.py")
     sys.exit(1)
+
+
+def calculate_cp_isentropic(ma: np.ndarray, minf: float, gamma: float = 1.4) -> np.ndarray:
+    '''
+    Calculate the isentropic pressure coefficient from local Mach number and freestream Mach number.
+
+    Parameters
+    ----------
+    ma: np.ndarray
+        Local Mach number at each point.
+        
+    minf: float
+        Freestream Mach number.
+        
+    gamma: float, optional
+        Ratio of specific heats (default is 1.4 for air).
+        
+    Returns
+    -------
+    cp: np.ndarray
+        Isentropic pressure coefficient at each point.
+    '''
+    denom = 2.0 + (gamma - 1.0) * ma ** 2
+    numer = 2.0 + (gamma - 1.0) * minf ** 2
+    return (2.0 / (gamma * minf ** 2)) * ((numer / denom) ** (gamma / (gamma - 1.0)) - 1.0)
 
 
 class PyTSFoil(object):
@@ -117,7 +142,7 @@ class PyTSFoil(object):
             if key in self.config:
                 self.config[key] = value
             else:
-                raise ValueError(f"Invalid configuration parameter: {key}")
+                print(f"WARNING: Invalid configuration parameter: {key}")
     
     def run(self):
         '''
@@ -136,28 +161,277 @@ class PyTSFoil(object):
         self.compute_data_summary()
         
         self.print_summary()
-    
+
+    def run_ibl_coupled(self,
+                        ibl: IBL,
+                        n_outer: int = 10,
+                        x_tr_upper: float | None = None,
+                        x_tr_lower: float | None = None,
+                        ibl_relax: float = 0.5,
+                        mach_smooth_sigma: float = 2.0,
+                        slope_smooth_sigma: float = 3.0,
+                        delta_star_max: float = 0.05,
+                        slope_correction_max: float = 0.1,
+                        maxit_inner: int = 200,
+                        i_outer_repair: int = 3,
+                        use_te_correction: bool = False,
+                        d_angle_TE: float = 0.0,
+                        x_blend_start: float = 0.8,
+                        ) -> list:
+        '''
+        Viscous-inviscid coupling via IBL displacement-thickness wall-slope correction.
+
+        Coupling mechanism
+        ------------------
+        The IBL displacement thickness δ*(x) modifies the effective airfoil shape::
+
+            y_eff_upper(x) = y_upper(x) + δ*_upper(x)
+            y_eff_lower(x) = y_lower(x) - δ*_lower(x)
+
+        In TSD the wall boundary condition is  φ_y = (dY/dx - α)·φ_x.
+        The IBL correction adds  ±d(δ*)/dx / δ  to the normalised slopes
+        FXU/FXL and then re-calls SETBC before each warm-started TSD solve.
+
+        Outer iteration loop
+        --------------------
+        1. Run TSD to convergence (warm-start from previous P on iterations > 0).
+        2. Extract airfoil-surface Mach numbers (mau / mal).
+        3. Smooth Mach distribution to spread TSD shocks (prevents IBL divergence).
+        4. Run IBL on both surfaces: Thwaites → Michel → Head.
+        5. Clip δ* and smooth d(δ*)/dx to remove numerical artefacts.
+        6. Update FXU / FXL = base_slope ± dδ*/dx / δ  (with under-relaxation).
+        7. Re-call SETBC(0) to update FXUBC / FXLBC.
+        Repeat n_outer times.
+
+        Parameters
+        ----------
+        ibl : IBL
+            A pre-configured IBL instance (Re and M_inf already set).
+        n_outer : int
+            Number of outer coupling cycles.
+        x_tr_upper : float or None
+            Forced transition x/c on the upper surface.
+            None → use Michel's criterion.
+        x_tr_lower : float or None
+            Forced transition x/c on the lower surface.
+            None → use Michel's criterion.
+        ibl_relax : float
+            Under-relaxation factor for the slope update (0 < relax ≤ 1).
+        mach_smooth_sigma : float
+            Gaussian smoothing sigma (in mesh points) applied to the Mach
+            distribution before IBL integration.  Spreads the TSD shock over
+            several cells so that the IBL ODE sees a smooth du_e/ds.
+        slope_smooth_sigma : float
+            Gaussian smoothing sigma applied to d(δ*)/dx after IBL.
+        delta_star_max : float
+            Upper bound on δ* / c clipped before computing the slope correction.
+        slope_correction_max : float
+            Maximum absolute value of d(δ*)/dx applied to FXU/FXL.
+        maxit_inner : int
+            Maximum TSD iterations for each warm-start solve inside the outer
+            loop.  The first (cold) solve always uses ``config['MAXIT']``.
+            Smaller values (e.g. 50-200) are sufficient because P is already
+            near the solution and the outer loop corrects the residual error.
+        Returns
+        -------
+        history : list[dict]
+            One dict per outer iteration with keys
+            ``upper``, ``lower`` (IBL result dicts), ``cl``, ``cd_f``.
+
+        Notes
+        -----
+        The method calls SETBC but NOT DIFCOE or FARFLD between outer
+        iterations — only the wall slopes change; mesh and far-field BCs
+        are fixed. SOLVE warm-starts from the current P array (P is not
+        reset between outer iterations).
+
+        NWDGE must be 0 (or the IBL correction will be overwritten by
+        VWEDGE / SETBC(1) inside SOLVE).
+        '''
+        # Full initialisation and first TSD solve
+        self.initialize_data()
+        self.set_airfoil()
+        self.set_mesh()
+        self.compute_mesh_indices()
+        self.run_fortran_solver()
+        self.compute_data_summary()
+
+        # Extract surface Mach without file I/O (needed for first IBL step)
+        _io = {k: self.config[k]
+               for k in ('flag_output_shock', 'flag_output_field',
+                         'flag_output_summary')}
+        for k in _io:
+            self.config[k] = False
+        self.output_surface()
+        for k, v in _io.items():
+            self.config[k] = v
+            
+        aoa = self.config['ALPHA']
+
+        # Geometry and mesh constants (fixed across outer iterations)
+        ile     = self.mesh['ile']           # 0-based Python index
+        ite     = self.mesh['ite']           # 0-based Python index (inclusive)
+        nfoil   = self.mesh['nfoil']
+        delta   = self.airfoil['t_max']
+
+        xx_foil = self.mesh['xx'][ile : ite + 1]
+        yu_foil = np.interp(xx_foil, self.airfoil['xu'], self.airfoil['yu'])
+        yl_foil = np.interp(xx_foil, self.airfoil['xl'], self.airfoil['yl'])
+
+        # Base (unperturbed) airfoil slopes — fixed reference for cumulative correction
+        fxu_base = self.mesh['fxu'].copy()   # shape (nfoil,), index 0 = LE
+        fxl_base = self.mesh['fxl'].copy()
+
+        history = []
+        k_start_repair = min(i_outer_repair - 1, n_outer - 1)
+
+        # Outer coupling loop
+        for k in range(n_outer):
+            mau_foil = self.data_summary['mau'][ile : ite + 1]
+            mal_foil = self.data_summary['mal'][ile : ite + 1]
+
+            # Smooth Mach: prevents IBL ODE from seeing the sharp TSD shock
+            mau_ibl = IBL.smooth_mach(mau_foil, mach_smooth_sigma)
+            mal_ibl = IBL.smooth_mach(mal_foil, mach_smooth_sigma)
+
+            # Run IBL on both surfaces
+            upper = ibl.run(xx_foil, mau_ibl, yy=yu_foil,
+                            x_tr_forced=x_tr_upper)
+            lower = ibl.run(xx_foil, mal_ibl, yy=yl_foil,
+                            x_tr_forced=x_tr_lower)
+
+            # Clip δ* to physically reasonable range.
+            dstar_u = np.clip(upper['delta_star'], 0.0, delta_star_max)
+            dstar_l = np.clip(lower['delta_star'], 0.0, delta_star_max)
+
+            # Repair trailing-edge blow-up on the designated repair iteration.
+            if k >= k_start_repair:
+                dstar_u, i_break_u = IBL.repair_dstar(xx_foil, dstar_u)
+                dstar_l, i_break_l = IBL.repair_dstar(xx_foil, dstar_l)
+            else:
+                i_break_u = -1
+                i_break_l = -1
+
+            # Store pre-correction δ* (always); apply TE correction on last iteration.
+            upper['delta_star_raw'] = dstar_u.copy()
+            lower['delta_star_raw'] = dstar_l.copy()
+
+            if use_te_correction and k >= k_start_repair:
+                dstar_u = ibl.correction_dstar(
+                    xx=xx_foil, yy=yu_foil, dstar=dstar_u,
+                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    x_blend_start=min(xx_foil[i_break_u], x_blend_start),
+                    upper=True
+                )
+                dstar_l = ibl.correction_dstar(
+                    xx=xx_foil, yy=yl_foil, dstar=dstar_l,
+                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    x_blend_start=min(xx_foil[i_break_l], x_blend_start),
+                    upper=False
+                )
+
+            upper['delta_star'] = dstar_u
+            lower['delta_star'] = dstar_l
+
+            # Wall-slope corrections  ±d(δ*)/dx
+            slope_u = ibl.wall_slope_correction(
+                xx_foil, dstar_u, upper['s'], upper=True)
+            slope_l = ibl.wall_slope_correction(
+                xx_foil, dstar_l, lower['s'], upper=False)
+
+            # Smooth and clip slope corrections
+            slope_u = IBL.clip_and_smooth_slope(slope_u, slope_smooth_sigma, slope_correction_max)
+            slope_l = IBL.clip_and_smooth_slope(slope_l, slope_smooth_sigma, slope_correction_max)
+
+            # Update FXU/FXL = base_slope ± dδ*/dx / delta  (with relaxation)
+            fxu_new = fxu_base + slope_u * ibl_relax / delta
+            fxl_new = fxl_base + slope_l * ibl_relax / delta
+
+            tsf.common_data.fxu[:nfoil] = fxu_new.astype(np.float32)
+            tsf.common_data.fxl[:nfoil] = fxl_new.astype(np.float32)
+            self.mesh['fxu'] = fxu_new.copy()
+            self.mesh['fxl'] = fxl_new.copy()
+
+            # Rebuild FXUBC / FXLBC from updated FXU / FXL
+            tsf.solver_functions.setbc(0)
+
+            # Warm-start TSD solve (P is NOT reset; continues from current solution)
+            # Limit inner iterations: BC changes are small, outer loop handles residual error.
+            _maxit_saved = int(tsf.common_data.maxit)
+            tsf.common_data.maxit = maxit_inner
+            tsf.main_iteration.solve()
+            tsf.common_data.maxit = _maxit_saved
+
+            # Export P_field
+            imax = int(tsf.common_data.imax)
+            jmax = int(tsf.common_data.jmax)
+            self.data_summary['P_field'] = np.array(
+                tsf.solver_data.p[1:jmax + 1, 1:imax + 1], dtype=np.float64)
+
+            self.compute_data_summary()
+
+            # Recompute mau/mal for next iteration (suppress file I/O)
+            for _k in _io:
+                self.config[_k] = False
+            self.output_surface()
+            for _k, _v in _io.items():
+                self.config[_k] = _v
+
+            cd_f = ibl.friction_drag(upper, lower)
+            entry = {
+                'upper': upper,
+                'lower': lower,
+                'cl':    self.data_summary['cl'],
+                'cd_f':  cd_f,
+            }
+            history.append(entry)
+
+            if self.config['flag_print_info']:
+                print(f"[IBL {k + 1}/{n_outer}] "
+                      f"CL={self.data_summary['cl']:.5f}  "
+                      f"Cd_f={cd_f:.5f}  "
+                      f"x_tr_u={upper['x_tr']:.3f}  "
+                      f"x_tr_l={lower['x_tr']:.3f}  "
+                      f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}")
+
+        # Final repair of δ* to remove any numerical artefacts before storing in data_summary
+        upper['theta'], _ = IBL.repair_dstar(xx_foil, upper['theta'])
+        lower['theta'], _ = IBL.repair_dstar(xx_foil, lower['theta'])
+
+        # Store final IBL results in data_summary
+        self.data_summary['ibl_upper'] = upper
+        self.data_summary['ibl_lower'] = lower
+        self.data_summary['ibl_cd_f']  = cd_f
+
+        return history
+
     def run_fortran_solver(self) -> None:
         '''
         Run the Fortran solver.
         '''
         # Scale variables to similarity form
-        tsf.solver_functions.scale()
+        self.compute_scale()
 
         # Set far field boundary conditions
-        tsf.solver_functions.farfld()
-        
+        self.compute_far_field_bc()
+
         self.compute_geometry_derivatives()
-        
+
         # Compute finite difference coefficients
         tsf.solver_base.difcoe()
-        
+
         # Set boundary conditions
         tsf.solver_functions.setbc(0)
-        
+
         # Solve transonic flow equations
         tsf.main_iteration.solve()
-    
+
+        # Export P field for all runs (used by field plots)
+        imax = int(tsf.common_data.imax)
+        jmax = int(tsf.common_data.jmax)
+        self.data_summary['P_field'] = np.array(
+            tsf.solver_data.p[1:jmax+1, 1:imax+1], dtype=np.float64)
+
     def _default_config(self):
         '''
         Set the default configuration parameters.
@@ -166,20 +440,14 @@ class PyTSFoil(object):
         # NU, NL, DELTA are set in set_airfoil()
         # IMAXI, JMAXI are set in set_mesh()
         self.config = {
-            'AK': 0.0,              # Free stream similarity parameter
             'ALPHA': 0.0,           # Angle of attack
-            'BCTYPE': 1,            # Boundary condition identifiers (1 = free air, 2 = tunnel)
             'CVERGE': 0.00001,      # Error criterion for convergence
             'DVERGE': 10.0,         # Error criterion for divergence
             'EMACH': 0.75,          # Mach number
-            'EPS': 0.2,             # Convergence tolerance
-            'FCR': 1,               # Whether difference equations are fully conservative (True)
+            'EPS': 0.2,             # Artificial viscosity parameter (0.0-1.0)
             'IPRTER': 100,          # Print interval for convergence history
-            'KUTTA': 1,             # Whether Kutta condition is enforced (True)
             'MAXIT': 1000,          # Maximum number of iterations
-            'PHYS': 1,              # Physical (True) vs similarity (False)
-            'POR': 0.0,             # Porosity
-            'RIGF': 0.0,            # Rigidity factor for transonic effects
+            'RIGF': 0.0,            # Rigidity factor for limiting surface slopes (0-1)
             'SIMDEF': 3,            # Similarity scaling (1 = Cole, 2 = Spreiter, 3 = Krupp)
             'WCIRC': 1.0,           # Weight for circulation jump at trailing edge (0.0-1.0)
             'WE': [1.8, 1.9, 1.95], # SOR relaxation factors
@@ -197,8 +465,8 @@ class PyTSFoil(object):
             'flag_output_summary': True,   # smry.out
             'flag_output_shock': True,     # cpxs.dat
             'flag_output_field': True,     # field.dat
-            
-            'flag_print_info': True,
+            'flag_print_info': True, # print information to console
+
         }
         
         # Default parameters
@@ -221,25 +489,18 @@ class PyTSFoil(object):
             raise ValueError("ALPHA must be between -9.0 and 9.0")
         if self.config['NWDGE'] > 0 and self.config['EMACH'] > 1.0:
             raise ValueError("NWDGE must be 0 if EMACH <= 1.0")
-        
-        # Set AK=0 for physical coordinates
-        if self.config['PHYS'] == 1:
-            self.config['AK'] = 0.0
-            
+         
         # Constants
         self.n_mesh_points = tsf.common_data.n_mesh_points
         self.nmp_plus1 = tsf.common_data.nmp_plus1
         self.nmp_plus2 = tsf.common_data.nmp_plus2
         
+        self._gamma = float(tsf.common_data.gam) # gamma = 1.4
+        self._gam1 = float(tsf.common_data.gam1) # gamma + 1
+        
         # Apply self.config to common data
         for key, value in self.config.items():
             setattr(tsf.common_data, key.lower(), value)
-        
-        # Open output files
-        if self.config['flag_output']:
-            tsf.io_module.open_output_file()
-        if self.config['flag_output_summary']:
-            tsf.io_module.open_summary_file()
 
         # Print working directory and output directory
         if self.config['flag_print_info']:
@@ -290,14 +551,7 @@ class PyTSFoil(object):
         self.airfoil['xl'] = xl
         self.airfoil['yl'] = yl
         
-        tsf.common_data.nu = xu.shape[0]
-        tsf.common_data.nl = xl.shape[0]
         tsf.common_data.delta = np.float32(t_max)
-        
-        tsf.common_data.xu[:len(xu)] = xu.astype(np.float32)
-        tsf.common_data.yu[:len(yu)] = yu.astype(np.float32)
-        tsf.common_data.xl[:len(xl)] = xl.astype(np.float32)
-        tsf.common_data.yl[:len(yl)] = yl.astype(np.float32)
 
     def set_mesh(self) -> None:
         '''
@@ -384,9 +638,6 @@ class PyTSFoil(object):
         tsf.common_data.imax = self.config['n_point_x']
         tsf.common_data.jmax = self.config['n_point_y']
         
-        # The final mesh array x, y is the same as xin, yin
-        tsf.common_data.xin[:len(xx)] = xx.astype(np.float32)
-        tsf.common_data.yin[:len(yy)] = yy.astype(np.float32)
         tsf.common_data.x[:len(xx)] = xx.astype(np.float32)
         tsf.common_data.y[:len(yy)] = yy.astype(np.float32)
     
@@ -419,7 +670,8 @@ class PyTSFoil(object):
         tsf.common_data.nfoil = self.mesh['nfoil']
 
     @staticmethod
-    def clustcos(n_points: int, a0=0.0079, a1=0.96, beta=1.0, index_point: int|None=None) -> np.ndarray:
+    def clustcos(n_points: int, a0=0.0079, a1=0.96, beta=1.0,
+                index_point: int|None=None) -> np.ndarray:
         '''
         Point distribution on x-axis [0, 1]. (More points at both ends)
 
@@ -468,6 +720,14 @@ class PyTSFoil(object):
 
         return xx
 
+    def _cp_isentropic(self, ma: np.ndarray, minf: float) -> np.ndarray:
+        '''
+        Isentropic pressure coefficient from local Mach number and free-stream Mach number.
+
+        More accurate than the linearized TSD formula for moderate-to-large perturbations.
+        '''
+        return calculate_cp_isentropic(ma, minf, gamma=self._gamma)
+
     def compute_geometry_derivatives(self):
         '''
         Compute airfoil geometry's derivatives (equivalent to BODY)
@@ -482,11 +742,9 @@ class PyTSFoil(object):
         
         # Airfoil geometry coordinates 
         xu = self.airfoil['xu']
-        yu = self.airfoil['yu'] 
+        yu = self.airfoil['yu']
         xl = self.airfoil['xl']
         yl = self.airfoil['yl']
-        nu = xu.shape[0]
-        nl = xl.shape[0]
         
         # Mesh coordinates
         xfoil = self.mesh['xx_airfoil']
@@ -498,31 +756,35 @@ class PyTSFoil(object):
         flploc = self.config['FLPLOC']
         
         # Scaling factor
-        delinv = 1.0
-        if self.config['PHYS'] == 1:
-            delinv = 1.0 / delta
+        delinv = 1.0 / delta
 
         # Upper surface cubic spline interpolation
-        # Calculate derivatives at endpoints for boundary conditions
-        dy1_u = (yu[1] - yu[0]) / (xu[1] - xu[0])
-        dy2_u = (yu[nu-1] - yu[nu-2]) / (xu[nu-1] - xu[nu-2])
-        
-        # Create cubic spline with derivative boundary conditions
-        cs_upper = CubicSpline(xu, yu, bc_type=((1, dy1_u), (1, dy2_u)))
-        
+        # Use not-a-knot BCs (scipy default) so the result is independent of
+        # input point density.  Explicitly computed finite-difference slopes
+        # diverge near the leading-edge singularity (dy/dx ~ 1/sqrt(x)) as the
+        # input spacing shrinks with more points, producing n-dependent errors.
+        cs_upper = CubicSpline(xu, yu)
+
         # Interpolate upper surface at mesh x-coordinates
         fu = cs_upper(xfoil) * delinv
         fxu = cs_upper(xfoil, 1) * delinv
-        
-        # Lower surface cubic spline interpolation  
-        dy1_l = (yl[1] - yl[0]) / (xl[1] - xl[0])
-        dy2_l = (yl[nl-1] - yl[nl-2]) / (xl[nl-1] - xl[nl-2])
-        
-        cs_lower = CubicSpline(xl, yl, bc_type=((1, dy1_l), (1, dy2_l)))
-        
+
+        # Lower surface cubic spline interpolation
+        cs_lower = CubicSpline(xl, yl)
+
         # Interpolate lower surface at mesh x-coordinates
         fl = cs_lower(xfoil) * delinv
         fxl = cs_lower(xfoil, 1) * delinv
+
+        # At xfoil[0]=0 (leading edge) the spline analytic derivative diverges
+        # for CST airfoils (dy/dx ~ 1/sqrt(x) as x→0).  The divergence rate
+        # depends on the spacing of the first two input knots, making the result
+        # strongly n-dependent.  The function values fu/fl at x=0 are always
+        # correct (both surfaces meet at y=0), so use a forward finite-difference
+        # from those converged function values instead.
+        if xfoil[0] == 0.0:
+            fxu[0] = (fu[1] - fu[0]) / (xfoil[1] - xfoil[0])
+            fxl[0] = (fl[1] - fl[0]) / (xfoil[1] - xfoil[0])
         
         # Compute volume by Simpson's rule
         vol = integrate.simpson(y=fu-fl, x=xfoil)
@@ -546,26 +808,27 @@ class PyTSFoil(object):
                 fl[i] = fl[i] - dely
                 fxu[i] = fxu[i] - dflap * delinv
                 fxl[i] = fxl[i] - dflap * delinv
-        
-        # Compute camber and thickness
-        camber = 0.5 * (fu + fl)
-        thick = 0.5 * (fu - fl)
-        
+                
         # Apply rigidity factor correction to surface slopes
+        '''
+        Rigidity factor correction `g` is a nonlinear limiter reducing large surface slopes,
+        especially near the leading edge. For small slope: g(s) ≈ s - (rigf/2)*s^3,
+        so the linear BC phi_y = dy/dx is essentially unchanged. For large slope (near LE):
+        g(s) -> sign(s)/sqrt(rigf), capping the normalized slope at 1/(delta*sqrt(rigf)).
+        '''
+        fx_camber = 0.5 * (fxu + fxl)
         fxu = fxu / np.sqrt(1.0 + rigf * (delta * fxu)**2)
         fxl = fxl / np.sqrt(1.0 + rigf * (delta * fxl)**2)
-        
+
         # Store results in common_data arrays
         tsf.common_data.vol = vol
         
-        # Pad arrays to expected size
-        tsf.common_data.fu[:nfoil] = fu.astype(np.float32)
-        tsf.common_data.fl[:nfoil] = fl.astype(np.float32)
         tsf.common_data.fxu[:nfoil] = fxu.astype(np.float32)
         tsf.common_data.fxl[:nfoil] = fxl.astype(np.float32)
-        tsf.common_data.xfoil[:nfoil] = xfoil.astype(np.float32)
-        tsf.common_data.camber[:nfoil] = camber.astype(np.float32)
-        tsf.common_data.thick[:nfoil] = thick.astype(np.float32)
+        
+        self.mesh['fxu'] = fxu.copy()
+        self.mesh['fxl'] = fxl.copy()
+        self.mesh['fx_camber'] = fx_camber.copy()
         
         # Print or log geometry (equivalent to PRBODY call)
         if self.config['flag_print_info']:
@@ -576,21 +839,140 @@ class PyTSFoil(object):
             if iflap != 0:
                 print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
     
+    def compute_scale(self) -> None:
+        '''
+        Scale physical variables to transonic similarity variables
+        (CPFACT, CLFACT, CDFACT, CMFACT, YFACT, VFACT).
+        '''
+        emach = float(tsf.common_data.emach)
+        delta = float(tsf.common_data.delta)
+        simdef = self.config['SIMDEF']
+
+        emach2 = emach * emach
+        beta = 1.0 - emach2
+        delrt1 = delta ** (1.0 / 3.0)
+        delrt2 = delta ** (2.0 / 3.0)
+
+        if simdef == 1:  # Cole scaling
+            ak = beta / delrt2
+            yfact = 1.0 / delrt1
+            cpfact = delrt2
+            clfact = delrt2
+            cdfact = delrt2 * delta
+            cmfact = delrt2
+            vfact = delta * 57.295779
+        elif simdef == 2:  # Spreiter scaling
+            emroot = emach ** (2.0 / 3.0)
+            ak = beta / (delrt2 * emroot * emroot)
+            yfact = 1.0 / (delrt1 * emroot)
+            cpfact = delrt2 / emroot
+            clfact = cpfact
+            cmfact = cpfact
+            cdfact = cpfact * delta
+            vfact = delta * 57.295779
+        elif simdef == 3:  # Krupp scaling
+            ak = beta / (delrt2 * emach)
+            yfact = 1.0 / (delrt1 * emach ** 0.5)
+            cpfact = delrt2 / (emach ** 0.75)
+            clfact = cpfact
+            cmfact = cpfact
+            cdfact = cpfact * delta
+            vfact = delta * 57.295779
+        else:
+            raise ValueError(f'SCALE: Invalid SIMDEF value: {simdef}')
+
+        tsf.common_data.ak = np.float32(ak)
+
+        tsf.common_data.alpha = np.float32(float(tsf.common_data.alpha) / vfact)
+
+        # CLFACT and CMFACT stay in Fortran (used by main_iteration.SOLVE)
+        tsf.solver_data.clfact = np.float32(clfact)
+        tsf.solver_data.cmfact = np.float32(cmfact)
+
+        # Store scaling factors as Python instance variables
+        self._cpfact = float(cpfact)
+        self._cdfact = float(cdfact)
+        self._yfact = float(yfact)
+        self._vfact = float(vfact)
+
+        if abs(self._gam1) <= 0.0001:
+            tsf.solver_data.sonvel = np.float32(1.0)
+            self._cpstar = 0.0
+        else:
+            sonvel = ak / self._gam1
+            tsf.solver_data.sonvel = np.float32(sonvel)
+            self._cpstar = float(self._cp_isentropic(1.0, emach))
+
+    def compute_far_field_bc(self) -> None:
+        '''
+        Compute far-field boundary conditions for outer boundaries (equivalent to FARFLD).
+
+        Subsonic asymptotic forms for doublet and vortex located at X=0.5, Y=0.
+        Boundary values are later multiplied by vortex/doublet strengths in RECIRC/REDUB.
+        For supersonic freestream (ak <= 0), no far-field BC needed — returns immediately.
+        '''
+        ak = float(tsf.common_data.ak)
+        if ak <= 0.0:
+            return
+
+        imin = int(tsf.common_data.imin)
+        imax = int(tsf.common_data.imax)
+        jmin = int(tsf.common_data.jmin)
+        jmax = int(tsf.common_data.jmax)
+        x_coords = tsf.common_data.x
+        y_coords = tsf.common_data.y
+        xsing = 0.5   # XSING parameter in solver_data
+
+        rtk = np.sqrt(ak)
+        twopi = 2.0 * np.pi
+        coef1 = 1.0 / twopi
+        coef2 = 1.0 / (twopi * rtk)
+
+        yt = float(y_coords[jmax - 1]) * rtk
+        yb = float(y_coords[jmin - 1]) * rtk
+        xu_bc = float(x_coords[imin - 1]) - xsing
+        xd_bc = float(x_coords[imax - 1]) - xsing
+
+        # Top and bottom boundaries (vectorised over i = imin..imax, 0-based slice [imin-1:imax])
+        xp = x_coords[imin - 1:imax].astype(np.float64) - xsing
+        tsf.solver_data.dtop[imin - 1:imax] = (xp / (xp**2 + yt**2) * coef2).astype(np.float32)
+        tsf.solver_data.dbot[imin - 1:imax] = (xp / (xp**2 + yb**2) * coef2).astype(np.float32)
+        tsf.solver_data.vtop[imin - 1:imax] = (-np.arctan2(yt, xp) * coef1).astype(np.float32)
+        tsf.solver_data.vbot[imin - 1:imax] = (-(np.arctan2(yb, xp) + twopi) * coef1).astype(np.float32)
+
+        # Upstream and downstream boundaries (vectorised over j = jmin..jmax, 0-based slice [jmin-1:jmax])
+        yj = y_coords[jmin - 1:jmax].astype(np.float64) * rtk
+        q = np.pi - np.copysign(np.pi, yj)   # 0 if yj>=0, 2*pi if yj<0
+        tsf.solver_data.dup[jmin - 1:jmax] = (xu_bc / (xu_bc**2 + yj**2) * coef2).astype(np.float32)
+        tsf.solver_data.ddown[jmin - 1:jmax] = (xd_bc / (xd_bc**2 + yj**2) * coef2).astype(np.float32)
+        tsf.solver_data.vup[jmin - 1:jmax] = (-(np.arctan2(yj, xu_bc) + q) * coef1).astype(np.float32)
+        tsf.solver_data.vdown[jmin - 1:jmax] = (-(np.arctan2(yj, xd_bc) + q) * coef1).astype(np.float32)
+
+        # Compute THETA(J,I) = angle at each mesh point (replaces Fortran ANGLE subroutine)
+        yj_raw = y_coords[jmin - 1:jmax].astype(np.float64)
+        yj_scaled = (yj_raw * rtk)[:, np.newaxis]    # (nj, 1)
+        xp_2d = xp[np.newaxis, :]                     # (1, ni)
+        r = np.sqrt(yj_raw[:, np.newaxis]**2 + xp_2d**2)
+        atn = np.arctan2(yj_scaled, xp_2d)
+        q_theta = np.pi - np.copysign(np.pi, yj_scaled)
+        theta_2d = -(atn + q_theta) * coef1
+        theta_2d = np.where(r <= 1.0, theta_2d * r, theta_2d)
+        tsf.solver_data.theta[jmin - 1:jmax, imin - 1:imax] = theta_2d.astype(np.float32)
+
     def compute_data_summary(self):
         '''
         Compute the data summary.
         '''
         alpha = tsf.common_data.alpha
-        vfact = tsf.solver_data.vfact
         clfact = tsf.solver_data.clfact
         cmfact = tsf.solver_data.cmfact
-        
+
         # Compute lift and pitch coefficients
-        self.data_summary['alpha'] = alpha * vfact
+        self.data_summary['alpha'] = alpha * self._vfact
         self.data_summary['mach'] = tsf.common_data.emach
         self.data_summary['cl'] = tsf.solver_base.lift(clfact)
         self.data_summary['cm'] = tsf.solver_base.pitch(cmfact)
-        self.data_summary['cpstar'] = tsf.solver_data.cpstar
+        self.data_summary['cpstar'] = self._cpstar
             
     def output_field(self) -> None:
         '''
@@ -610,12 +992,12 @@ class PyTSFoil(object):
         
         # Get solver data
         P = tsf.solver_data.p  # Pressure array
-        vfact = tsf.solver_data.vfact
         c1 = tsf.solver_data.c1
         cxl = tsf.solver_data.cxl
         cxc = tsf.solver_data.cxc
         cxr = tsf.solver_data.cxr
-        cpfact = tsf.solver_data.cpfact
+        cpfact = self._cpfact
+        vfact = self._vfact
         
         # Get configuration parameters
         emach = tsf.common_data.emach
@@ -647,9 +1029,9 @@ class PyTSFoil(object):
             for j in range(jmin, jmax + 1):
                 for i in range(imin, imax + 1):
                     # Calculate flow variables
-                    u = tsf.solver_base.px(i, j)  # Computes U = DP/DX at point I,J
-                    em = tsf.solver_functions.emach1(u, delta)  # Computes Mach number from U
-                    cp_val = -2.0 * u * cpfact  # CPFACT is a scaling factor for pressure coefficient
+                    u = tsf.solver_base.px(i, j) # Computes U = DP/DX at point I,J
+                    em = tsf.solver_functions.emach1(u, delta) # Computes Mach number from U
+                    cp_val = self._cp_isentropic(em, emach) # Computes Cp from local Mach number using isentropic relation
                     
                     # Calculate flow type for points within the computational domain
                     if imin <= i <= imax and jmin <= j <= jmax:
@@ -713,10 +1095,10 @@ class PyTSFoil(object):
             if self.config['flag_print_info']:
                 print('Output to field.dat: Cp, Mach, Potential field data')
     
-    def output_shock(self) -> None:
+    def output_surface(self) -> None:
         '''
-        Output shock data, translating the Fortran PRINT_SHOCK subroutine.
-        This function computes pressure coefficients and Mach numbers along the airfoil surface.
+        Computes pressure coefficients and Mach numbers along the airfoil surface.
+        Translated from the Fortran PRINT_SHOCK subroutine.
         
         Parameters
         ----------
@@ -732,9 +1114,8 @@ class PyTSFoil(object):
         jup = tsf.common_data.jup
         
         # Get required data from solver_data
-        cpfact = tsf.solver_data.cpfact
-
-        cpstar = tsf.solver_data.cpstar
+        cpfact = self._cpfact
+        cpstar = self._cpstar
         cjlow = tsf.solver_data.cjlow
         cjlow1 = tsf.solver_data.cjlow1
         cjup = tsf.solver_data.cjup
@@ -747,8 +1128,7 @@ class PyTSFoil(object):
         # Get configuration parameters
         delta = tsf.common_data.delta
         emach = tsf.common_data.emach
-        phys = tsf.common_data.phys
-        
+
         # Initialize variables
         iem = 0
         cj01 = -y_coords[jlow-1] / (y_coords[jup-1] - y_coords[jlow-1])  # Convert to 0-based indexing
@@ -758,57 +1138,67 @@ class PyTSFoil(object):
         n_points = imax - imin + 1
         em1l = np.zeros(n_points)
         em1u = np.zeros(n_points)
-        cpu = np.zeros(n_points)
-        cpl = np.zeros(n_points)
-        
+        ul_arr = np.zeros(n_points)
+        uu_arr = np.zeros(n_points)
+        vl_arr = np.zeros(n_points)
+        vu_arr = np.zeros(n_points)
+
         # Main computation loop
         for i_p1 in range(imin, imax + 1):  # Fortran 1-based indexing
             # Convert to 0-based indexing for Python arrays
             i_py = i_p1 - 1
-            
+
             # Calculate UL_P1
             ul_p1 = cjlow * tsf.solver_base.px(i_p1, jlow) - cjlow1 * tsf.solver_base.px(i_p1, jlow - 1)
             if i_p1 > ite:
                 ul_p1 = cj01 * tsf.solver_base.px(i_p1, jup) + cj02 * tsf.solver_base.px(i_p1, jlow)
             if i_p1 < ile:
                 ul_p1 = cj01 * tsf.solver_base.px(i_p1, jup) + cj02 * tsf.solver_base.px(i_p1, jlow)
-            
-            # Store CPL value and compute Mach number
-            cpl[i_py] = -2.0 * ul_p1 * cpfact
+
+            # Compute Mach number
             em1l[i_py] = tsf.solver_functions.emach1(ul_p1, delta)
             if em1l[i_py] > 1.3:
                 iem = 1
-            
+
             # Calculate UU_P1
             uu_p1 = cjup * tsf.solver_base.px(i_p1, jup) - cjup1 * tsf.solver_base.px(i_p1, jup + 1)
             if i_p1 > ite:
                 uu_p1 = ul_p1
             if i_p1 < ile:
                 uu_p1 = ul_p1
-            
-            # Store CPU value and compute Mach number
-            cpu[i_py] = -2.0 * uu_p1 * cpfact
+
+            # Compute Mach number
             em1u[i_py] = tsf.solver_functions.emach1(uu_p1, delta)
             if em1u[i_py] > 1.3:
                 iem = 1
-        
-        self.data_summary['cpu'] = cpu
-        self.data_summary['cpl'] = cpl
+
+            ul_arr[i_py] = ul_p1
+            uu_arr[i_py] = uu_p1
+            vl_arr[i_py] = tsf.solver_base.py(i_p1, jlow)
+            vu_arr[i_py] = tsf.solver_base.py(i_p1, jup)
+
+        self.data_summary['cpu'] = self._cp_isentropic(em1u, emach)
+        self.data_summary['cpl'] = self._cp_isentropic(em1l, emach)
         self.data_summary['mau'] = em1u
         self.data_summary['mal'] = em1l
-        
+        self.data_summary['uu'] = uu_arr
+        self.data_summary['ul'] = ul_arr
+        self.data_summary['vu'] = vu_arr
+        self.data_summary['vl'] = vl_arr
+
         # Output summary file
         if self.config['flag_output_summary']:
             with open(os.path.join(self.output_dir, "smry.out"), 'a') as f:
 
                 # Check for detached shock
+                cpl = self.data_summary['cpl']
                 if cpl[imin-1] < cpstar and cpl[imin] > cpstar:
                     f.write('0 ***** CAUTION *****\n')
                     f.write(' DETACHED SHOCK WAVE UPSTREAM OF X-MESH,SOLUTION TERMINATED.\n')
                     return
                 
                 # Mach number warning
-                if iem == 1 and phys:
+                if iem == 1:
                     f.write('0 ***** CAUTION *****\n')
                     f.write(' MAXIMUM MACH NUMBER EXCEEDS 1.3\n')
                     f.write(' SHOCK JUMPS IN ERROR IF UPSTREAM NORMAL MACH NUMBER GREATER THAN 1.3\n')
@@ -840,7 +1230,26 @@ class PyTSFoil(object):
         
             if self.config['flag_print_info']:
                 print('Output to cpxs.dat: Cp, Mach distribution on a x-line (Y=0)')
-    
+
+    def compute_wave_drag(self) -> float:
+        '''
+        Compute and store wave drag via the momentum integral method.
+
+        Convenience wrapper around ``cdcole_python`` that reads the required
+        scaling factors from the Fortran module so callers do not need to
+        supply them explicitly.  Populates ``data_summary['cd']``,
+        ``data_summary['cd_wave']``, and ``data_summary['cd_int']``.
+
+        Returns
+        -------
+        cd : float
+            Total drag coefficient (wave + body terms).
+        '''
+        sonvel = float(tsf.solver_data.sonvel)
+        delta  = float(tsf.common_data.delta)
+        self.cdcole_python(sonvel, self._yfact, delta)
+        return float(self.data_summary['cd'])
+
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """
         Compute drag coefficient by momentum integral method.
@@ -871,7 +1280,6 @@ class PyTSFoil(object):
         jup = tsf.common_data.jup
         jlow = tsf.common_data.jlow
         ak = tsf.common_data.ak
-        gam1 = tsf.common_data.gam1
         fxl = tsf.common_data.fxl
         fxu = tsf.common_data.fxu
         
@@ -880,7 +1288,7 @@ class PyTSFoil(object):
         cjup1 = tsf.solver_data.cjup1
         cjlow = tsf.solver_data.cjlow
         cjlow1 = tsf.solver_data.cjlow1
-        cdfact = tsf.solver_data.cdfact
+        cdfact = self._cdfact
         
         # Helper functions
         def trap_integration(xi_arr, arg_arr, n_points):
@@ -953,8 +1361,8 @@ class PyTSFoil(object):
             if not self.config['flag_output_summary']:
                 return
                 
-            cdycof = -cdfact * gam1 / (6.0 * yfact)
-            poycof = delta**2 * gam1 * (gam1 - 1.0) / 12.0
+            cdycof = -cdfact * self._gam1 / (6.0 * yfact)
+            poycof = delta**2 * self._gam1 * self._gamma / 12.0
                 
             with open(os.path.join(self.output_dir, "smry.out"), 'a') as f:
 
@@ -983,7 +1391,7 @@ class PyTSFoil(object):
                     f.write(' PRINTOUT OF SHOCK LOSSES ARE NOT AVAILABLE FOR REST OF SHOCK\n')
         
         # Main computation starts here
-        gam123 = gam1 * 2.0 / 3.0
+        gam123 = self._gam1 * 2.0 / 3.0
         iskold = 0
         
         # Set locations of contour boundaries
@@ -1157,7 +1565,7 @@ class PyTSFoil(object):
                 arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
                 l += 1
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * cdfact * sum_val
+            cdsk = -self._gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
         
@@ -1198,7 +1606,7 @@ class PyTSFoil(object):
                 lprt1 = 1
             
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * cdfact * sum_val
+            cdsk = -self._gam1 / 6.0 * cdfact * sum_val
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
@@ -1242,7 +1650,7 @@ class PyTSFoil(object):
                 lprt1 = 1
             
             sum_val = trap_integration(xi, arg, l)
-            cdsk = -gam1 / 6.0 * (-sum_val)
+            cdsk = -self._gam1 / 6.0 * (-sum_val)
             cdwave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
@@ -1293,25 +1701,21 @@ class PyTSFoil(object):
         Translates the PRINT subroutine from io_module.f90
         '''
         # Get required variables from Fortran modules
-        phys = tsf.common_data.phys
         simdef = tsf.common_data.simdef
-        bctype = tsf.common_data.bctype
-        fcr = tsf.common_data.fcr
-        kutta = tsf.common_data.kutta
         emach = tsf.common_data.emach
         delta = tsf.common_data.delta
         ak = tsf.common_data.ak
         
         # Get solver data variables
         dub = tsf.solver_data.dub
-        cpfact = tsf.solver_data.cpfact
-        cdfact = tsf.solver_data.cdfact
         cmfact = tsf.solver_data.cmfact
         clfact = tsf.solver_data.clfact
-        yfact = tsf.solver_data.yfact
-        vfact = tsf.solver_data.vfact
         sonvel = tsf.solver_data.sonvel
         abort1 = tsf.solver_data.abort1
+        cpfact = self._cpfact
+        cdfact = self._cdfact
+        yfact = self._yfact
+        vfact = self._vfact
         
         # Write summary file
         if self.config['flag_output_summary']:
@@ -1335,18 +1739,9 @@ class PyTSFoil(object):
                 f.write(f'# VFACT = {vfact:10.6f}\n')
                 f.write(f'# SONVEL = {sonvel:10.6f}\n')
                 f.write(f'# ABORT1 = {abort1:10.6f}\n')
-                f.write(f'# BCTYPE = {bctype:10.6f}\n')
-                f.write(f'# FCR = {fcr:10.6f}\n')
-                f.write(f'# KUTTA = {kutta:10.6f}\n')
-                f.write(f'# PHYS = {phys:10.6f}\n')
                 f.write(f'# SIMDEF = {simdef:10.6f}\n')
-                f.write(f'# SCALED POR = {tsf.common_data.por:10.6f}\n')
 
-                # Print similarity/physical variables information
-                if phys:
-                    f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
-                else:
-                    f.write('0 PRINTOUT IN SIMILARITY VARIABLES.\n')
+                f.write('0 PRINTOUT IN PHYSICAL VARIABLES. \n')
                 
                 # Print similarity parameter definition
                 if simdef == 1:
@@ -1356,28 +1751,12 @@ class PyTSFoil(object):
                 elif simdef == 3:
                     f.write('0 DEFINITION OF SIMILARITY PARAMETERS BY KRUPP\n')
                 
-                # Print boundary condition information
-                if bctype == 1:
-                    f.write('0 BOUNDARY CONDITION FOR FREE AIR\n')
-                elif bctype == 2:
-                    f.write('0 BOUNDARY CONDITION FOR SOLID WALL\n')
-                elif bctype == 3:
-                    f.write('0 BOUNDARY CONDITION FOR FREE JET\n')
-                
-                # Print difference equation information
-                if fcr:
-                    f.write('0 DIFFERENCE EQUATIONS ARE FULLY CONSERVATIVE.\n')
-                else:
-                    f.write('0 DIFFERENCE EQUATIONS ARE NOT CONSERVATIVE AT SHOCK.\n')
-                
-                # Print Kutta condition information
-                if kutta:
-                    f.write('0 KUTTA CONDITION IS ENFORCED.\n')
-                else:
-                    f.write('0 LIFT COEFFICIENT SPECIFIED BY USER.\n')
+                f.write('0 BOUNDARY CONDITION FOR FREE AIR\n')
+                f.write('0 DIFFERENCE EQUATIONS ARE FULLY CONSERVATIVE.\n')
+                f.write('0 KUTTA CONDITION IS ENFORCED.\n')
         
-        # Print shock and mach number on Y=0 line
-        self.output_shock()
+        # Print data on Y=0 line
+        self.output_surface()
         
         # Output field data
         self.output_field()
@@ -1457,33 +1836,3 @@ class PyTSFoil(object):
         ax.set_ylabel('Y/c')
         ax.set_title(f'Mach Number Field')
         ax.set_aspect('equal')
-
-
-if __name__ == "__main__":
-    
-    pytsfoil = PyTSFoil(
-        airfoil_file="rae2822.dat",
-        work_dir=os.path.join('example', 'rae2822')
-    )
-    
-    pytsfoil.set_config(
-        ALPHA=0.5,
-        EMACH=0.75,
-        MAXIT=9999,
-        NWDGE=0,
-        n_point_x=200,
-        n_point_y=80,
-        n_point_airfoil=100,
-        EPS=0.2,
-        CVERGE=1e-6,
-        flag_output=True,
-        flag_output_summary=True,
-        flag_output_shock=True,
-        flag_output_field=True,
-        flag_print_info=True,
-    )
-    
-    pytsfoil.run()
-    
-    pytsfoil.plot_all_results()
-

@@ -14,7 +14,7 @@ contains
     ! CALLED BY - SOLVE.
     subroutine SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
         use common_data, only: X, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
-        use common_data, only: AK, FCR, EPS, N_MESH_POINTS
+        use common_data, only: AK, EPS, N_MESH_POINTS
         use solver_functions, only: BCEND
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
@@ -42,7 +42,9 @@ contains
             
             ! Compute VC = 1 - M**2
             do J = JBOT, JTOP
-                VC(J) = C1(I) - (CXL(I)*POLD(J,I2) + CXC(I)*P(J,I) + CXR(I)*P(J,I+1))
+                VC(J) = C1(I) - (CXL(I)*POLD(J,I2) &
+                               + CXC(I)*P(J,I)      &
+                               + CXR(I)*P(J,I+1))
                 EMU(J,I1) = 0.0
                 POLD(J,I1) = P(J,I)
             end do
@@ -50,12 +52,6 @@ contains
             do J = JBOT, JTOP
                 if (VC(J) < 0.0) EMU(J,I1) = VC(J)
             end do
-            
-            if (.not. FCR) then
-                do J = JBOT, JTOP
-                    EMU(J,I2) = EMU(J,I1)
-                end do
-            end if
             
             ! Compute elements of matrix
             do J = JBOT, JTOP
@@ -88,7 +84,7 @@ contains
             if (JTOP /= JMAX) then
                 RHS(JTOP) = RHS(JTOP) - CYYU(JTOP)*P(JTOP+1,I)
             end if
-            
+
             ! Check for airfoil B.C. and Kutta slice
             if (I < ILE) then
                 ! Before airfoil - do nothing
@@ -188,7 +184,7 @@ contains
 
     ! Main iteration loop: solver, convergence, and flow updates
     subroutine SOLVE()
-        use common_data, only: Y, AK, BCTYPE, NWDGE, UNIT_OUTPUT, IPRTER, MAXIT
+        use common_data, only: Y, AK, NWDGE, IPRTER, MAXIT
         use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
         use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
         use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
@@ -231,15 +227,7 @@ contains
         WI = 1.0 / WEP
         
         if (FLAG_OUTPUT == 1) then
-            ! Write header to output files
-            write(UNIT_OUTPUT, '(1H1)')
-
-            ! Write solver parameters
-            write(UNIT_OUTPUT, '(3X,"WE = ",F7.4,5X,"EPS = ",F8.4,5X,"MAXIT FOR THIS MESH = ",I4)') WEP, EPS, MAXITM
-            
-            ! Write iteration header (avoid line truncation by splitting into two lines)
-            write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR")')
-            write(UNIT_OUTPUT, '("   IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
+            write(*, '(3X,"WE = ",F7.4,5X,"EPS = ",F8.4,5X,"MAXIT FOR THIS MESH = ",I4)') WEP, EPS, MAXITM
             write(*, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X,"ERROR")')
             write(*, '("   IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
         end if
@@ -278,7 +266,7 @@ contains
             call SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
             
             ! Update circulation for subsonic freestream flow
-            if (AK >= 0.0 .and. BCTYPE == 1) then
+            if (AK >= 0.0) then
                 IK = IUP - IMIN
                 do I = IUP, IDOWN
                     IK = IK + KSTEP
@@ -310,48 +298,46 @@ contains
                 CL_LOCAL = LIFT(CLFACT)
                 CM_LOCAL = PITCH(CMFACT)
                 ERCIRC = abs(DCIRC)
-                
-                write(UNIT_OUTPUT, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
-                    ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
+
                 write(*, '(1X,I4,2F10.5,2I5,E13.4,2I4,2E13.4)') &
                     ITER, CL_LOCAL, CM_LOCAL, IERROR, JERROR, ERROR, IRL, JRL, BIGRL, ERCIRC
 
                 ! Output viscous wedge quantities if enabled
                 if (NWDGE > 0) then
-                    
-                    write(UNIT_OUTPUT, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
-                    
+
+                    write(*, '(10X,"COMPUTED VISCOUS WEDGE QUANTITIES")')
+
                     ! Upper surface shocks
                     if (NVWPRT(1) > 0) then
-                        write(UNIT_OUTPUT, '(" UPPER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
-                        do N = 1, NVWPRT(1)                        
+                        write(*, '(" UPPER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
+                        do N = 1, NVWPRT(1)
                             if (AM1(1,N) > 1.0) then
-                                THA = THAMAX(1,N) * 57.29578  ! Convert to degrees
-                                write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(1,N), AM1(1,N), THA, ZETA(1,N)
+                                THA = THAMAX(1,N) * 57.29578
+                                write(*, '(I9,4F15.5)') N, XSHK(1,N), AM1(1,N), THA, ZETA(1,N)
                             else
-                                write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
+                                write(*, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
                             end if
                         end do
                     end if
-                    
+
                     ! Lower surface shocks
                     if (NVWPRT(1) > 0) then
-                        write(UNIT_OUTPUT, '(" LOWER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
-                        do N = 1, NVWPRT(1)                        
+                        write(*, '(" LOWER SHOCK",8X,"X/C",10X,"MACH NO",9X,"THETA",10X,"ZETA")')
+                        do N = 1, NVWPRT(1)
                             if (AM1(2,N) > 1.0) then
-                                THA = THAMAX(2,N) * 57.29578  ! Convert to degrees
-                                write(UNIT_OUTPUT, '(I9,4F15.5)') N, XSHK(2,N), AM1(2,N), THA, ZETA(2,N)
+                                THA = THAMAX(2,N) * 57.29578
+                                write(*, '(I9,4F15.5)') N, XSHK(2,N), AM1(2,N), THA, ZETA(2,N)
                             else
-                                write(UNIT_OUTPUT, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
+                                write(*, '(I9,5X,"WEAK SHOCK, NO WEDGE INCLUDED")') N
                             end if
                         end do
                     end if
 
                     if (ITER == 1 .or. mod(ITER, IPRTER) == 0) then
-                        
-                        if (NISHK == 0) write(UNIT_OUTPUT, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
 
-                        write(UNIT_OUTPUT, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X, &
+                        if (NISHK == 0) write(*, '(5X,"NO VISCOUS WEDGE, SINCE NO SHOCKS EXIST ")')
+
+                        write(*, '(/,"  ITER",5X,"CL",8X,"CM",4X,"IERR",1X,"JERR",4X, &
                             &"ERROR",4X,"IRL",2X,"JRL",4X,"BIGRL",8X,"ERCIRC")')
 
                     end if
@@ -362,31 +348,28 @@ contains
             if (ERROR <= CVERGE) then
                 CONVERGED = .true.
                 if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(//20X,"........SOLUTION CONVERGED........")')
-                    write(*,*) 'Solution converged after', ITER, 'iterations.'
+                    write(*, '(//20X,"........SOLUTION CONVERGED........")')
+                    write(*, '(A,I0,A)') 'Solution converged after ', ITER, ' iterations.'
                 end if
                 exit
             end if
-            
-            ! Check for floating-point exceptions during iteration
-            ! call check_iteration_fp_exceptions(ITER)
-            
+
             ! Check divergence
             if (ERROR >= DVERGE) then
                 ABORT1 = .true.
                 if (FLAG_OUTPUT == 1) then
-                    write(UNIT_OUTPUT, '(//20X,"******  SOLUTION DIVERGED  ******")')
-                    write(*,*) 'Solution diverged after', ITER, 'iterations.'
+                    write(*, '(//20X,"******  SOLUTION DIVERGED  ******")')
+                    write(*, '(A,I0,A)') 'Solution diverged after ', ITER, ' iterations.'
                 end if
                 exit
             end if
 
         end do
-        
+
         ! Handle case where iteration limit is reached
         if (.not. CONVERGED .and. .not. ABORT1 .and. FLAG_OUTPUT == 1) then
-            write(UNIT_OUTPUT, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
-            write(*,*) 'Iteration limit reached after', MAXITM, 'iterations.'
+            write(*, '(//20X,"******  ITERATION LIMIT REACHED  ******")')
+            write(*, '(A,I0,A)') 'Iteration limit reached after ', MAXITM, ' iterations.'
         end if
 
     end subroutine SOLVE
@@ -398,7 +381,7 @@ contains
     ! 3.) Jump in P along slit Y=0, X > 1 by linear interpolation between CIRCTE and CIRCFF
     subroutine RECIRC(DCIRC)
         use common_data, only: X, IMAX, ITE, JUP, JLOW
-        use common_data, only: CLSET, KUTTA, WCIRC
+        use common_data, only: WCIRC
         use solver_data, only: P, PJUMP, CLFACT, CIRCFF
         use solver_data, only: CIRCTE, CJUP, CJUP1, CJLOW, CJLOW1
         implicit none
@@ -415,15 +398,7 @@ contains
         
         ! Compute far field circulation
         CIRCO = CIRCFF
-        if (KUTTA) then
-            CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC
-        else
-            CIRCFF = 0.5*CLSET/CLFACT
-        end if
-        
-        ! Fix jump in P at airfoil trailing edge if KUTTA=.FALSE.
-        ! and lift of airfoil exceeds CLSET
-        if (.not. KUTTA) CIRCTE = CIRCFF
+        CIRCFF = (1.0 - WCIRC)*CIRCO + CIRCTE*WCIRC
         DCIRC = CIRCTE - CTEOLD
         
         ! Set jump in P along Y = 0, X > 1 by linear interpolation
@@ -439,8 +414,8 @@ contains
     ! For other flows, the nonlinear contribution is added.
     subroutine REDUB()
         use common_data, only: Y, IMIN, IMAX, JMIN, JMAX, N_MESH_POINTS
-        use common_data, only: GAM1, XDIFF, BCTYPE, VOL
-        use math_module, only: TRAP
+        use common_data, only: GAM1, XDIFF, VOL
+        use solver_base, only: TRAP
         use solver_data, only: P, CIRCFF, DUB
         implicit none
         
@@ -450,15 +425,15 @@ contains
         real :: XI(N_MESH_POINTS)=0.0, ARG(N_MESH_POINTS)=0.0
         
         ! For lifting free air flows with circulation, set doublet strength equal to model volume
-        if (BCTYPE == 1 .and. abs(CIRCFF) >= 0.0001) then
+        if (abs(CIRCFF) >= 0.0001) then
             DUB = VOL
             return
         end if
         
         ! Compute double integral of U*U over mesh domain for doublet strength
-        ! U = (∂P/∂x) is centered midway between X mesh points.
-        ! First the integral (∂P/∂x)²dy is calculated for X held constant.
-        ! Thus 1/(X(I+1)-X(I))² may be pulled out of the integral which is
+        ! U = (dP/dx) is centered midway between X mesh points.
+        ! First the integral (dP/dx)^2 dy is calculated for X held constant.
+        ! Thus 1/(X(I+1)-X(I))^2 may be pulled out of the integral which is
         ! calculated by the trapezoidal rule. The X integration corresponds
         ! to summing these integrals, which lie midway between X mesh points,
         ! using a modified trapezoidal rule.
@@ -472,12 +447,12 @@ contains
             ! Build arrays for Y-direction integration at constant X
             do J = JMIN, JMAX
                 NARG = NARG + 1
-                TEMP = P(J, I+1) - P(J, I)  ! Finite difference approximation of ∂P/∂x
+                TEMP = P(J, I+1) - P(J, I)  ! Finite difference approximation of dP/dx
                 ARG(NARG) = TEMP * TEMP     ! Square of velocity component
                 XI(NARG) = Y(J)             ! Y-coordinates for integration
             end do
-            
-            ! Integrate (∂P/∂x)² in Y-direction using trapezoidal rule
+
+            ! Integrate (dP/dx)^2 in Y-direction using trapezoidal rule
             call TRAP(XI, ARG, NARG, SUM)
             
             ! Add contribution to double sum with X-direction weighting
@@ -494,7 +469,7 @@ contains
     ! Updates far field boundary conditions for subsonic freestream flows.
     ! CALLED BY - SOLVE.
     subroutine RESET()
-        use common_data, only: IMIN, IMAX, JMIN, JMAX, JUP, BCTYPE
+        use common_data, only: IMIN, IMAX, JMIN, JMAX, JUP
         use solver_data, only: P, CIRCFF, DUB, KSTEP
         use solver_data, only: DUP, DDOWN, DTOP, DBOT, VUP, VDOWN, VTOP, VBOT
         implicit none
@@ -510,14 +485,12 @@ contains
         end do
 
         ! Update boundary conditions on top and bottom
-        if (BCTYPE == 1) then
-            K = IMIN - KSTEP
-            do I = IMIN, IMAX
-                K = K + KSTEP
-                P(JMIN,I) = CIRCFF*VBOT(K) + DUB*DBOT(K)
-                P(JMAX,I) = CIRCFF*VTOP(K) + DUB*DTOP(K)
-            end do
-        end if
+        K = IMIN - KSTEP
+        do I = IMIN, IMAX
+            K = K + KSTEP
+            P(JMIN,I) = CIRCFF*VBOT(K) + DUB*DBOT(K)
+            P(JMAX,I) = CIRCFF*VTOP(K) + DUB*DTOP(K)
+        end do
 
     end subroutine RESET
 
