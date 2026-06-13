@@ -29,7 +29,6 @@ import warnings
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
-from scipy.interpolate import CubicSpline
 from typing import Dict, Optional, Tuple, Any
 
 

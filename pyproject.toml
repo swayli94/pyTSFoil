@@ -11,13 +11,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pytsfoil"
 dynamic = ["version"]
-description = "A Python interface for TSFOIL2, an inviscid transonic small-disturbance (TSD) solver for flow past lifting airfoils"
+description = "A Python interface for TSFOIL2 & IBL, an inviscid transonic small-disturbance (TSD) solver for flow past lifting airfoils"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Runze LI", email = "swayli94@gmail.com"}
 ]
-keywords = ["CFD", "TSFOIL2", "transonic", "small-disturbance-theory", "aerodynamics", "airfoil"]
+keywords = ["CFD", "TSFOIL2", "transonic", "small-disturbance-theory", "aerodynamics", "airfoil", "integral-boundary-layer", "viscous-inviscid-interaction"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",  

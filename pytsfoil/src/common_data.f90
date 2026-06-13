@@ -73,15 +73,6 @@ module common_data
     integer :: NFOIL = 0  ! Number of points on airfoil
     real :: FXU(N_MESH_POINTS) = 0.0 ! Derivative of upper surface to X-coordinate
     real :: FXL(N_MESH_POINTS) = 0.0 ! Derivative of lower surface to X-coordinate
-    
-    
-    ! ------------------------------------------------
-    ! Velocity limiter parameters
-    ! ------------------------------------------------
-    logical :: VEL_LIM_ENABLED       = .false.  ! Master switch (off by default)
-    real    :: VEL_LIM_D             = 5.0      ! Velocity upper bound D, same units as solver P_x
-    real    :: VEL_LIM_THETA         = 1.0      ! Clip under-relaxation coefficient (0 < theta <= 1)
-    logical :: VEL_LIM_ELLIPTIC_ONLY = .false.  ! Only apply limiter at elliptic (subsonic) nodes
 
     ! ------------------------------------------------
     ! Output control
@@ -141,11 +132,6 @@ contains
         WE = [1.8, 1.9, 1.95]
         CVERGE = 0.00001
         DVERGE = 10.0
-
-        VEL_LIM_ENABLED       = .false.
-        VEL_LIM_D             = 5.0
-        VEL_LIM_THETA         = 1.0
-        VEL_LIM_ELLIPTIC_ONLY = .false.
 
         X = 0.0
         Y = 0.0
