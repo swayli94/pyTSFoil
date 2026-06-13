@@ -246,3 +246,9 @@ with mp.Pool() as pool:
 
 - Set `NWDGE=0` when using `run_ibl_coupled()` — the viscous wedge option is incompatible with the displacement-thickness wall-slope correction
 - `run_ibl_coupled()` performs the initial inviscid solve automatically; do not call `run()` beforehand
+
+## Version History
+
+- v0.1.*: Initial release with basic TSD solver interface (not fully functional)
+- v0.2.*: Basic TSD solver interface (fully functional after v0.2.4; suggested to use v0.2.8)
+- v0.3.*: Enhanced IBL coupling framework (in development, fully functional after v0.3.0)
