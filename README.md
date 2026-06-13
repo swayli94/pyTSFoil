@@ -59,7 +59,8 @@ cd pyTSFoil
 pip install -e .
 
 # Or install from PyPI
-pip install pytsfoil>=0.2.4
+# 0.2.4: for TSD only; 0.3.0+: for TSD + IBL coupling
+pip install pytsfoil>=0.3.0
 
 # Test installation
 python -c "import pytsfoil; print('pytsfoil', pytsfoil.__version__, 'installed successfully')"
