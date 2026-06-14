@@ -15,10 +15,12 @@ contains
     subroutine SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
         use common_data, only: X, IUP, IDOWN, ILE, ITE, JMIN, JMAX, JUP, JLOW, JTOP, JBOT
         use common_data, only: AK, EPS, N_MESH_POINTS
+        use common_data, only: CFS_TRIGGERED, BETA_SONIC, EPS_AMPL
         use solver_functions, only: BCEND
         use solver_data, only: P, PJUMP, DIAG, RHS, FXUBC, FXLBC, EMU, POLD, WI
         use solver_data, only: CXL, CXC, CXR, CXXL, CXXC, CXXR, C1, CYYC, CYYD, CYYU
         use solver_data, only: CYYBUC, CYYBUU, CYYBLC, CYYBLD
+        use solver_data, only: SONVEL
         implicit none
         integer, intent(inout) :: I1, I2  ! Indices for potential values
         logical, intent(inout) :: OUTERR  ! outer iteration error (logical)
@@ -29,6 +31,7 @@ contains
 
         integer :: I=0, J=0, K=0, IM2=0, JA=0, JB=0, ISAVE=0
         real :: EPSX=0.0, ARHS=0.0, DNOM=0.0, denominator=0.0
+        real :: ALPHA_SONIC=0.0, P_SONIC=0.0
         real :: VC(N_MESH_POINTS)=0.0, SAVE_VAR(N_MESH_POINTS)=0.0
         real :: SUB(N_MESH_POINTS)=0.0, SUP(N_MESH_POINTS)=0.0
 
@@ -39,7 +42,9 @@ contains
             
         do I = IUP, IDOWN
             EPSX = EPS / ((X(I) - X(I-1))**2)
-            
+            ! Correction of full-supersonic surface: amplify dissipation near trailing-edge to damp supersonic bubble
+            if (CFS_TRIGGERED .and. I >= ITE - 5 .and. I <= ITE + 5) EPSX = EPSX * EPS_AMPL
+
             ! Compute VC = 1 - M**2
             do J = JBOT, JTOP
                 VC(J) = C1(I) - (CXL(I)*POLD(J,I2) &
@@ -129,7 +134,18 @@ contains
                 DIAG(J) = DIAG(J) - EPSX
                 RHS(J) = RHS(J) - EPSX*(P(J,I-1) - POLD(J,I2))
             end do
-            
+
+            ! Correction of full-supersonic surface: sonic-speed penalty at trailing-edge columns
+            ! Adds a spring term pulling U = dP/dx toward SONVEL, restoring ellipticity
+            if (CFS_TRIGGERED .and. I >= ITE - 5 .and. I <= ITE + 5) then
+                ALPHA_SONIC = EPS * BETA_SONIC / ((X(I) - X(I-1))**2)
+                do J = JBOT, JTOP
+                    P_SONIC = P(J,I-1) + SONVEL * (X(I) - X(I-1))
+                    DIAG(J) = DIAG(J) + ALPHA_SONIC
+                    RHS(J)  = RHS(J)  - ALPHA_SONIC * (P(J,I) - P_SONIC)
+                end do
+            end if
+
             ! Solve tridiagonal matrix equation
             DNOM = 1.0 / DIAG(JBOT)
             SAVE_VAR(JBOT) = SUB(JBOT) * DNOM
@@ -184,24 +200,30 @@ contains
 
     ! Main iteration loop: solver, convergence, and flow updates
     subroutine SOLVE()
-        use common_data, only: Y, AK, NWDGE, IPRTER, MAXIT
-        use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT
+        use common_data, only: Y, X, AK, NWDGE, IPRTER, MAXIT
+        use common_data, only: EPS, IMIN, JMIN, JMAX, IUP, IDOWN, JTOP, JBOT, JUP, ITE
         use common_data, only: WE, CVERGE, DVERGE, FLAG_OUTPUT
+        use common_data, only: WCIRC
+        use common_data, only: FLAG_CFS, CFS_TRIGGERED, ITER_START_CFS, DXTE_CFS
         use solver_data, only: P, C1, CLFACT, CMFACT, WI, ABORT1, KSTEP
-        use solver_data, only: POLD, EMU, THETA
+        use solver_data, only: POLD, EMU, THETA, SONVEL
         use solver_base, only: LIFT, PITCH
         use solver_functions, only: VWEDGE, SETBC
         implicit none
-        
+
         integer :: ITER=0, MAXITM=0, KK=0, J=0, I=0, IK=0, JK=0, JINC=0, N=0, I1=0, I2=0
         integer :: IRL = 0, JRL = 0         ! Location indices of maximum residual
         integer :: IERROR = 0, JERROR = 0   ! Location indices of maximum error
         integer, parameter :: NDUB = 25     ! Number of iterations between updating doublet strength
+        integer :: TE_SUPER_COUNT = 0       ! Consecutive iters with fully-supersonic TE region [0.98,1.2]
+        integer :: N_SUPER = 0, N_CHECK = 0 ! Mode B detection counters
 
         real :: ERROR = 0.0  ! Maximum error
         real :: DCIRC = 0.0  ! circulation change
         real :: BIGRL = 0.0  ! Maximum residual value
         real :: WEP=0.0, CL_LOCAL=0.0, CM_LOCAL=0.0, ERCIRC=0.0, THA=0.0
+        real :: U_LOCAL = 0.0             ! Local velocity for Mode B TE check
+        real :: WCIRC_SAVE = 0.0          ! Saved WCIRC for Mode B circulation freeze
         real :: AM1(2,3)=0.0     ! Mach numbers upstream of shocks
         real :: XSHK(2,3)=0.0    ! Shock x-locations
         real :: THAMAX(2,3)=0.0  ! Maximum wedge angles
@@ -259,8 +281,11 @@ contains
             ERROR = 0.0
             if (OUTERR) BIGRL = 0.0
             
-            ! Update circulation-jump boundary
+            ! Update circulation-jump boundary (near-freeze in Mode B: Mechanism 3)
+            WCIRC_SAVE = WCIRC
+            if (CFS_TRIGGERED) WCIRC = 0.02
             call RECIRC(DCIRC)
+            WCIRC = WCIRC_SAVE
             
             ! Perform SOR sweep
             call SYOR(I1, I2, OUTERR, BIGRL, IRL, JRL, IERROR, JERROR, ERROR)
@@ -344,6 +369,44 @@ contains
                 end if
             end if
             
+            ! Physics-based CFS detection: scan upper-surface points with x in [1-DXTE_CFS, 1+DXTE_CFS].
+            ! If ANY such point has U > SONVEL, the shock has been pushed past the trailing edge.
+            ! Trigger CFS recovery (trailing-edge sonic forcing).
+            ! Wait at least ITER_START_CFS iterations so the shock has time to form before checking.
+            if (FLAG_CFS .and. CFS_TRIGGERED) then
+                N_SUPER = 0
+                do I = IUP, IDOWN
+                    if (X(I) < 1-DXTE_CFS .or. X(I) > 1+DXTE_CFS) cycle
+                    U_LOCAL = (P(JUP,I) - P(JUP,I-1)) / (X(I) - X(I-1))
+                    if (U_LOCAL > SONVEL) N_SUPER = N_SUPER + 1
+                end do
+                if (N_SUPER <= 0) then
+                    if (FLAG_OUTPUT == 1) then
+                        write(*, '(">>> CFS CORRECTION DEACTIVATED <<<")')
+                    end if
+                    CFS_TRIGGERED = .false.
+                end if
+            end if
+            if (FLAG_CFS .and. .not. CFS_TRIGGERED .and. ITER >= ITER_START_CFS) then
+                N_SUPER = 0
+                N_CHECK = 0
+                do I = IUP, IDOWN
+                    if (X(I) < 1-DXTE_CFS .or. X(I) > 1+DXTE_CFS) cycle
+                    U_LOCAL = (P(JUP,I) - P(JUP,I-1)) / (X(I) - X(I-1))
+                    N_CHECK = N_CHECK + 1
+                    if (U_LOCAL > SONVEL) N_SUPER = N_SUPER + 1
+                end do
+                if (N_CHECK >= 1 .and. N_SUPER >= 1) then
+                    CFS_TRIGGERED = .true.
+                    TE_SUPER_COUNT = 0
+                    ERROR = 0.0
+                    ABORT1 = .false.
+                    if (FLAG_OUTPUT == 1) then
+                        write(*, '(">>> CFS CORRECTION ACTIVATED <<<")')
+                    end if
+                end if
+            end if
+
             ! Check convergence
             if (ERROR <= CVERGE) then
                 CONVERGED = .true.

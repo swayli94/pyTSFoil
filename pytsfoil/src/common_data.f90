@@ -53,6 +53,14 @@ module common_data
     real :: CVERGE = 0.00001    ! Error criterion for convergence
     real :: DVERGE = 10.0       ! Error criterion for divergence
 
+    ! Correction of Full-Supersonic (CFS) / divergence recovery
+    logical :: FLAG_CFS = .false. ! Whether to apply CFS correction (set to true to activate Mode B)
+    logical :: CFS_TRIGGERED = .false. ! Whether CFS correction has been triggered in current run
+    real    :: BETA_SONIC = 100.0 ! Sonic penalty strength multiplier (applied as EPS*BETA_SONIC)
+    real    :: EPS_AMPL = 200.0   ! EPS amplification factor at trailing-edge columns in Mode B
+    integer :: ITER_START_CFS = 100   ! Iteration when CFS can start being triggered
+    real    :: DXTE_CFS = 0.05        ! Monitor supersonic appearance in [1-DX, 1+DX] for CFS triggering
+
     ! ------------------------------------------------
     ! Mesh and geometry parameters and arrays
     ! ------------------------------------------------
@@ -132,6 +140,13 @@ contains
         WE = [1.8, 1.9, 1.95]
         CVERGE = 0.00001
         DVERGE = 10.0
+
+        FLAG_CFS = .false.
+        CFS_TRIGGERED = .false.
+        BETA_SONIC = 100.0
+        EPS_AMPL = 200.0
+        ITER_START_CFS = 100
+        DXTE_CFS = 0.05
 
         X = 0.0
         Y = 0.0

@@ -127,7 +127,8 @@ pytsfoil.run()  # Run initial inviscid TSD (warm start for IBL coupling)
 
 history = pytsfoil.run_ibl_coupled(
     ibl=ibl,
-    n_outer=10,             # number of viscous-inviscid coupling cycles
+    n_outer=10,                 # number of viscous-inviscid coupling cycles
+    coupling_relax_final=0.1,   # final relaxation factor for coupling (0–1)
     x_tr_upper=0.0,         # forced transition x/c (None → Michel's criterion)
     x_tr_lower=0.0,
     maxit_inner=200,        # TSD iterations per warm-start
@@ -152,6 +153,28 @@ x_transition     = upper['x_tr']
 cf_upper         = upper['cf']
 ```
 
+### Large Mach and AoA correction
+
+When the free-stream Mach number and angle of attack are sufficiently large, the TSD assumptions break down.
+Sometimes, the shock can be pushed past the trailing edge (TE), causing non-physical supersonic flow on the entire surface.
+To mitigate this, PyTSFoil implements a simple correction method that adaptively adds artificial dissipation (`EPS`)
+and correction terms (sonic penalty, which drives TE local Mach number towards one) based on the local flow conditions near TE.
+
+This correction is denoted as "Correction of Full-Supersonic (CFS)",
+which is only a simple heuristic approach to recover a more physical solution,
+as opposed to a diverged solution or a non-physical supersonic flow over the entire surface.
+This is activated by setting `flag_CFS=True` in the configuration.
+
+```python
+# Correction of Full-Supersonic (CFS) parameters
+pytsfoil.set_config(
+        flag_CFS=True,      # Flag to enable CFS correction
+        BETA_SONIC=100.0,   # Sonic penalty strength multiplier (EPS * BETA_SONIC)
+        EPS_AMPL=500.0,     # EPS amplification factor at trailing-edge columns in CFS
+        ITER_START_CFS=100  # Minimum iteration count before CFS can trigger
+        )
+```
+
 ## Package Structure
 
 ```text
@@ -166,6 +189,7 @@ pyTSFoil/
 └── example/
     ├── rae2822/              # Basic inviscid PyTSFoil usage
     ├── rae2822_ibl/          # IBL-coupled TSD: viscous analysis with TE correction
+    ├── rae2822_CorrectionFS/ # IBL-coupled TSD: with Full-Supersonic Correction (CFS)
     └── rae2822_mp/           # Multi-process parallel PyTSFoil usage
 ```
 
@@ -221,6 +245,13 @@ Physics implemented:
   with compressible von Kármán correction (−Me² term)
 
 ## Important Notes
+
+**Fortran compilation**: The Fortran module is automatically compiled on first import. If you modify the Fortran source files, delete the existing `tsfoil_fortran.*` files to trigger recompilation. But you should be careful when using multiple python environments with different python versions. You are suggested to manually compile the Fortran module by calling the `compile_f2py.py` with the absolute path of the python executable you want to use. For example:
+
+```bash
+cd pyTSFoil
+absolute/path/to/python compile_f2py.py
+```
 
 **Data Security Warning**: All PyTSFoil instances in the same Python process share underlying Fortran module data. For thread safety:
 
