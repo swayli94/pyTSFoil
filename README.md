@@ -59,8 +59,9 @@ cd pyTSFoil
 pip install -e .
 
 # Or install from PyPI
-# 0.2.4: for TSD only; 0.3.0+: for TSD + IBL coupling
-pip install pytsfoil>=0.3.0
+# >=0.2.4: for TSD only
+# >=0.3.2: for TSD + IBL coupling + TE & CSF correction
+pip install pytsfoil>=0.3.2
 
 # Test installation
 python -c "import pytsfoil; print('pytsfoil', pytsfoil.__version__, 'installed successfully')"
@@ -249,7 +250,7 @@ Physics implemented:
 **Fortran compilation**: The Fortran module is automatically compiled on first import. If you modify the Fortran source files, delete the existing `tsfoil_fortran.*` files to trigger recompilation. But you should be careful when using multiple python environments with different python versions. You are suggested to manually compile the Fortran module by calling the `compile_f2py.py` with the absolute path of the python executable you want to use. For example:
 
 ```bash
-cd pyTSFoil
+cd pytsfoil
 absolute/path/to/python compile_f2py.py
 ```
 
