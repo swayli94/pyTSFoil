@@ -277,4 +277,4 @@ with mp.Pool() as pool:
 
 - v0.1.*: Initial release with basic TSD solver interface (not fully functional)
 - v0.2.*: Basic TSD solver interface (fully functional after v0.2.4; suggested to use v0.2.8)
-- v0.3.*: Enhanced IBL coupling framework (in development, fully functional after v0.3.0)
+- v0.3.*: Enhanced IBL coupling framework (in development, suggested to use >=v0.3.2)
