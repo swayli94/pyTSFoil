@@ -378,9 +378,12 @@ class PyTSFoil(object):
             # Warm-start TSD solve (P is NOT reset; continues from current solution)
             # Limit inner iterations: BC changes are small, outer loop handles residual error.
             _maxit_saved = int(tsf.common_data.maxit)
+            _iter_start_cfs_saved = int(tsf.common_data.iter_start_cfs)
             tsf.common_data.maxit = maxit_inner
+            tsf.common_data.iter_start_cfs = 0
             tsf.main_iteration.solve()
             tsf.common_data.maxit = _maxit_saved
+            tsf.common_data.iter_start_cfs = _iter_start_cfs_saved
 
             # Export P_field
             imax = int(tsf.common_data.imax)
@@ -487,6 +490,11 @@ class PyTSFoil(object):
             'flag_output_field': True,     # field.dat
             'flag_print_info': True, # print information to console
 
+            # Correction of Full-Supersonic (CFS) parameters
+            'flag_CFS':   True,   # Flag to enable CFS correction
+            'BETA_SONIC': 500.0,  # Sonic penalty strength multiplier (EPS * BETA_SONIC)
+            'EPS_AMPL':   200.0,  # EPS amplification factor at trailing-edge columns in CFS
+            'ITER_START_CFS': 100,  # Minimum iteration count before CFS can trigger
         }
         
         # Default parameters
@@ -993,6 +1001,7 @@ class PyTSFoil(object):
         self.data_summary['cl'] = tsf.solver_base.lift(clfact)
         self.data_summary['cm'] = tsf.solver_base.pitch(cmfact)
         self.data_summary['cpstar'] = self._cpstar
+        self.data_summary['flag_cfs'] = bool(tsf.common_data.flag_cfs)
             
     def output_field(self) -> None:
         '''
