@@ -38,7 +38,13 @@ def _check_and_compile_fortran():
                     sys.executable, str(compile_script)
                 ], check=True, capture_output=True, text=True)
                 print("✓ Fortran compilation completed successfully!")
-                
+
+                # Invalidate the FileFinder cache — without this, Python reuses the
+                # stale directory listing from the first (failed) import attempt and
+                # will not see the newly compiled .so even though it exists on disk.
+                import importlib
+                importlib.invalidate_caches()
+
                 # Try importing again
                 import tsfoil_fortran
                 return True
