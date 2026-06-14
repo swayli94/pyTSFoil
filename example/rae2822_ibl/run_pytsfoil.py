@@ -50,11 +50,10 @@ REYNLD = 6.5e6
 # IBL parameters
 
 N_OUTER        = 10
-IBL_RELAX      = 0.5
 MAXIT_INNER    = 200
 I_OUTER_REPAIR = 3
 USE_TE_CORRECTION = True
-D_ANGLE_TE     = 0.0
+TE_RELAX       = 0.5
 BLEND_START    = 0.9
 
 # Solver configuration
@@ -68,11 +67,11 @@ CFG = {
     'EPS':     0.5,
     'IPRTER':  500,
     'MAXIT':   9999,
-    'RIGF':    0.0,
+    'RIGF':    0.2,
     'SIMDEF':  3,
     'WCIRC':   1.0,
     'WE':      [1.8, 1.9, 1.95],
-    'NWDGE':   0,
+    'NWDGE':   2,
     'WCONST':  4.0,
     'IFLAP':   0,
     'DELFLP':  0.0,
@@ -134,7 +133,7 @@ def plot_results(r: dict, fname: str) -> None:
     fig.suptitle(
         f"RAE2822  $M_\\infty={r['emach']:.3f}$,  "
         f"$\\alpha={r['alpha']:.2f}°$,  $Re={r['reynld']:.1e}$\n"
-        f"TE slope angle target: {r['alpha'] + D_ANGLE_TE:.1f}°  "
+        f"TE slope angle target: {r['alpha']:.1f}°  "
         f"(upper: {angle_u_raw:.2f}°→{angle_u_corr:.2f}°, "
         f"lower: {angle_l_raw:.2f}°→{angle_l_corr:.2f}°)",
         fontsize=12, fontweight='bold',
@@ -341,20 +340,19 @@ if __name__ == '__main__':
     cpstar   = ts.data_summary.get('cpstar')
 
     #* IBL-coupled TSD
-    print(f"\nIBL-coupled TSD  (N_OUTER={N_OUTER}, relax={IBL_RELAX})")
+    print(f"\nIBL-coupled TSD  (N_OUTER={N_OUTER})")
     t0 = time.time()
 
     ibl = IBL(Re=REYNLD, M_inf=EMACH)
     history = ts.run_ibl_coupled(
         ibl=ibl,
         n_outer=N_OUTER,
-        ibl_relax=IBL_RELAX,
         x_tr_upper=0.0,
         x_tr_lower=0.0,
         maxit_inner=MAXIT_INNER,
         i_outer_repair=I_OUTER_REPAIR,
         use_te_correction=USE_TE_CORRECTION,
-        d_angle_TE=D_ANGLE_TE,
+        te_relax=TE_RELAX,
         x_blend_start=BLEND_START,
     )
     

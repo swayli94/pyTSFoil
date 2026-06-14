@@ -167,7 +167,7 @@ class PyTSFoil(object):
                         n_outer: int = 10,
                         x_tr_upper: float | None = None,
                         x_tr_lower: float | None = None,
-                        ibl_relax: float = 0.5,
+                        coupling_relax_final: float = 0.1,
                         mach_smooth_sigma: float = 2.0,
                         slope_smooth_sigma: float = 3.0,
                         delta_star_max: float = 0.05,
@@ -175,7 +175,7 @@ class PyTSFoil(object):
                         maxit_inner: int = 200,
                         i_outer_repair: int = 3,
                         use_te_correction: bool = False,
-                        d_angle_TE: float = 0.0,
+                        te_relax: float = 0.5,
                         x_blend_start: float = 0.8,
                         ) -> list:
         '''
@@ -215,8 +215,9 @@ class PyTSFoil(object):
         x_tr_lower : float or None
             Forced transition x/c on the lower surface.
             None → use Michel's criterion.
-        ibl_relax : float
-            Under-relaxation factor for the slope update (0 < relax ≤ 1).
+        coupling_relax_final : float
+            The relaxation factor gradually reduces to the specified value
+            through outer iterations to ensure convergence.
         mach_smooth_sigma : float
             Gaussian smoothing sigma (in mesh points) applied to the Mach
             distribution before IBL integration.  Spreads the TSD shock over
@@ -232,6 +233,17 @@ class PyTSFoil(object):
             loop.  The first (cold) solve always uses ``config['MAXIT']``.
             Smaller values (e.g. 50-200) are sufficient because P is already
             near the solution and the outer loop corrects the residual error.
+        i_outer_repair : int
+            The designated outer iteration index to start repairing δ* near the
+            trailing edge to prevent blow-up.
+        use_te_correction : bool
+            Whether to apply the trailing-edge correction to δ* after the repair.
+        te_relax : float
+            Relaxation factor for the trailing-edge correction (0-1).
+        x_blend_start : float
+            The default x/c location to start blending the TE correction
+            with the IBL solution. The actual blend start is the minimum of this
+            and the location of the δ* blow-up.
         Returns
         -------
         history : list[dict]
@@ -319,13 +331,13 @@ class PyTSFoil(object):
             if use_te_correction and k >= k_start_repair:
                 dstar_u = ibl.correction_dstar(
                     xx=xx_foil, yy=yu_foil, dstar=dstar_u,
-                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    AoA=aoa, te_relax=te_relax,
                     x_blend_start=min(xx_foil[i_break_u], x_blend_start),
                     upper=True
                 )
                 dstar_l = ibl.correction_dstar(
                     xx=xx_foil, yy=yl_foil, dstar=dstar_l,
-                    AoA=aoa, d_angle_TE=d_angle_TE,
+                    AoA=aoa, te_relax=te_relax,
                     x_blend_start=min(xx_foil[i_break_l], x_blend_start),
                     upper=False
                 )
@@ -344,8 +356,16 @@ class PyTSFoil(object):
             slope_l = IBL.clip_and_smooth_slope(slope_l, slope_smooth_sigma, slope_correction_max)
 
             # Update FXU/FXL = base_slope ± dδ*/dx / delta  (with relaxation)
-            fxu_new = fxu_base + slope_u * ibl_relax / delta
-            fxl_new = fxl_base + slope_l * ibl_relax / delta
+            _r = k / n_outer
+            _coupling_relax = 1 + _r * (coupling_relax_final - 1)  # Linear reduction from initial relax to 0.01
+            if k > 0:
+                _fxu_last = fxu_new.copy()
+                _fxl_last = fxl_new.copy()
+            else:
+                _fxu_last = fxu_base.copy()
+                _fxl_last = fxl_base.copy()
+            fxu_new = _coupling_relax * (fxu_base + slope_u / delta) + (1-_coupling_relax) * _fxu_last
+            fxl_new = _coupling_relax * (fxl_base + slope_l / delta) + (1-_coupling_relax) * _fxl_last
 
             tsf.common_data.fxu[:nfoil] = fxu_new.astype(np.float32)
             tsf.common_data.fxl[:nfoil] = fxl_new.astype(np.float32)

@@ -72,9 +72,11 @@ def generate_signature_file(files):
     '''
     print("\nGenerating f2py signature file...")
     files_str = " ".join(files)
-    
+
+    f2py = f"{sys.executable} -m numpy.f2py"
+
     # Generate .pyf file
-    cmd = f"f2py -m {MODULE_NAME} -h {MODULE_NAME}.pyf {files_str} --overwrite-signature"
+    cmd = f"{f2py} -m {MODULE_NAME} -h {MODULE_NAME}.pyf {files_str} --overwrite-signature"
     run_command(cmd)
     
     # Check if signature file was created
@@ -104,11 +106,13 @@ def compile_module(files) -> Path:
     print("\nCompiling Fortran code with f2py...")
     
     files_str = " ".join(files)
-    
+
+    f2py = f"{sys.executable} -m numpy.f2py"
+
     # Set compiler flags (similar to compile.sh but for f2py)
     fflags = "-O2 -Wall -g -fbacktrace"
-    
-    cmd = f"f2py --backend=meson --fcompiler=gfortran --f90flags='{fflags}' -c {MODULE_NAME}.pyf {files_str}"
+
+    cmd = f"{f2py} --backend=meson --fcompiler=gfortran --f90flags='{fflags}' -c {MODULE_NAME}.pyf {files_str}"
     result = run_command(cmd)
     
     # Check if the shared library was created

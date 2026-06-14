@@ -117,8 +117,8 @@ cd       = pytsfoil.data_summary['cd']    # Wave drag (momentum integral method)
 from pytsfoil import PyTSFoil, IBL
 
 pytsfoil = PyTSFoil(airfoil_coordinates=airfoil_coordinates, work_dir='output_dir')
-pytsfoil.set_config(EMACH=0.75, ALPHA=0.5, REYNLD=6.5e6, MAXIT=9999,
-                    n_point_x=200, n_point_y=80, NWDGE=0, flag_print_info=True)
+pytsfoil.set_config(EMACH=0.75, ALPHA=0.5, REYNLD=6.5e6, MAXIT=9999, RIGF=0.2,
+                    n_point_x=200, n_point_y=80, NWDGE=2, flag_print_info=True)
 
 ibl = IBL(Re=6.5e6, M_inf=0.75)
 
@@ -127,15 +127,14 @@ pytsfoil.run()  # Run initial inviscid TSD (warm start for IBL coupling)
 
 history = pytsfoil.run_ibl_coupled(
     ibl=ibl,
-    n_outer=10,              # number of viscous-inviscid coupling cycles
-    x_tr_upper=0.0,          # forced transition x/c (None → Michel's criterion)
+    n_outer=10,             # number of viscous-inviscid coupling cycles
+    x_tr_upper=0.0,         # forced transition x/c (None → Michel's criterion)
     x_tr_lower=0.0,
-    ibl_relax=0.5,           # under-relaxation for wall-slope update
-    maxit_inner=200,         # TSD iterations per warm-start
-    i_outer_repair=3,        # iteration index to start trailing-edge repair
-    use_te_correction=True,  # apply TE δ* blending correction
-    d_angle_TE=0.0,          # target TE slope deviation from free-stream (degrees)
-    x_blend_start=0.9,       # x/c where the TE correction ramp begins
+    maxit_inner=200,        # TSD iterations per warm-start
+    i_outer_repair=3,       # iteration index to start trailing-edge repair
+    use_te_correction=True, # apply TE δ* blending correction
+    te_relax=0.5,           # relaxation factor for TE correction (0–1)
+    x_blend_start=0.9,      # x/c where the TE correction ramp begins
 )
 
 # Access coupled results
@@ -242,11 +241,6 @@ def run_analysis(params):
 with mp.Pool() as pool:
     results = pool.map(run_analysis, case_list)
 ```
-
-**IBL coupling requirements**:
-
-- Set `NWDGE=0` when using `run_ibl_coupled()` — the viscous wedge option is incompatible with the displacement-thickness wall-slope correction
-- `run_ibl_coupled()` performs the initial inviscid solve automatically; do not call `run()` beforehand
 
 ## Version History
 

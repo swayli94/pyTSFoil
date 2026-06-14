@@ -389,7 +389,7 @@ class IBL(object):
     @staticmethod
     def correction_dstar(xx: np.ndarray, yy: np.ndarray,
                 dstar: np.ndarray, AoA: float,
-                d_angle_TE: float = 0.0,
+                te_relax: float = 0.3,
                 x_blend_start: float = 0.9,
                 min_delta: float = -0.01,
                 upper: bool = True
@@ -398,7 +398,7 @@ class IBL(object):
         Trailing-edge correction for displacement thickness δ*.
 
         Adjusts δ* near the trailing edge so that the effective upper/lower surface
-        (y_eff = y ± δ*) has its slope at x = 1 equal to tan(AoA + d_angle_TE).
+        (y_eff = y ± δ*) has its slope at x = 1 equal to tan(AoA).
 
         Parameters
         ----------
@@ -410,12 +410,14 @@ class IBL(object):
             δ* from IBL.run()
         AoA: float
             angle of attack (degrees)
-        d_angle_TE: float
-            target TE deviation from free-stream (degrees).
-            0 → effective TE camber slope = tan(AoA) (free-stream-aligned).
-            Negative → effective TE below free-stream direction.
+        te_relax: float
+            Under-relaxation factor for the δ* update (0 < relax ≤ 1).
+            It reduces the magnitude of the TE-correction to the δ*,
+            providing a systematic bias/relaxation to the TE slope correction.
+            Empirically, values around 0.5 together with `NWEDGE=2` achieves good results.
         x_blend_start : float
-            x/c where the correction ramp begins (default 0.8).
+            x/c where the correction ramp begins (default 0.8), i.e.,
+            the location to start blending the TE correction with the IBL solution.
         upper : bool
             True for upper surface correction, False for lower surface.
 
@@ -445,10 +447,10 @@ class IBL(object):
         '''
         if upper:
             y_eff = yy + dstar
-            target_slope = np.tan(np.deg2rad(AoA + d_angle_TE))
+            target_slope = np.tan(np.deg2rad(AoA))
         else:
             y_eff = - yy + dstar
-            target_slope = - np.tan(np.deg2rad(AoA + d_angle_TE))
+            target_slope = - np.tan(np.deg2rad(AoA))
 
         mask = xx >= x_blend_start
         _x = xx[mask]
@@ -458,7 +460,7 @@ class IBL(object):
             return dstar
 
         delta = np.zeros_like(xx)
-        delta[mask] = _delta
+        delta[mask] = _delta * te_relax
         delta = np.clip(delta, min_delta, None)
 
         if upper:
