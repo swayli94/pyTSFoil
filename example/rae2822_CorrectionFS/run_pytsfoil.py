@@ -85,7 +85,7 @@ CFG = {
     'flag_output_field':    False,
     'flag_print_info':      False,
     # Correction of Full-Supersonic (CFS) parameters
-    'flag_CFS':   False,
+    'flag_CFS':   True,
     'BETA_SONIC': 100.0,
     'EPS_AMPL':   500.0,
     'ITER_START_CFS': 100,
