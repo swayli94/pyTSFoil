@@ -69,6 +69,7 @@ else:
     _fortran_available = False
 
 from .ibl import IBL
+from .wrapper import run_airfoil_analysis
 
 if _fortran_available:
     from .pytsfoil import PyTSFoil
@@ -83,4 +84,4 @@ else:
                 f"  python {Path(__file__).parent / 'compile_f2py.py'}"
             )
 
-__all__ = ['PyTSFoil', 'IBL', '__version__']
+__all__ = ['PyTSFoil', 'IBL', 'run_airfoil_analysis', '__version__']

@@ -426,6 +426,11 @@ class PyTSFoil(object):
         self.data_summary['ibl_lower'] = lower
         self.data_summary['ibl_cd_f']  = cd_f
 
+        # Compute wave drag for the final IBL-converged Fortran state.
+        # run_ibl_coupled does not call print_summary(), so cd/cd_wave would
+        # otherwise remain stale from the initial cold solve inside this method.
+        self.compute_wave_drag()
+
         return history
 
     def run_fortran_solver(self) -> None:
