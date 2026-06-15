@@ -61,7 +61,7 @@ pip install -e .
 
 # Or install from PyPI
 # >=0.2.4: for TSD only
-# >=0.3.2: for TSD + IBL coupling + TE & CSF correction
+# >=0.3.3: for TSD + IBL coupling + TE & CSF correction
 pip install pytsfoil>=0.3.3
 
 # Test installation
@@ -404,4 +404,4 @@ Do **not** use `threading`. See `example/rae2822_mp/` or the `run_airfoil_analys
 
 - v0.1.*: Initial release with basic TSD solver interface (not fully functional)
 - v0.2.*: Basic TSD solver interface (fully functional after v0.2.4; suggested to use v0.2.8)
-- v0.3.*: Enhanced IBL coupling framework (in development, suggested to use >=v0.3.2)
+- v0.3.*: Enhanced IBL coupling framework (in development, suggested to use >=v0.3.3)
