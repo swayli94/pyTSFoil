@@ -90,7 +90,7 @@ r = run_airfoil_analysis(coords, Mach=0.75, AoA_degrees=0.5, Re=6.5e6)
 
 # Scalar aerodynamic coefficients
 print(f"CL={r['cl']:.5f}  CD_wave={r['cd_wave']:.5f}  "
-      f"CD_f={r['cd_f']:.5f}  CD_total={r['cd_total']:.5f}")
+      f"CD_f={r['cd_friction']:.5f}  CD_total={r['cd_total']:.5f}")
 
 # Pure-inviscid baseline is always included for comparison
 b = r['baseline']
@@ -145,8 +145,8 @@ print(f"CL={r['cl']:.5f}  CD_wave={r['cd_wave']:.5f}")
 |---|---|
 | `cl`, `cm` | Lift and pitching-moment coefficients |
 | `cd_wave` | Wave drag (momentum integral method) |
-| `cd_f` | Friction drag (IBL); `0.0` when `flag_IBL=False` |
-| `cd_total` | `cd_wave + cd_f` |
+| `cd_friction` | Friction drag (IBL); `0.0` when `flag_IBL=False` |
+| `cd_total` | `cd_wave + cd_friction` |
 | `xx`, `xx_foil` | x-coordinates of the full mesh and airfoil chord |
 | `ile`, `ite` | Leading/trailing edge indices in `xx` |
 | `cpu`, `cpl` | Upper/lower surface Cp (full mesh x-line) |
@@ -231,8 +231,8 @@ history = pytsfoil.run_ibl_coupled(
 # Access coupled results
 cl      = pytsfoil.data_summary['cl']
 cd_wave = pytsfoil.data_summary['cd']
-cd_f    = pytsfoil.data_summary['ibl_cd_f']    # friction drag
-cd_tot  = cd_wave + cd_f
+cd_friction    = pytsfoil.data_summary['ibl_cd_f']    # friction drag
+cd_tot  = cd_wave + cd_friction
 upper   = pytsfoil.data_summary['ibl_upper']   # IBL result dict (upper surface)
 lower   = pytsfoil.data_summary['ibl_lower']   # IBL result dict (lower surface)
 
@@ -373,7 +373,7 @@ result = ibl.run(
     yy=yu_foil,                          # surface y/c (optional, improves arc-length)
     x_tr_forced=None,                    # forced transition x/c (None → Michel)
 )
-cd_f = ibl.friction_drag(upper, lower)
+cd_friction = ibl.friction_drag(upper, lower)
 ```
 
 Physics implemented:

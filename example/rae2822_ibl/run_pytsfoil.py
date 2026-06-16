@@ -225,7 +225,7 @@ def plot_results(r: dict, fname: str) -> None:
     history = r['history']
     iters   = np.arange(1, len(history) + 1)
     cl_his  = np.array([h['cl']   for h in history])
-    cf_his  = np.array([h['cd_f'] for h in history])
+    cf_his  = np.array([h['cd_friction'] for h in history])
     ax2 = ax.twinx()
     ax.plot(iters, cl_his, 'o-', color=C_IBL, lw=1.8, ms=6, label='CL')
     ax2.plot(iters, cf_his * 1e4, 's--', color='#ff7f0e', lw=1.8, ms=6,

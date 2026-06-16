@@ -248,7 +248,7 @@ class PyTSFoil(object):
         -------
         history : list[dict]
             One dict per outer iteration with keys
-            ``upper``, ``lower`` (IBL result dicts), ``cl``, ``cd_f``.
+            ``upper``, ``lower`` (IBL result dicts), ``cl``, ``cd_friction``.
 
         Notes
         -----
@@ -400,19 +400,19 @@ class PyTSFoil(object):
             for _k, _v in _io.items():
                 self.config[_k] = _v
 
-            cd_f = ibl.friction_drag(upper, lower)
+            cd_friction = ibl.friction_drag(upper, lower)
             entry = {
                 'upper': upper,
                 'lower': lower,
                 'cl':    self.data_summary['cl'],
-                'cd_f':  cd_f,
+                'cd_friction':  cd_friction,
             }
             history.append(entry)
 
             if self.config['flag_print_info']:
                 print(f"[IBL {k + 1}/{n_outer}] "
                       f"CL={self.data_summary['cl']:.5f}  "
-                      f"Cd_f={cd_f:.5f}  "
+                      f"Cd_f={cd_friction:.5f}  "
                       f"x_tr_u={upper['x_tr']:.3f}  "
                       f"x_tr_l={lower['x_tr']:.3f}  "
                       f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}")
@@ -424,12 +424,18 @@ class PyTSFoil(object):
         # Store final IBL results in data_summary
         self.data_summary['ibl_upper'] = upper
         self.data_summary['ibl_lower'] = lower
-        self.data_summary['ibl_cd_f']  = cd_f
+        self.data_summary['ibl_cd_f']  = cd_friction
 
         # Compute wave drag for the final IBL-converged Fortran state.
         # run_ibl_coupled does not call print_summary(), so cd/cd_wave would
         # otherwise remain stale from the initial cold solve inside this method.
+        # Obtaining:
+        # - cd_wave: wave drag from TSD
+        # - cd_shape: shape drag from TSD (momentum integral of all computational boundaries)
         self.compute_wave_drag()
+        
+        self.data_summary['cd_friction'] = cd_friction
+        self.data_summary['cd'] = cd_friction + self.data_summary['cd_shape'] + self.data_summary['cd_wave']
 
         return history
 
@@ -1272,7 +1278,7 @@ class PyTSFoil(object):
         Convenience wrapper around ``cdcole_python`` that reads the required
         scaling factors from the Fortran module so callers do not need to
         supply them explicitly.  Populates ``data_summary['cd']``,
-        ``data_summary['cd_wave']``, and ``data_summary['cd_int']``.
+        ``data_summary['cd_wave']``, and ``data_summary['cd_shape']``.
 
         Returns
         -------
@@ -1578,7 +1584,7 @@ class PyTSFoil(object):
             cdbody = 2.0 * cdfact * sum_val
         
         # Integration along shock waves
-        cdwave = 0.0
+        cd_wave = 0.0
         lprt1 = 0
         lprt2 = 0
         nshock = 0
@@ -1600,7 +1606,7 @@ class PyTSFoil(object):
                 l += 1
             sum_val = trap_integration(xi, arg, l)
             cdsk = -self._gam1 / 6.0 * cdfact * sum_val
-            cdwave += cdsk
+            cd_wave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
         
         # Integrate along shocks above airfoil
@@ -1641,7 +1647,7 @@ class PyTSFoil(object):
             
             sum_val = trap_integration(xi, arg, l)
             cdsk = -self._gam1 / 6.0 * cdfact * sum_val
-            cdwave += cdsk
+            cd_wave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
                 lprt2 = 1
@@ -1685,7 +1691,7 @@ class PyTSFoil(object):
             
             sum_val = trap_integration(xi, arg, l)
             cdsk = -self._gam1 / 6.0 * (-sum_val)
-            cdwave += cdsk
+            cd_wave += cdsk
             prtsk(xi, arg, l, nshock, cdsk, lprt1)
             if lprt1 == 1:
                 lprt2 = 1
@@ -1696,13 +1702,12 @@ class PyTSFoil(object):
         xd_loc = x_coords[id_downstream - 1]  # Convert to 0-based indexing
         yt_loc = y_coords[jt - 1] * yfact  # Convert to 0-based indexing
         yb_loc = y_coords[jb - 1] * yfact  # Convert to 0-based indexing
-        cdc = cdup + cdtop + cdbot + cddown + cdbody
-        cd = cdc + cdwave
+        cd_shape = cdup + cdtop + cdbot + cddown + cdbody
+        cd = cd_shape + cd_wave
         
         self.data_summary['cd'] = cd
-        self.data_summary['cd_int'] = cdc
-        self.data_summary['cd_wave'] = cdwave
-        self.data_summary['cd_body'] = cdbody
+        self.data_summary['cd_shape'] = cd_shape
+        self.data_summary['cd_wave'] = cd_wave
         
         # Write drag coefficient breakdown
         if self.config['flag_output_summary']:
@@ -1717,10 +1722,9 @@ class PyTSFoil(object):
                 f.write('\n')
                 f.write(f'Number of shock inside contour, N =      {nshock:3d}\n')
                 f.write(f'Body aft location,              X =      {xd_loc:15.9f}\n')
-                f.write(f'Drag due to body,               CD_body ={cdbody:15.9f}\n')
-                f.write(f'Drag due to shock,              CD_wave ={cdwave:15.9f}\n')
-                f.write(f'Drag by momentum integral,      CD_int = {cdc:15.9f}\n')
-                f.write(f'Total drag (CD_int + CD_wave),  CD =     {cd:15.9f}\n')
+                f.write(f'Drag due to shock,              CD_wave ={cd_wave:15.9f}\n')
+                f.write(f'Drag by momentum integral,      CD_shape = {cd_shape:15.9f}\n')
+                f.write(f'Total drag (CD_shape + CD_wave),  CD =     {cd:15.9f}\n')
                 f.write('\n')
                 
                 if nshock > 0 and lprt2 == 0:

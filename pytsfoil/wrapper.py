@@ -101,8 +101,9 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
         ``cl``        Lift coefficient
         ``cm``        Pitching moment coefficient (about quarter-chord)
         ``cd_wave``   Wave drag coefficient (momentum integral method)
-        ``cd_f``      Friction drag coefficient (IBL); 0.0 if inviscid
-        ``cd_total``  Total drag = cd_wave + cd_f
+        ``cd_friction``      Friction drag coefficient (IBL); 0.0 if inviscid
+        ``cd_shape``  Shape drag coefficient (momentum integral method)
+        ``cd_total``  Total drag = cd_wave + cd_friction + cd_shape
         ``xx``        x-coordinates of the full computational mesh
         ``xx_foil``   x-coordinates over the airfoil chord [0, 1]
         ``ile``       Leading-edge index in ``xx``
@@ -277,8 +278,10 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
     ile = ts.mesh['ile']
     ite = ts.mesh['ite']
 
-    cd_wave = float(ts.data_summary.get('cd', 0.0))
-    cd_f    = float(ts.data_summary.get('ibl_cd_f', 0.0))
+    cd = float(ts.data_summary.get('cd', 0.0))
+    cd_wave = float(ts.data_summary.get('cd_wave', 0.0))
+    cd_shape = float(ts.data_summary.get('cd_shape', 0.0))
+    cd_friction    = float(ts.data_summary.get('cd_friction', 0.0))
 
     if tsd_cfg.get('flag_print_info', True):
         mode = 'IBL-coupled' if flag_IBL else 'Inviscid'
@@ -287,16 +290,18 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
         print(f"  CL={ts.data_summary['cl']:.5f}  "
               f"CM={ts.data_summary['cm']:.5f}  "
               f"CD_wave={cd_wave:.5f}  "
-              f"CD_f={cd_f:.5f}  "
-              f"CD_total={cd_wave + cd_f:.5f}")
+              f"CD_friction={cd_friction:.5f}  "
+              f"CD_shape={cd_shape:.5f}  "
+              f"CD_total={cd:.5f}")
 
     results: Dict[str, Any] = {
         # Final results (IBL-coupled when flag_IBL=True, inviscid otherwise)
         'cl':       float(ts.data_summary['cl']),
         'cm':       float(ts.data_summary['cm']),
         'cd_wave':  cd_wave,
-        'cd_f':     cd_f,
-        'cd_total': cd_wave + cd_f,
+        'cd_friction': cd_friction,
+        'cd_shape': cd_shape,
+        'cd_total': cd,
         'xx':       xx,
         'xx_foil':  xx[ile : ite + 1],
         'ile':      ile,

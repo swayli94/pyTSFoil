@@ -53,7 +53,7 @@ print(f"  CL={b['cl']:.5f}  CD_wave={b['cd_wave']:.5f}")
 
 print(f"\nIBL-coupled (viscous):")
 print(f"  CL={r['cl']:.5f}  CD_wave={r['cd_wave']:.5f}  "
-      f"CD_f={r['cd_f']:.5f}  CD_total={r['cd_total']:.5f}")
+      f"CD_f={r['cd_friction']:.5f}  CD_total={r['cd_total']:.5f}")
 
 upper = r['ibl_upper']
 lower = r['ibl_lower']
@@ -84,7 +84,7 @@ r2 = run_airfoil_analysis(
 
 print(f"\nFine-mesh + forced transition:")
 print(f"  CL={r2['cl']:.5f}  CD_wave={r2['cd_wave']:.5f}  "
-      f"CD_f={r2['cd_f']:.5f}  CD_total={r2['cd_total']:.5f}")
+      f"CD_f={r2['cd_friction']:.5f}  CD_total={r2['cd_total']:.5f}")
 
 # ── Run 3: inviscid only ──────────────────────────────────────────────────────
 print("\n" + "=" * 60)
@@ -111,7 +111,7 @@ fig.suptitle(
     f"RAE2822   Ma=0.75   AoA=0.5°   Re=6.5e6\n"
     f"Baseline: CL={b['cl']:.4f}  CD_wave={b['cd_wave']:.5f}   "
     f"IBL: CL={r['cl']:.4f}  CD_wave={r['cd_wave']:.5f}  "
-    f"CD_f={r['cd_f']:.5f}  CD_total={r['cd_total']:.5f}",
+    f"CD_f={r['cd_friction']:.5f}  CD_total={r['cd_total']:.5f}",
     fontsize=10, fontweight='bold',
 )
 

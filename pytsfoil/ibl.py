@@ -48,7 +48,7 @@ class IBL(object):
             mach = pytsfoil.data_summary['mal'],
         )
         delta_star_upper = upper['delta_star']   # wall-slope correction input
-        cd_f = ibl.friction_drag(upper, lower)   # friction drag coefficient
+        cd_friction = ibl.friction_drag(upper, lower)   # friction drag coefficient
     '''
 
     def __init__(self, Re: float, M_inf: float, gamma: float = 1.4):
