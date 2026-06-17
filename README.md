@@ -198,7 +198,7 @@ cp_lower = pytsfoil.data_summary['cpl']   # Cp on lower surface
 ma_upper = pytsfoil.data_summary['mau']   # Wall Mach number, upper
 ma_lower = pytsfoil.data_summary['mal']   # Wall Mach number, lower
 cl       = pytsfoil.data_summary['cl']
-cd       = pytsfoil.data_summary['cd']    # Wave drag (momentum integral method)
+cd       = pytsfoil.data_summary['cd']    # Total drag
 ```
 
 ### Viscous IBL-coupled analysis
@@ -217,22 +217,27 @@ pytsfoil.run()  # Run initial inviscid TSD (warm start for IBL coupling)
 
 history = pytsfoil.run_ibl_coupled(
     ibl=ibl,
-    n_outer=10,                 # number of viscous-inviscid coupling cycles
-    coupling_relax_final=0.1,   # final relaxation factor for coupling (0–1)
+    n_outer=10,             # number of viscous-inviscid coupling cycles
     x_tr_upper=0.0,         # forced transition x/c (None → Michel's criterion)
     x_tr_lower=0.0,
+    coupling_relax_final=0.1,   # final relaxation factor for coupling (0–1)
+    mach_smooth_sigma = 2.0,    # Gaussian smoothing sigma to the Mach distribution before IBL
+    slope_smooth_sigma = 3.0,   # Gaussian smoothing sigma to d(δ*)/dx after IBL
+    delta_star_max = 0.05,      # Upper bound on δ*/c clipped
+    slope_correction_max = 0.1, # Maximum absolute value of d(δ*)/dx applied to BC
     maxit_inner=200,        # TSD iterations per warm-start
     i_outer_repair=3,       # iteration index to start trailing-edge repair
     use_te_correction=True, # apply TE δ* blending correction
     te_relax=0.5,           # relaxation factor for TE correction (0–1)
     x_blend_start=0.9,      # x/c where the TE correction ramp begins
+    use_divergence_check = False,   # Divergence check correction (DCC)
 )
 
 # Access coupled results
 cl      = pytsfoil.data_summary['cl']
-cd_wave = pytsfoil.data_summary['cd']
-cd_friction    = pytsfoil.data_summary['ibl_cd_f']    # friction drag
-cd_tot  = cd_wave + cd_friction
+cd_total = pytsfoil.data_summary['cd']
+cd_wave = pytsfoil.data_summary['cd_wave']
+cd_friction = pytsfoil.data_summary['cd_friction']
 upper   = pytsfoil.data_summary['ibl_upper']   # IBL result dict (upper surface)
 lower   = pytsfoil.data_summary['ibl_lower']   # IBL result dict (lower surface)
 
@@ -270,6 +275,12 @@ pytsfoil.set_config(
         EPS_AMPL=500.0,     # EPS amplification factor at trailing-edge columns in CFS
         ITER_START_CFS=100  # Minimum iteration count before CFS can trigger
         )
+
+# Divergence Check Correction (DCC)
+pytsfoil.run_ibl_coupled(
+        ***
+        use_divergence_check = True,
+        )
 ```
 
 ## Package Structure
@@ -288,7 +299,7 @@ pyTSFoil/
     ├── rae2822_wrapper/      # Recommended starting point: run_airfoil_analysis usage
     ├── rae2822/              # Basic inviscid PyTSFoil usage
     ├── rae2822_ibl/          # IBL-coupled TSD: viscous analysis with TE correction
-    ├── rae2822_CorrectionFS/ # IBL-coupled TSD: with Full-Supersonic Correction (CFS)
+    ├── rae2822_correction/   # IBL-coupled TSD: comparison of different corrections
     └── rae2822_mp/           # Multi-process parallel PyTSFoil usage
 ```
 
@@ -307,6 +318,7 @@ results = run_airfoil_analysis(
     flag_IBL  = True,      # bool: enable TSD–IBL viscous coupling
     flag_TEC  = True,      # bool: enable trailing-edge δ* correction
     flag_CFS  = True,      # bool: enable full-supersonic correction
+    flag_DCC  = True,      # bool: enable divergence check correction (DCC)
     configs   = {},        # dict: override any solver or IBL parameter
 )
 ```
@@ -358,7 +370,7 @@ Key `set_config` parameters:
 | `EMACH` | 0.75 | Freestream Mach number |
 | `ALPHA` | 0.0 | Angle of attack (degrees) |
 | `REYNLD` | 4.0e6 | Reynolds number (used by IBL) |
-| `MAXIT` | 1000 | Maximum solver iterations |
+| `MAXIT` | 9999 | Maximum solver iterations |
 | `CVERGE` | 1e-5 | Convergence criterion |
 | `EPS` | 0.2 | Artificial viscosity parameter (0–1) |
 | `SIMDEF` | 3 | Similarity scaling: 1=Cole, 2=Spreiter, 3=Krupp |

@@ -26,6 +26,7 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
             flag_IBL: bool = True,
             flag_TEC: bool = True,
             flag_CFS: bool = True,
+            flag_DCC: bool = True,
             configs: Dict[str, Any] = {}
             ) -> Dict[str, Any]:
     '''
@@ -52,6 +53,8 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
     - TEC: Trailing Edge δ* Correction (blends IBL blow-up near TE)
     - CFS: Correction of Full-Supersonic flow (stabilises converge for
       shocks, recommended when IBL is active)
+    - DCC: Divergence Check Correction (ramp up AoA in TSD-IBL coupling
+      to avoid divergence)
 
     Parameters
     ----------
@@ -73,6 +76,10 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
     flag_CFS : bool, optional
         Enable Correction of Full-Supersonic flow (default True).
         Improves convergence for cases with strong shocks.
+    flag_DCC : bool, optional
+        Enable Divergence Check Correction (default True).  Ramps up AoA
+        in TSD-IBL coupling to avoid divergence for difficult cases (e.g. high
+        AoA, strong shocks).  Only used when ``flag_IBL=True``.
     configs : dict, optional
         Override any default parameter.  Three categories are accepted:
 
@@ -212,7 +219,6 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
         'i_outer_repair':       3,
         'te_relax':             0.5,
         'x_blend_start':        0.9,
-        'use_divergence_check': True
     }
     ibl_cfg.update(ibl_overrides)
 
@@ -260,6 +266,7 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
             history = ts.run_ibl_coupled(
                 ibl=ibl,
                 use_te_correction=flag_TEC,
+                use_divergence_check=flag_DCC,
                 **ibl_cfg,
             )
         else:
