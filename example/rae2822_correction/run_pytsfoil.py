@@ -1,6 +1,25 @@
 """
 RAE2822 single-case TSD + IBL-coupled calculation.
 
+Corrections
+-----------
+- [TEC] TE δ* correction:
+  Blends the raw IBL δ* with a TE-corrected value to mitigate the overestimation of δ* near the trailing edge,
+  which can lead to excessive effective body thickness and inaccurate pressure distribution.
+  The correction is applied smoothly starting from a specified blend point (e.g., x/c=0.9) towards the trailing edge,
+  ensuring that the IBL influence is retained in the upstream region while improving accuracy near the TE.
+- [CFS] Correction of Full-Supersonic (CFS):
+  In some cases with high free-stream Mach numbers and angle of attacks, the shock wave is pushed towards the trailing edge,
+  i.e., the flow over the airfoil surface becomes fully supersonic. This is usually not physically accurate.
+  The CFS adaptively modifies the artificial viscosity `EPS` and adds an additional source term `RHS` in the TSD solver
+  to drive the trailing edge flow towards a sonic state.
+  This correction can help IBL to produce more reasonable δ* distributions, and thus converge to a more accurate solution.
+  However, the CFS has no benefit anymore once the DC is activated, therefore, it will be deprecated in the future.
+- [DC] Divergence check:
+  Implements a check for numerical divergence in the beginning of coupling iterations.
+  If divergence is detected, the TSD-IBL coupling begins with AoA=0 (instead of the target AoA)
+  to allow the flow to stabilize before ramping up to the full AoA.
+
 Procedure
 ---------
 1. Generate RAE2822 geometry from CST coefficients.
@@ -56,6 +75,9 @@ USE_TE_CORRECTION = True
 TE_RELAX       = 0.5
 BLEND_START    = 0.9
 
+USE_CFS_CORRECTION = False
+USE_DIVERGENCE_CHECK = True
+
 # Solver configuration
 
 CFG = {
@@ -83,9 +105,9 @@ CFG = {
     'flag_output_summary':  False,
     'flag_output_shock':    False,
     'flag_output_field':    False,
-    'flag_print_info':      False,
+    'flag_print_info':      True,
     # Correction of Full-Supersonic (CFS) parameters
-    'flag_CFS':   False,
+    'flag_CFS':   USE_CFS_CORRECTION,
     'BETA_SONIC': 100.0,
     'EPS_AMPL':   500.0,
     'ITER_START_CFS': 100,
@@ -328,7 +350,7 @@ if __name__ == '__main__':
     ts.run()
 
     elapsed_base = time.time() - t0
-    print(f"  CL={ts.data_summary['cl']:.5f}  CD_wave={ts.data_summary['cd']:.5f}"
+    print(f"  CL={ts.data_summary['cl']:.5f}  CD={ts.data_summary['cd']:.5f}"
           f"  t={elapsed_base:.1f}s")
 
     xx_full = ts.mesh['xx'].copy()
@@ -341,8 +363,9 @@ if __name__ == '__main__':
     mau_base = ts.data_summary['mau'].copy()
     mal_base = ts.data_summary['mal'].copy()
     cl_base  = float(ts.data_summary['cl'])
-    cd_base  = float(ts.data_summary['cd'])
-    cpstar   = ts.data_summary.get('cpstar')
+    cd_wave_base = float(ts.data_summary['cd_wave'])
+    cd_total_base = float(ts.data_summary['cd'])
+    cpstar = ts.data_summary.get('cpstar')
 
     #* IBL-coupled TSD
     print(f"\nIBL-coupled TSD  (N_OUTER={N_OUTER})")
@@ -354,21 +377,28 @@ if __name__ == '__main__':
         n_outer=N_OUTER,
         x_tr_upper=0.0,
         x_tr_lower=0.0,
+        coupling_relax_final = 0.1,
+        mach_smooth_sigma = 2.0,
+        slope_smooth_sigma = 3.0,
+        delta_star_max = 0.05,
+        slope_correction_max = 0.1,
         maxit_inner=MAXIT_INNER,
         i_outer_repair=I_OUTER_REPAIR,
         use_te_correction=USE_TE_CORRECTION,
         te_relax=TE_RELAX,
         x_blend_start=BLEND_START,
+        use_divergence_check=USE_DIVERGENCE_CHECK
     )
     
     #* Post-process results
 
     elapsed_ibl = time.time() - t0
-    cl_ibl   = float(ts.data_summary['cl'])
-    cd_ibl   = float(ts.data_summary['cd'])
+    cl_ibl = float(ts.data_summary['cl'])
+    cd_wave_ibl = float(ts.data_summary['cd_wave'])
+    cd_total_ibl = float(ts.data_summary['cd'])
     cd_f_ibl = float(ts.data_summary['ibl_cd_f'])
-    print(f"  CL={cl_ibl:.5f}  CD_wave={cd_ibl:.5f}  CD_fric={cd_f_ibl:.5f}"
-          f"  CD_total={cd_ibl + cd_f_ibl:.5f}  t={elapsed_ibl:.1f}s")
+    print(f"  CL={cl_ibl:.5f}  CD_wave={cd_wave_ibl:.5f}  CD_fric={cd_f_ibl:.5f}"
+          f"  CD_total={cd_total_ibl:.5f}  t={elapsed_ibl:.1f}s")
 
     cpu_ibl = ts.data_summary['cpu'].copy()
     cpl_ibl = ts.data_summary['cpl'].copy()
@@ -391,10 +421,10 @@ if __name__ == '__main__':
         'yu_foil': yu_foil, 'yl_foil': yl_foil,
         'cpu_base': cpu_base, 'cpl_base': cpl_base,
         'mau_base': mau_base, 'mal_base': mal_base,
-        'cl_base': cl_base, 'cd_base': cd_base, 'cpstar': cpstar,
+        'cl_base': cl_base, 'cd_wave_base': cd_wave_base, 'cd_total_base': cd_total_base, 'cpstar': cpstar,
         'cpu_ibl': cpu_ibl, 'cpl_ibl': cpl_ibl,
         'mau_ibl': mau_ibl, 'mal_ibl': mal_ibl,
-        'cl_ibl': cl_ibl, 'cd_ibl': cd_ibl, 'cd_f_ibl': cd_f_ibl,
+        'cl_ibl': cl_ibl, 'cd_wave_ibl': cd_wave_ibl, 'cd_total_ibl': cd_total_ibl, 'cd_f_ibl': cd_f_ibl,
         'upper': upper, 'lower': lower, 'history': history,
         'dstar_u': dstar_u, 'dstar_l': dstar_l,
         'dstar_u_corr': dstar_u_corr, 'dstar_l_corr': dstar_l_corr,
@@ -404,15 +434,16 @@ if __name__ == '__main__':
         'm_l_corr': _te_surface_slope(xx_foil, yl_foil, dstar_l_corr, -1),
     }
 
-    plot_results(result, fname='rae2822_ibl.png')
+    fname = f'rae2822_TEC{int(USE_TE_CORRECTION)}_CFS{int(USE_CFS_CORRECTION)}_DC{int(USE_DIVERGENCE_CHECK)}.png'
+    plot_results(result, fname=fname)
 
     # Summary
     print('\n' + '=' * 60)
     print(f"{'Metric':<16}  {'Baseline':>12}  {'IBL-coupled':>12}")
     print('-' * 60)
     print(f"{'CL':<16}  {cl_base:>12.5f}  {cl_ibl:>12.5f}")
-    print(f"{'CD_wave':<16}  {cd_base:>12.5f}  {cd_ibl:>12.5f}")
+    print(f"{'CD_wave':<16}  {cd_wave_base:>12.5f}  {cd_wave_ibl:>12.5f}")
     print(f"{'CD_fric':<16}  {'N/A':>12}  {cd_f_ibl:>12.5f}")
-    print(f"{'CD_total':<16}  {'N/A':>12}  {cd_ibl + cd_f_ibl:>12.5f}")
+    print(f"{'CD_total':<16}  {cd_total_base:>12.5f}  {cd_total_ibl + cd_f_ibl:>12.5f}")
     print(f"{'t_wall (s)':<16}  {elapsed_base:>12.2f}  {elapsed_ibl:>12.2f}")
     print('=' * 60)
