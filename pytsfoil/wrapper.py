@@ -14,7 +14,7 @@ _IBL_PARAM_KEYS = frozenset({
     'n_outer', 'x_tr_upper', 'x_tr_lower', 'coupling_relax_final',
     'mach_smooth_sigma', 'slope_smooth_sigma', 'delta_star_max',
     'slope_correction_max', 'maxit_inner', 'i_outer_repair',
-    'te_relax', 'x_blend_start',
+    'te_relax', 'x_blend_start', 'use_divergence_check'
 })
 
 # Keys handled outside set_config()
@@ -86,7 +86,8 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
           ``n_outer``, ``x_tr_upper``, ``x_tr_lower``,
           ``coupling_relax_final``, ``maxit_inner``, ``i_outer_repair``,
           ``te_relax``, ``x_blend_start``, ``mach_smooth_sigma``,
-          ``slope_smooth_sigma``, ``delta_star_max``, ``slope_correction_max``
+          ``slope_smooth_sigma``, ``delta_star_max``, ``slope_correction_max``,
+          ``use_divergence_check``, …
 
         **Directory keys**:
           ``work_dir``   - working directory for Fortran solver I/O
@@ -211,6 +212,7 @@ def run_airfoil_analysis(airfoil_coordinates: np.ndarray,
         'i_outer_repair':       3,
         'te_relax':             0.5,
         'x_blend_start':        0.9,
+        'use_divergence_check': True
     }
     ibl_cfg.update(ibl_overrides)
 

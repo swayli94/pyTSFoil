@@ -55,6 +55,7 @@ I_OUTER_REPAIR = 3
 USE_TE_CORRECTION = True
 TE_RELAX       = 0.5
 BLEND_START    = 0.9
+USE_DIVERGENCE_CHECK = True
 
 # Solver configuration
 
@@ -354,6 +355,7 @@ if __name__ == '__main__':
         use_te_correction=USE_TE_CORRECTION,
         te_relax=TE_RELAX,
         x_blend_start=BLEND_START,
+        use_divergence_check=USE_DIVERGENCE_CHECK,
     )
     
     #* Post-process results

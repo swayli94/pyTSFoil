@@ -246,14 +246,21 @@ cf_upper         = upper['cf']
 ### Large Mach and AoA correction
 
 When the free-stream Mach number and angle of attack are sufficiently large, the TSD assumptions break down.
-Sometimes, the shock can be pushed past the trailing edge (TE), causing non-physical supersonic flow on the entire surface.
-To mitigate this, PyTSFoil implements a simple correction method that adaptively adds artificial dissipation (`EPS`)
-and correction terms (sonic penalty, which drives TE local Mach number towards one) based on the local flow conditions near TE.
+Sometimes, the shock can be pushed past the trailing edge (TE), this will trigger a diverged solution or
+a non-physical supersonic flow over the entire surface, which is not physically realistic.
+To mitigate this, we need to use the TSD-IBL coupling with a Divergence Check Correction (DCC) method.
+The DCC method implements a check for numerical divergence in the beginning of coupling iterations.
+If divergence is detected, the TSD-IBL coupling restarts with AoA=0 (instead of the target AoA)
+to allow the flow to stabilize before ramping up to the full AoA.
 
+In the meantime, PyTSFoil implements a simple correction method that adaptively adds artificial dissipation (`EPS`)
+and correction terms (sonic penalty, which drives TE local Mach number towards one)
+based on the local flow conditions near TE.
 This correction is denoted as "Correction of Full-Supersonic (CFS)",
 which is only a simple heuristic approach to recover a more physical solution,
 as opposed to a diverged solution or a non-physical supersonic flow over the entire surface.
 This is activated by setting `flag_CFS=True` in the configuration.
+However, the CFS has no benefit anymore once the DC is activated, therefore, it will be deprecated in the future.
 
 ```python
 # Correction of Full-Supersonic (CFS) parameters
