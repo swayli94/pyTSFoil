@@ -177,6 +177,7 @@ class PyTSFoil(object):
                         use_te_correction: bool = False,
                         te_relax: float = 0.5,
                         x_blend_start: float = 0.8,
+                        use_divergence_check: bool = False,
                         ) -> list:
         '''
         Viscous-inviscid coupling via IBL displacement-thickness wall-slope correction.
@@ -244,6 +245,10 @@ class PyTSFoil(object):
             The default x/c location to start blending the TE correction
             with the IBL solution. The actual blend start is the minimum of this
             and the location of the δ* blow-up.
+        use_divergence_check : bool
+            Whether to check for divergence after the initial cold solve,
+            and if so, reset the solution and ramp up AoA over the outer
+            iterations to improve stability.
         Returns
         -------
         history : list[dict]
@@ -268,6 +273,10 @@ class PyTSFoil(object):
         self.run_fortran_solver()
         self.compute_data_summary()
 
+        aoa = self.config['ALPHA']
+        aoa_save = aoa
+        flag_baseline_diverged = False
+
         # Extract surface Mach without file I/O (needed for first IBL step)
         _io = {k: self.config[k]
                for k in ('flag_output_shock', 'flag_output_field',
@@ -275,10 +284,26 @@ class PyTSFoil(object):
         for k in _io:
             self.config[k] = False
         self.output_surface()
+            
+        if use_divergence_check:
+            if not self.check_pytsfoil_convergence():
+                if self.config['flag_print_info']:
+                    print('  [IBL] Activating AoA ramping in the outer loop.')
+                flag_baseline_diverged = True
+                self.initialize_data()
+                aoa = 0.0
+                tsf.common_data.alpha = np.float32(0.0)
+                tsf.common_data.maxit = maxit_inner
+                i_outer_repair = 1
+                self.set_airfoil()
+                self.set_mesh()
+                self.compute_mesh_indices()
+                self.run_fortran_solver()
+                self.compute_data_summary()
+                self.output_surface()
+
         for k, v in _io.items():
             self.config[k] = v
-            
-        aoa = self.config['ALPHA']
 
         # Geometry and mesh constants (fixed across outer iterations)
         ile     = self.mesh['ile']           # 0-based Python index
@@ -410,12 +435,21 @@ class PyTSFoil(object):
             history.append(entry)
 
             if self.config['flag_print_info']:
-                print(f"[IBL {k + 1}/{n_outer}] "
+                text_aoa = f'  AoA\'={aoa:.3f}°' if aoa != aoa_save else ''
+                print(f"  [IBL {k + 1:2d}/{n_outer}] "
                       f"CL={self.data_summary['cl']:.5f}  "
                       f"Cd_f={cd_friction:.5f}  "
                       f"x_tr_u={upper['x_tr']:.3f}  "
                       f"x_tr_l={lower['x_tr']:.3f}  "
-                      f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}")
+                      f"|dδ*/dx|_max_u={np.max(np.abs(slope_u)):.4f}"+text_aoa)
+                
+            # Adjust AoA when baseline diverges
+            # AoA only functions in BC and PY
+            # Mach is too complex, because many variables need to be updated
+            if flag_baseline_diverged:
+                _t = min(5*_r, 1.0)
+                aoa = _t * aoa_save
+                tsf.common_data.alpha = np.float32(aoa / self._vfact)
 
         # Final repair of δ* to remove any numerical artefacts before storing in data_summary
         upper['theta'], _ = IBL.repair_dstar(xx_foil, upper['theta'])
@@ -540,12 +574,6 @@ class PyTSFoil(object):
         # Apply self.config to common data
         for key, value in self.config.items():
             setattr(tsf.common_data, key.lower(), value)
-
-        # Print working directory and output directory
-        if self.config['flag_print_info']:
-            print(f"pyTSFoil working directory: {self.work_dir}")
-            print(f"pyTSFoil output directory: {self.output_dir}")
-            print()
 
     def set_airfoil(self) -> None:
         '''
@@ -868,15 +896,6 @@ class PyTSFoil(object):
         self.mesh['fxu'] = fxu.copy()
         self.mesh['fxl'] = fxl.copy()
         self.mesh['fx_camber'] = fx_camber.copy()
-        
-        # Print or log geometry (equivalent to PRBODY call)
-        if self.config['flag_print_info']:
-            print(f"Airfoil geometry computed successfully:")
-            print(f"  Number of points: {nfoil}")
-            print(f"  Volume: {vol:.6f}")
-            print(f"  Max thickness: {delta:.6f}")
-            if iflap != 0:
-                print(f"  Flap deflection: {delflp:.2f} degrees at x={flploc:.3f}")
     
     def compute_scale(self) -> None:
         '''
@@ -1290,6 +1309,39 @@ class PyTSFoil(object):
         self.cdcole_python(sonvel, self._yfact, delta)
         return float(self.data_summary['cd'])
 
+    def _findsk(self, istart: int, iend: int, j_line: int, son_vel: float) -> int:
+        """Find shock location on line J between ISTART and IEND."""
+        isk = istart - 1
+        u2 = tsf.solver_base.px(isk, j_line)
+
+        while True:
+            isk += 1
+            u1 = u2
+            u2 = tsf.solver_base.px(isk, j_line)
+            if u1 > son_vel and u2 <= son_vel:
+                break
+            if isk >= iend:
+                isk = -iend
+                break
+        return isk
+
+    def _newisk(self, iskold: int, j_line: int, son_vel: float) -> int:
+        """Find new location of shockwave given an initial guess."""
+        i2 = iskold + 2
+        isknew = iskold - 3
+        u2 = tsf.solver_base.px(isknew, j_line)
+
+        while True:
+            isknew += 1
+            u1 = u2
+            u2 = tsf.solver_base.px(isknew, j_line)
+            if u1 > son_vel and u2 <= son_vel:
+                break
+            if isknew >= i2:
+                isknew = -isknew
+                break
+        return isknew
+
     def cdcole_python(self, sonvel: float, yfact: float, delta: float) -> None:
         """
         Compute drag coefficient by momentum integral method.
@@ -1340,39 +1392,6 @@ class PyTSFoil(object):
                 sum_val += z * w
             return 0.5 * sum_val
                 
-        def findsk(istart, iend, j_line, son_vel):
-            """Find shock location on line J between ISTART and IEND"""
-            isk = istart - 1
-            u2 = tsf.solver_base.px(isk, j_line)
-            
-            while True:
-                isk += 1
-                u1 = u2
-                u2 = tsf.solver_base.px(isk, j_line)
-                if u1 > son_vel and u2 <= son_vel:
-                    break
-                if isk >= iend:
-                    isk = -iend
-                    break
-            return isk
-        
-        def newisk(iskold, j_line, son_vel):
-            """Find new location of shockwave given an initial guess"""
-            i2 = iskold + 2
-            isknew = iskold - 3
-            u2 = tsf.solver_base.px(isknew, j_line)
-            
-            while True:
-                isknew += 1
-                u1 = u2
-                u2 = tsf.solver_base.px(isknew, j_line)
-                if u1 > son_vel and u2 <= son_vel:
-                    break
-                if isknew >= i2:
-                    isknew = -isknew
-                    break
-            return isknew
-        
         def drag_function(cdfact_in):
             """Compute drag coefficient by surface pressure integral (Python implementation of DRAG)"""
             xi = np.zeros(n_mesh_points)
@@ -1453,7 +1472,7 @@ class PyTSFoil(object):
             
             # Find bow shock wave
             istop = ile - 3
-            ibow = findsk(iup, istop, jup, sonvel)
+            ibow = self._findsk(iup, istop, jup, sonvel)
             
             if ibow < 0:
                 
@@ -1482,7 +1501,7 @@ class PyTSFoil(object):
             for j in range(jstart, jmax + 1):
                 jt += 1
                 iskold = isk
-                isk = newisk(iskold, j, sonvel)
+                isk = self._newisk(iskold, j, sonvel)
                 if isk < 0:
                     break
             
@@ -1493,7 +1512,7 @@ class PyTSFoil(object):
                 jj = jlow - j + jmin
                 jb -= 1
                 iskold = isk
-                isk = newisk(iskold, jj, sonvel)
+                isk = self._newisk(iskold, jj, sonvel)
                 if isk < 0:
                     break
             
@@ -1600,7 +1619,7 @@ class PyTSFoil(object):
             isk = ibow
             for j in range(jb, jt + 1):
                 iskold = isk
-                isk = newisk(iskold, j, sonvel)
+                isk = self._newisk(iskold, j, sonvel)
                 xi[l] = y_coords[j - 1]  # Convert to 0-based indexing
                 arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
                 l += 1
@@ -1614,7 +1633,7 @@ class PyTSFoil(object):
         
         # Loop to find and process all shocks above airfoil
         while True:
-            isk = findsk(istart, ite, jup, sonvel)
+            isk = self._findsk(istart, ite, jup, sonvel)
             if isk < 0:
                 break  # No more shocks found
             
@@ -1634,7 +1653,7 @@ class PyTSFoil(object):
                 arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
                 iskold = isk
                 jsk = j + 1
-                isk = newisk(iskold, jsk, sonvel)
+                isk = self._newisk(iskold, jsk, sonvel)
                 if isk < 0:
                     break
                 if isk > id_downstream:
@@ -1657,7 +1676,7 @@ class PyTSFoil(object):
         
         # Loop to find and process all shocks below airfoil
         while True:
-            isk = findsk(istart, ite, jlow, sonvel)
+            isk = self._findsk(istart, ite, jlow, sonvel)
             if isk < 0:
                 break  # No more shocks found
             
@@ -1678,7 +1697,7 @@ class PyTSFoil(object):
                 arg[l] = (tsf.solver_base.px(isk + 1, j) - tsf.solver_base.px(isk - 2, j))**3
                 iskold = isk
                 jsk = j - 1
-                isk = newisk(iskold, jsk, sonvel)
+                isk = self._newisk(iskold, jsk, sonvel)
                 if isk < 0:
                     break
                 if isk > id_downstream:
@@ -1801,7 +1820,44 @@ class PyTSFoil(object):
 
         # Momentum integral drag calculation
         self.cdcole_python(sonvel, yfact, delta)
+
+    def check_pytsfoil_convergence(self,
+                dstar_u: np.ndarray|None = None,
+                dstar_l: np.ndarray|None = None
+                ) -> bool:
+        '''
+        Check if the pyTSFoil solver converged.
+        '''
+        if not self.data_summary.get('success', False):
+            if self.config['flag_print_info']:
+                print('  [Error] pyTSFoil did not converge successfully.')
+            return False
         
+        i_X95 = np.argmin(np.abs(self.data_summary['xx'] - 0.95))
+        i_X80 = np.argmin(np.abs(self.data_summary['xx'] - 0.80))
+        mau = self.data_summary['mau']
+        mal = self.data_summary['mal']
+        if np.max(mau) > 2.0 or np.max(mal) > 2.0:
+            if self.config['flag_print_info']:
+                print('  [Error] Maximum Mach number exceeds 2.0.')
+            return False
+        if mau[i_X95] < 0.01 or mal[i_X95] < 0.01:
+            if self.config['flag_print_info']:
+                print('  [Error] Mach number at X=0.95 is too low, indicating possible non-convergence.')
+            return False
+        if mau[i_X80] < 0.01 or mal[i_X80] < 0.01 or mau[i_X80] > 1.0 or mal[i_X80] > 1.0:
+            if self.config['flag_print_info']:
+                print('  [Error] Mach number at X=0.80 is out of bounds.')
+            return False
+        
+        if dstar_u is not None and dstar_l is not None:
+            if np.max(dstar_u) > 0.03 or np.max(dstar_l) > 0.03:
+                if self.config['flag_print_info']:
+                    print('  [Error] Displacement thickness exceeds 0.03.')
+                return False
+        
+        return True
+
     def plot_all_results(self, filename:str='tsfoil_results.png'):
         '''
         Plot all results, including:
