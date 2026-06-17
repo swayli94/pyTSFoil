@@ -423,4 +423,4 @@ Do **not** use `threading`. See `example/rae2822_mp/` or the `run_airfoil_analys
 
 - v0.1.*: Initial release with basic TSD solver interface (not fully functional)
 - v0.2.*: Basic TSD solver interface (fully functional after v0.2.4; suggested to use v0.2.8)
-- v0.3.*: Enhanced IBL coupling framework (in development, suggested to use >=v0.3.3)
+- v0.3.*: Enhanced IBL coupling framework (in development, suggested to use >=v0.3.5)
