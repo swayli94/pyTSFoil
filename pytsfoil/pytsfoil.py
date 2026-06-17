@@ -270,6 +270,9 @@ class PyTSFoil(object):
         self.set_airfoil()
         self.set_mesh()
         self.compute_mesh_indices()
+        if use_divergence_check:
+            # No need to run the full iterations to check for divergence.
+            tsf.common_data.maxit = maxit_inner
         self.run_fortran_solver()
         self.compute_data_summary()
 
