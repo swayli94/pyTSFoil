@@ -4,6 +4,7 @@ Theory
 .. contents:: Contents
    :local:
    :depth: 3
+   :class: this-will-duplicate-information-and-it-is-still-useful-here
 
 This chapter gives a self-contained derivation of the two physical models
 implemented in pyTSFoil: the **Transonic Small-Disturbance (TSD)** equation
@@ -132,7 +133,7 @@ Boundary conditions
 ~~~~~~~~~~~~~~~~~~~~
 
 **Wall (airfoil surface).** The kinematic condition on the upper (+) and
-lower (−) surfaces of the thin airfoil, translated to the slit
+lower (-) surfaces of the thin airfoil, translated to the slit
 :math:`y = 0^{\pm}`, is
 
 .. math::
@@ -144,9 +145,10 @@ lower (−) surfaces of the thin airfoil, translated to the slit
    \varphi_x(x, 0^\pm), \qquad 0 \le x \le 1,
 
 where :math:`Y^\pm(x)/\delta` is the normalised upper/lower surface ordinate
-and :math:`\tilde{\alpha} = \alpha / \vfact` is the angle of attack scaled to
-similarity variables.  In code, the slopes :math:`dY^\pm/dx` are stored in the
-arrays ``FXU`` and ``FXL``.
+and :math:`\tilde{\alpha} = \alpha_{\rm rad}/\delta` is the angle of attack
+scaled to similarity variables (``ALPHA`` in degrees divided by
+:math:`\delta \times 180/\pi`).  In code, the slopes :math:`dY^\pm/dx` are
+stored in the arrays ``FXU`` and ``FXL``.
 
 **Trailing edge (Kutta condition).** The circulation is determined by
 requiring a finite velocity at the trailing edge.  TSFOIL2 implements this
@@ -235,13 +237,14 @@ discrete mesh.  For each shock crossing the contour:
 .. math::
    :label: wave_drag
 
-   c_{D,\rm wave} = \frac{\gamma+1}{6}\,\cdfact\,
+   c_{D,\rm wave} = \frac{\gamma+1}{6}\,
+                    \frac{\delta^{2/3} S_\varphi}{M_\infty}\,
                     \int_{y_b}^{y_t} (\Delta u)^3 \, dy,
 
 where :math:`\Delta u = u_1 - u_2` is the perturbation velocity jump and
-:math:`\cdfact = \delta^{2/3} S_\varphi / M_\infty` converts similarity
-drag to physical units.  The contour integrals along the upstream, downstream,
-top, and bottom boundaries close the control volume.
+:math:`\delta^{2/3} S_\varphi / M_\infty` (``CDFACT`` in the code) converts
+similarity drag to physical units.  The contour integrals along the upstream,
+downstream, top, and bottom boundaries close the control volume.
 
 ----
 

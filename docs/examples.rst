@@ -3,9 +3,6 @@ Examples
 
 All example scripts live in the ``example/`` directory of the repository.
 
-.. contents:: Contents
-   :local:
-   :depth: 1
 
 RAE 2822 — easy-mode wrapper
 ------------------------------
@@ -33,6 +30,13 @@ for new users.
    [pyTSFoil] IBL-coupled result  Ma=0.750  AoA=0.50°  Re=6.50e+06
      CL=0.79923  CM=-0.10997  CD_wave=0.01285  CD_friction=0.00430  CD_total=0.01715
 
+.. figure:: ../example/rae2822_wrapper/wrapper_results.png
+   :alt: RAE 2822 wrapper — Cp, Mach number and boundary-layer quantities
+   :width: 100%
+   :align: center
+
+   RAE 2822 wrapper results: Cp distribution, wall Mach number, and IBL boundary-layer quantities.
+
 
 RAE 2822 — inviscid TSD only
 ------------------------------
@@ -58,6 +62,13 @@ Key settings used:
        flag_output_field = True,
    )
 
+.. figure:: ../example/rae2822/tsfoil_results.png
+   :alt: RAE 2822 inviscid TSD results
+   :width: 100%
+   :align: center
+
+   RAE 2822 inviscid TSD results: Cp distribution and wall Mach number.
+
 
 RAE 2822 — IBL-coupled TSD
 ----------------------------
@@ -69,6 +80,13 @@ Demonstrates full manual control of the IBL coupling loop:
 * Creates a :class:`~pytsfoil.PyTSFoil` and an :class:`~pytsfoil.IBL` instance separately.
 * Configures coupling parameters (relaxation, smoothing, TE correction).
 * Plots the convergence history of CL and friction drag across outer iterations.
+
+.. figure:: ../example/rae2822_ibl/rae2822_ibl.png
+   :alt: RAE 2822 IBL-coupled TSD results
+   :width: 100%
+   :align: center
+
+   RAE 2822 IBL-coupled TSD: Cp, Mach number, displacement thickness, skin friction, and coupling convergence history.
 
 
 RAE 2822 — correction comparison
@@ -85,6 +103,20 @@ Compares four configurations at a challenging flight condition:
 
 Useful for understanding the effect of each stability correction on the solution
 at high Mach / high AoA combinations.
+
+.. figure:: ../example/rae2822_correction/case1_TEC0_CFS0_DC0.png
+   :alt: RAE 2822 correction comparison — no corrections
+   :width: 100%
+   :align: center
+
+   No corrections (pure inviscid TSD baseline).
+
+.. figure:: ../example/rae2822_correction/case3_TEC1_CFS1_DC1.png
+   :alt: RAE 2822 correction comparison — all corrections enabled
+   :width: 100%
+   :align: center
+
+   All corrections enabled (TEC + CFS + DC) at a more challenging flight condition.
 
 
 RAE 2822 — multi-process parallel
@@ -115,6 +147,14 @@ TSD + IBL analysis in its own subprocess, avoiding shared Fortran state.
 
    with Pool(4) as pool:
        results = pool.map(worker, cases)
+
+.. figure:: ../example/rae2822_mp/combined_mach_distributions.png
+   :alt: RAE 2822 multi-process polar sweep — Mach distributions
+   :width: 100%
+   :align: center
+
+   Mach distributions across the Mach-AoA polar sweep computed in parallel.
+
 
 Running the examples
 ---------------------

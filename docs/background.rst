@@ -6,10 +6,6 @@ Physics Background
    This page gives a compact summary of the physical models.
    For the full mathematical derivation see :doc:`theory`.
 
-.. contents:: Contents
-   :local:
-   :depth: 2
-
 
 Transonic Small-Disturbance (TSD) theory
 -----------------------------------------
@@ -72,14 +68,10 @@ Wave drag
 
 Wave drag is computed by the **momentum integral method** (Cole's formula),
 integrating around a contour enclosing the body and along each shock wave inside
-the contour.  For each shock at position :math:`x_s`:
-
-.. math::
-
-   c_{D,\text{wave}} = -\cdfact \frac{\gamma+1}{6 Y_{\text{fact}}}
-                        \int_{y_b}^{y_t} \Delta u^3 \, dy
-
-where :math:`\Delta u` is the velocity jump across the shock.
+the contour.  The drag contribution of each shock is proportional to the cube of
+the perturbation velocity jump :math:`\Delta u` integrated in the
+cross-stream direction — see :eq:`wave_drag` in the :doc:`theory` chapter for
+the full expression.
 
 
 Integral Boundary Layer (IBL) method

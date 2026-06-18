@@ -7,6 +7,7 @@ each stage of the analysis.
 .. contents:: Contents
    :local:
    :depth: 2
+   :class: this-will-duplicate-information-and-it-is-still-useful-here
 
 
 Inviscid TSD analysis
