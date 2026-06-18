@@ -1,0 +1,11 @@
+/* Minor style tweaks for pyTSFoil docs */
+
+/* Slightly wider content area */
+.md-grid {
+    max-width: 1280px;
+}
+
+/* Better table readability */
+table.docutils td, table.docutils th {
+    padding: 0.4em 0.6em;
+}

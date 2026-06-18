@@ -20,6 +20,7 @@ temp*
 cpxs.dat
 field.dat
 
+_build/
 build/
 dist/
 __pycache__/
@@ -29,8 +30,6 @@ airfoil_database/
 example/run_database_*/figures
 example/run_database_*/temp_results
 example/run_database_*/results_database.json
-
-inner_tables_cache/
 
 test_*/figures*
 test_*/temp_results

@@ -220,7 +220,7 @@ history = pytsfoil.run_ibl_coupled(
     n_outer=10,             # number of viscous-inviscid coupling cycles
     x_tr_upper=0.0,         # forced transition x/c (None → Michel's criterion)
     x_tr_lower=0.0,
-    coupling_relax_final=0.1,   # final relaxation factor for coupling (0–1)
+    coupling_relax_final=0.1,   # final relaxation factor for coupling (0-1)
     mach_smooth_sigma = 2.0,    # Gaussian smoothing sigma to the Mach distribution before IBL
     slope_smooth_sigma = 3.0,   # Gaussian smoothing sigma to d(δ*)/dx after IBL
     delta_star_max = 0.05,      # Upper bound on δ*/c clipped
@@ -228,7 +228,7 @@ history = pytsfoil.run_ibl_coupled(
     maxit_inner=200,        # TSD iterations per warm-start
     i_outer_repair=3,       # iteration index to start trailing-edge repair
     use_te_correction=True, # apply TE δ* blending correction
-    te_relax=0.5,           # relaxation factor for TE correction (0–1)
+    te_relax=0.5,           # relaxation factor for TE correction (0-1)
     x_blend_start=0.9,      # x/c where the TE correction ramp begins
     use_divergence_check = False,   # Divergence check correction (DCC)
 )
@@ -315,7 +315,7 @@ results = run_airfoil_analysis(
     Mach,                  # float: free-stream Mach number
     AoA_degrees,           # float: angle of attack in degrees
     Re,                    # float: chord-based Reynolds number
-    flag_IBL  = True,      # bool: enable TSD–IBL viscous coupling
+    flag_IBL  = True,      # bool: enable TSD-IBL viscous coupling
     flag_TEC  = True,      # bool: enable trailing-edge δ* correction
     flag_CFS  = True,      # bool: enable full-supersonic correction
     flag_DCC  = True,      # bool: enable divergence check correction (DCC)
@@ -372,7 +372,7 @@ Key `set_config` parameters:
 | `REYNLD` | 4.0e6 | Reynolds number (used by IBL) |
 | `MAXIT` | 9999 | Maximum solver iterations |
 | `CVERGE` | 1e-5 | Convergence criterion |
-| `EPS` | 0.2 | Artificial viscosity parameter (0–1) |
+| `EPS` | 0.2 | Artificial viscosity parameter (0-1) |
 | `SIMDEF` | 3 | Similarity scaling: 1=Cole, 2=Spreiter, 3=Krupp |
 | `NWDGE` | 0 | Viscous wedge: 0=none, 1=Murman, 2=Yoshihara |
 | `n_point_x` | 81 | Grid points in x-direction |
