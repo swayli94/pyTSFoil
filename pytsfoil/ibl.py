@@ -229,8 +229,8 @@ class IBL(object):
 
         The Head ODE can diverge near the trailing edge when the edge-velocity
         gradient is large.  This method identifies the first point in the rear
-        half of the surface where |dδ*/dx| exceeds ``outlier_sigma`` times the
-        median |dδ*/dx| over the first 70 % of the surface, then linearly
+        half of the surface where \|dδ\*/dx\| exceeds ``outlier_sigma`` times the
+        median \|dδ\*/dx\| over the first 70 % of the surface, then linearly
         extrapolates from the two preceding points to the trailing edge.
 
         Parameters

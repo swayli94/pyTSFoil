@@ -20,11 +20,13 @@ version = '0.3'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-    'sphinx.ext.napoleon',         # NumPy / Google docstring support
+    'sphinx.ext.napoleon',      # NumPy / Google docstring support
     'numpydoc',
-    'sphinx.ext.viewcode',         # link to source code
-    'sphinx.ext.intersphinx',      # cross-links to NumPy, SciPy, etc.
-    'sphinx.ext.mathjax',          # LaTeX math in HTML
+    'sphinx.ext.intersphinx',   # cross-links to NumPy, SciPy, etc.
+    'sphinx.ext.mathjax',       # LaTeX math in HTML
+    # sphinx.ext.viewcode is intentionally omitted:
+    # it imports modules outside the autodoc mock context and triggers
+    # sys.exit(1) in pytsfoil/pytsfoil.py when tsfoil_fortran is absent.
 ]
 
 templates_path = ['_templates']
