@@ -1,0 +1,22 @@
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.11"
+
+sphinx:
+  configuration: docs/conf.py
+
+python:
+  install:
+    # Install the package so autodoc can import pytsfoil.
+    # Fortran compilation is skipped at install time (happens at runtime);
+    # tsfoil_fortran is mocked in conf.py via autodoc_mock_imports.
+    - method: pip
+      path: .
+    # Sphinx theme and extensions
+    - requirements: docs/requirements.txt
