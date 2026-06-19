@@ -585,8 +585,8 @@ class IBL(object):
         gradient; it reduces the streamtube-spreading rate and is O(0.5) at
         Me ≈ 0.7, so it is significant for transonic flow from pyTSFoil.
 
-        Head's entrainment ODE (second equation, unchanged):
-            d(H₁θ)/ds = 0.0306 · (H₁ - 3)^{-0.6169}
+        Head's entrainment ODE (second equation):
+            d(H₁θ)/ds = 0.0306 · (H₁ - 3)^{-0.6169} - (H₁θ/u_e) · du_e/ds
 
         Skin friction via Ludwieg-Tillmann:  cf = 0.246 · 10^{-0.678H} · Re_θ^{-0.268}
         Auxiliary relation H₁(H): Head (1958) two-branch formula.
@@ -639,7 +639,8 @@ class IBL(object):
             _cf   = self._ludwieg_tillmann(_H, _ue * th / nu)
             # Compressible von Kármán: (2 + H - Me²) instead of (2 + H)
             dth   = 0.5*_cf - (_H + 2.0 - _Me**2)*th/(_ue+1e-30)*_due
-            dH1th = 0.0306 * (H1 - 3.0)**(-0.6169)
+            # Head entrainment: d(θH₁)/ds = F(H₁) − (θH₁/ue)·due/ds
+            dH1th = 0.0306 * (H1 - 3.0)**(-0.6169) - H1th * _due / (_ue + 1e-30)
             return [dth, dH1th]
 
         sol = solve_ivp(rhs, [s_t[0], s_t[-1]], y0,
@@ -676,7 +677,8 @@ class IBL(object):
             th[i+1]   = max(th[i] + ds*(0.5*_cf
                             - (_H + 2.0 - me[i]**2)*th[i]/(ue[i]+1e-30)*due_ds[i]),
                             1e-10)
-            H1th[i+1] = H1th[i] + ds * 0.0306*(H1 - 3.0)**(-0.6169)
+            H1th[i+1] = H1th[i] + ds * (0.0306*(H1 - 3.0)**(-0.6169)
+                        - H1th[i] * due_ds[i] / (ue[i] + 1e-30))
         return th, H1th
 
     @staticmethod
