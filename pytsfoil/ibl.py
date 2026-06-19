@@ -229,8 +229,8 @@ class IBL(object):
 
         The Head ODE can diverge near the trailing edge when the edge-velocity
         gradient is large.  This method identifies the first point in the rear
-        half of the surface where \|dδ\*/dx\| exceeds ``outlier_sigma`` times the
-        median \|dδ\*/dx\| over the first 70 % of the surface, then linearly
+        half of the surface where |dδ*/dx| exceeds ``outlier_sigma`` times the
+        median |dδ*/dx| over the first 70 % of the surface, then linearly
         extrapolates from the two preceding points to the trailing edge.
 
         Parameters
@@ -630,7 +630,7 @@ class IBL(object):
 
         def rhs(t, y):
             th, H1th = y
-            th    = max(th, 1e-10)
+            th    = max(min(th, 1.0), 1e-10)   # momentum thickness bounded: (0,1] chord
             H1    = max(H1th / th, 3.01)
             _H    = self._H1_to_H(H1)
             _ue   = float(_ue_f(t))
@@ -713,4 +713,5 @@ class IBL(object):
         
         cf = 0.246 · 10^{-0.678 H} · Re_θ^{-0.268}
         '''
-        return 0.246 * 10.0**(-0.678 * H) * max(Re_theta, 10.0)**(-0.268)
+        Re_theta = min(max(Re_theta, 10.0), 1e10)
+        return 0.246 * 10.0**(-0.678 * H) * Re_theta**(-0.268)

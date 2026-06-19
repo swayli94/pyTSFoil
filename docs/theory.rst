@@ -464,6 +464,200 @@ with arc-length :math:`s` converting the chordwise integral to surface length.
 
 ----
 
+Viscous Wedge (Shock–Boundary-Layer Correction)
+-------------------------------------------------
+
+Physical concept
+~~~~~~~~~~~~~~~~~
+
+When a near-normal shock occurs in transonic flow, the shock-wave/boundary-layer
+interaction (SWBLI) causes the turbulent boundary layer to thicken locally
+downstream of the shock foot.  This local thickening acts as a displacement
+body — an effective "wedge" — superimposed on the airfoil surface as seen by
+the outer inviscid flow.  The **viscous wedge** models (``NWDGE = 1`` or ``2``)
+account for this effect *inside* the TSD iteration loop (subroutine ``VWEDGE``),
+applied at every relaxation sweep, without running the full IBL solver.
+
+For each shock detected on the upper or lower surface, ``VWEDGE``
+
+1. locates the shock position :math:`x_{\rm sh}` by linear interpolation of
+   the perturbation velocity :math:`\tilde{\varphi}_{\tilde{x}}` across the
+   sonic threshold (``SONVEL``);
+2. evaluates the upstream similarity Mach number :math:`M_1` three mesh points
+   upstream of the shock foot via ``EMACH1``;
+3. computes a maximum wedge slope :math:`\theta_{\rm max}` and distributes it
+   along the surface into the array ``WSLP(I, surface)``;
+4. returns to ``SETBC``, which adds ``WSLP`` to the wall-slope arrays
+   ``FXUBC`` / ``FXLBC`` before the next SOR sweep.
+
+The kinematic wall boundary condition :eq:`wall_bc` at every chord station
+therefore becomes
+
+.. math::
+
+   \varphi_y(x, 0^\pm) = \frac{1}{\delta}
+       \bigl(dY^\pm/dx - \tilde{\alpha} + \theta_{\rm wedge}(x)\bigr),
+
+where :math:`\theta_{\rm wedge}` is nonzero only in the region affected by the
+shock and carries the sign of the surface (positive for the upper surface,
+negative for the lower).
+
+Murman wedge (``NWDGE = 1``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **Murman (1974) model** bases the wedge geometry on flat-plate turbulent
+boundary-layer estimates evaluated at the shock location.
+
+**Upstream displacement thickness.** For a zero-pressure-gradient turbulent
+boundary layer, the chord-normalised displacement thickness at the shock
+position :math:`x_{\rm sh}` is estimated by the empirical power-law:
+
+.. math::
+   :label: dstar_shock
+
+   \delta^*_1 = \frac{0.01738\,Re_{x}^{0.861}}{Re_c},
+   \qquad Re_{x} = Re_c\,x_{\rm sh},
+
+where :math:`Re_c` is the chord Reynolds number (``REYNLD``).  The
+corresponding local skin-friction coefficient is
+
+.. math::
+   :label: cf_shock
+
+   C_f = \frac{0.02666}{Re_{x}^{0.139}}.
+
+**Maximum wedge angle.** TSD weak-shock theory relates the maximum displacement
+slope produced by the shock–boundary-layer interaction to the upstream Mach
+number by
+
+.. math::
+   :label: thamax_murman
+
+   \theta_{\rm max} = \frac{4}{\gamma+1}
+                      \left(\frac{M_1^2 - 1}{3}\right)^{\!3/2},
+
+where :math:`M_1` is the local similarity Mach number upstream of the shock
+and :math:`(\gamma+1)` is ``GAM1`` in the code.  The formula scales as
+:math:`(M_1^2-1)^{3/2}`, consistent with the cubic entropy rise across a weak
+normal shock (cf. the wave-drag formula :eq:`wave_drag`).
+
+**Wedge length scale.** The streamwise extent of the interaction region follows
+the free-interaction scaling:
+
+.. math::
+   :label: zeta_murman
+
+   \zeta = C_w \sqrt{\frac{M_1^2 - 1}{C_f}}\,\delta^*_1,
+
+where :math:`C_w` is the user-supplied wedge constant (``WCONST``, default
+:math:`C_w = 4`).
+
+**Parabolic slope distribution.** The displacement slope decreases parabolically
+from :math:`\theta_{\rm max}` at the shock to zero at
+:math:`x = x_{\rm sh} + \zeta`:
+
+.. math::
+   :label: wslp_murman
+
+   \theta_{\rm wedge}(x)
+   = \frac{\theta_{\rm max}}{\delta}\left(1 - \eta\right)^2,
+   \qquad
+   \eta = \frac{x - x_{\rm sh}}{\zeta},
+   \quad
+   x \in [x_{\rm sh},\; x_{\rm sh} + \zeta].
+
+**Multiple shocks.** When a second shock at :math:`x_{{\rm sh},N}` falls
+within the wedge tail of the preceding shock
+(:math:`\Delta x = x_{{\rm sh},N} - x_{{\rm sh},N-1} < \zeta_{N-1}`),
+the upstream displacement thickness for the new shock is replaced by the
+residual displacement from the previous wedge:
+
+.. math::
+
+   \delta^*_1 =
+   \begin{cases}
+   \Delta x\;\theta_{\max,N-1}
+   \!\left[1 + \eta_\Delta\!\left(\dfrac{\eta_\Delta}{3} - 1\right)\right],
+   & \Delta x < \zeta_{N-1},\\[8pt]
+   \dfrac{\zeta_{N-1}\;\theta_{\max,N-1}}{3},
+   & \text{otherwise},
+   \end{cases}
+
+where :math:`\eta_\Delta = \Delta x / \zeta_{N-1}`.
+
+Yoshihara wedge (``NWDGE = 2``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **Yoshihara model** computes the effective wedge angle from the oblique-shock
+:math:`\theta`-:math:`\beta`-:math:`M` relation for a calorically perfect gas
+with :math:`\gamma = 7/5`, representing the normal shock as a **lambda-shock**
+system of two oblique legs and taking the mean deflection of both legs as
+the effective wedge angle.
+
+For :math:`\gamma = 7/5` the :math:`\theta`-:math:`\beta`-:math:`M` relation
+simplifies to
+
+.. math::
+   :label: tbm
+
+   \tan\theta = \frac{5\,(M_1^2\sin^2\!\beta - 1)}
+                     {\tan\beta\,\bigl[5 + M_1^2(6 - 5\sin^2\!\beta)\bigr]}.
+
+The shock angles :math:`\beta_{\rm M}` (forward leg) and :math:`\beta_{\rm S}`
+(rear leg) of the lambda system are
+
+.. math::
+   :label: yoshihara_angles
+
+   \sin^2\!\beta_{\rm M} =
+       \frac{3M_1^2 - 5 + \sqrt{3(3M_1^4 + 4M_1^2 + 20)}}{7M_1^2},
+   \qquad
+   \sin^2\!\beta_{\rm S} =
+       \frac{3M_1^2 - 2 + \sqrt{3(3M_1^4 - 4M_1^2 + 13)}}{7M_1^2}.
+
+The effective wedge angle is the arithmetic mean of the two deflection angles
+obtained by substituting :eq:`yoshihara_angles` into :eq:`tbm`:
+
+.. math::
+   :label: thamax_yoshihara
+
+   \theta_{\rm max} = \tfrac{1}{2}\bigl(\theta_{\rm M} + \theta_{\rm S}\bigr).
+
+Unlike the Murman model, the Yoshihara slope correction is applied as a
+**constant step** over just the two mesh cells straddling the shock
+(:math:`I = I_{\rm sk}-1` and :math:`I = I_{\rm sk}`), with no downstream
+parabolic tail:
+
+.. math::
+
+   \theta_{\rm wedge}(x) = \frac{\theta_{\rm max}}{\delta},
+   \qquad x \in \{x_{I_{\rm sk}-1},\; x_{I_{\rm sk}}\}.
+
+Comparison of the two models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * - Feature
+     - Murman (``NWDGE = 1``)
+     - Yoshihara (``NWDGE = 2``)
+   * - Wedge-angle formula
+     - TSD weak-shock scaling, Eq. :eq:`thamax_murman`
+     - Oblique-shock :math:`\theta`-:math:`\beta`-:math:`M`, Eq. :eq:`thamax_yoshihara`
+   * - Spatial footprint
+     - Parabolic tail of length :math:`\zeta`, Eq. :eq:`wslp_murman`
+     - Constant step over 2 cells at shock location
+   * - Requires Reynolds number
+     - Yes (``REYNLD``, ``WCONST``)
+     - No
+   * - Multiple shocks
+     - Accounts for wedge overlap via :math:`\delta^*` reduction
+     - Independent per shock
+
+----
+
 Viscous-Inviscid Coupling
 --------------------------
 
@@ -587,6 +781,22 @@ References
   "TSFOIL — A Computer Code for Two-Dimensional Transonic Calculations,
   Including Wind-Tunnel Wall Effects and Wave Drag Evaluation."
   *NASA SP-347*, 1975.
+
+* Murman, E.M.
+  "Analysis of Embedded Shock Waves Calculated by Relaxation Methods."
+  *AIAA Journal*, 12(5), 626–633, 1974.
+  *(Source of the Murman viscous-wedge model, Eqs.* :eq:`thamax_murman` *–* :eq:`wslp_murman` *.)*
+
+* Yoshihara, H.
+  "Some Developments in Transonic Steady and Unsteady Flow Theory."
+  In *Symposium Transsonicum II*, Springer, 1976.
+  *(Source of the Yoshihara lambda-shock viscous-wedge model, Eq.* :eq:`thamax_yoshihara` *.)*
+
+* Lighthill, M.J.
+  "On Boundary Layers and Upstream Influence. II. Supersonic Flows Without
+  Separation."
+  *Proceedings of the Royal Society A*, 217, 478–507, 1953.
+  *(Free-interaction length-scale formula, Eq.* :eq:`zeta_murman` *.)*
 
 * Cole, J.D.
   "Problems in Transonic Flow."

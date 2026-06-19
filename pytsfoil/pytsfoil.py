@@ -40,6 +40,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy import integrate
 import matplotlib.pyplot as plt
+from typing import Tuple
 from .ibl import IBL
 
 try:
@@ -175,7 +176,7 @@ class PyTSFoil(object):
                         maxit_inner: int = 200,
                         i_outer_repair: int = 3,
                         use_te_correction: bool = False,
-                        te_relax: float = 0.5,
+                        te_relax: float|Tuple[float, float] = 0.5,
                         x_blend_start: float = 0.8,
                         use_divergence_check: bool = False,
                         ) -> list:
@@ -239,8 +240,10 @@ class PyTSFoil(object):
             trailing edge to prevent blow-up.
         use_te_correction : bool
             Whether to apply the trailing-edge correction to δ* after the repair.
-        te_relax : float
-            Relaxation factor for the trailing-edge correction (0-1).
+        te_relax : float|Tuple[float, float]
+            Relaxation factor(s) for the trailing-edge correction (0-1).
+            If a tuple is provided, the first value is used for the upper surface
+            and the second for the lower surface.
         x_blend_start : float
             The default x/c location to start blending the TE correction
             with the IBL solution. The actual blend start is the minimum of this
@@ -357,15 +360,23 @@ class PyTSFoil(object):
             lower['delta_star_raw'] = dstar_l.copy()
 
             if use_te_correction and k >= k_start_repair:
+                
+                if isinstance(te_relax, tuple):
+                    te_relax_u, te_relax_l = te_relax
+                elif isinstance(te_relax, float):
+                    te_relax_u = te_relax_l = te_relax
+                else:
+                    raise ValueError("te_relax must be a float or a tuple of two floats.")
+                
                 dstar_u = ibl.correction_dstar(
                     xx=xx_foil, yy=yu_foil, dstar=dstar_u,
-                    AoA=aoa, te_relax=te_relax,
+                    AoA=aoa, te_relax=te_relax_u,
                     x_blend_start=min(xx_foil[i_break_u], x_blend_start),
                     upper=True
                 )
                 dstar_l = ibl.correction_dstar(
                     xx=xx_foil, yy=yl_foil, dstar=dstar_l,
-                    AoA=aoa, te_relax=te_relax,
+                    AoA=aoa, te_relax=te_relax_l,
                     x_blend_start=min(xx_foil[i_break_l], x_blend_start),
                     upper=False
                 )
@@ -1582,7 +1593,10 @@ class PyTSFoil(object):
             if u > sonvel:
                 u = tsf.solver_base.px(id_downstream - 1, j)
             v = tsf.solver_base.py(id_downstream, j)
-            arg[l] = ((gam123 * u - ak) * u * u + v * v) * 0.5
+            if not (np.isfinite(u) and np.isfinite(v)):
+                arg[l] = 0.0
+            else:
+                arg[l] = ((gam123 * u - ak) * u * u + v * v) * 0.5
             l += 1
         
         sum_val = trap_integration(xi, arg, l)
