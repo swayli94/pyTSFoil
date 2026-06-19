@@ -213,7 +213,7 @@ plane.  The entropy rise across a normal shock of upstream Mach number
 
 .. math::
 
-   \frac{\Delta s}{c_v} \approx \frac{\gamma(\gamma+1)}{12}\,(M_1^2 - 1)^3
+   \frac{\Delta s}{c_v} \approx \frac{2\gamma(\gamma-1)}{3(\gamma+1)^2}\,(M_1^2 - 1)^3
    + O\bigl((M_1^2-1)^4\bigr),
 
 which confirms that the entropy rise (and hence wave drag) is third-order in
@@ -347,7 +347,8 @@ White's polynomial fits:
 
 .. math::
 
-   \ell(\lambda) &= (0.09 + \lambda)^{0.62},\\
+   \ell(\lambda) &= 0.22 + 1.402\,\lambda
+                    + \frac{0.018\,\lambda}{0.107 + \lambda},\\
    H(\lambda)    &= 2.0 + 4.14\,z - 83.5\,z^2 + 854\,z^3
                     - 3337\,z^4 + 4576\,z^5,
                     \quad z = 0.25 - \lambda.
@@ -364,7 +365,8 @@ momentum-thickness Reynolds number satisfies:
 .. math::
    :label: michel
 
-   Re_\theta \equiv \frac{u_e \theta}{\nu} > 2.9 \times 10^{-4}\, Re_x^{\,0.4},
+   Re_\theta \equiv \frac{u_e \theta}{\nu}
+   > 1.174\left(1 + \frac{22400}{Re_x}\right) Re_x^{\,0.46},
    \qquad Re_x = \frac{u_e\, x}{\nu}.
 
 The first :math:`s`-station where :eq:`michel` is satisfied is taken as the
