@@ -81,49 +81,58 @@ equation becomes independent of :math:`\delta`:
 .. math::
 
    \tilde{x} = x, \qquad
-   \tilde{y} = \frac{y}{\delta^{1/3} \cdot S_y}, \qquad
-   \tilde{\varphi} = \frac{\varphi}{\delta^{2/3} \cdot S_\varphi},
+   \tilde{y} = a\, y, \qquad
+   \tilde{\varphi} = \frac{\varphi}{b},
 
-where the scale factors :math:`S_y` and :math:`S_\varphi` depend on the
-choice of similarity rule.  In all cases :eq:`tsd` reduces to
+where the stretching factor :math:`a` and potential scale :math:`b` depend on the
+choice of similarity rule (see table below).  Substituting into :eq:`tsd` gives
+the reduced equation
 
 .. math::
    :label: tsd_sim
 
-   \bigl[K - (\gamma + 1)\tilde{\varphi}_{\tilde{x}}\bigr]
+   \bigl[K - \mathcal{N}\,\tilde{\varphi}_{\tilde{x}}\bigr]
    \tilde{\varphi}_{\tilde{x}\tilde{x}}
    + \tilde{\varphi}_{\tilde{y}\tilde{y}} = 0,
 
-where the similarity parameter :math:`K` is:
+where :math:`K` is the transonic similarity parameter and
+:math:`\mathcal{N}` is the SIMDEF-dependent nonlinear coefficient:
 
 .. list-table:: Similarity scalings (``SIMDEF``)
    :header-rows: 1
-   :widths: 8 15 40 37
+   :widths: 6 10 26 15 17 26
 
    * - ID
      - Name
      - :math:`K`
-     - Scale factor :math:`S_y`
+     - Stretching :math:`a`
+     - Potential scale :math:`b`
+     - Nonlinear coeff. :math:`\mathcal{N}`
    * - 1
      - Cole
      - :math:`\dfrac{1-M_\infty^2}{\delta^{2/3}}`
-     - :math:`\delta^{-1/3}`
+     - :math:`\delta^{1/3}`
+     - :math:`\delta^{2/3}`
+     - :math:`(\gamma+1)M_\infty^2`
    * - 2
      - Spreiter
      - :math:`\dfrac{1-M_\infty^2}{\delta^{2/3} M_\infty^{4/3}}`
-     - :math:`(\delta M_\infty)^{-1/3}`
+     - :math:`\delta^{1/3} M_\infty^{2/3}`
+     - :math:`\delta^{2/3} M_\infty^{-2/3}`
+     - :math:`(\gamma+1)`
    * - 3 *(default)*
      - Krupp
      - :math:`\dfrac{1-M_\infty^2}{\delta^{2/3} M_\infty}`
-     - :math:`(\delta M_\infty^{1/2})^{-1/3}`
+     - :math:`\delta^{1/3} M_\infty^{1/2}`
+     - :math:`\delta^{2/3} M_\infty^{-1/2}`
+     - :math:`(\gamma+1)M_\infty^{1/2}`
 
 The pressure coefficient in physical space is recovered by
 
 .. math::
    :label: cp
 
-   C_p = -\frac{2\varphi_x}{1} = -2\,\delta^{2/3} S_\varphi\,
-         \tilde{\varphi}_{\tilde{x}}.
+   C_p = -2\,\varphi_x = -2\,b\,\tilde{\varphi}_{\tilde{x}}.
 
 TSFOIL2 stores the similarity-space solution and converts back to
 physical coefficients via the pre-computed scaling factors
@@ -176,8 +185,7 @@ The local Mach number at any point in the flow field is
 .. math::
    :label: local_mach
 
-   M_{\rm loc}^2 = M_\infty^2 + \frac{(\gamma+1) M_\infty^2}{\delta^{1/3} S_\varphi}\,
-                   \tilde{\varphi}_{\tilde{x}}.
+   M_{\rm loc}^2 = M_\infty^2\bigl[1 + (\gamma+1)\,b\,\tilde{\varphi}_{\tilde{x}}\bigr].
 
 The pressure coefficient is computed from the isentropic relation rather than
 the linearised TSD formula, giving better accuracy for moderate perturbations:
@@ -238,11 +246,11 @@ discrete mesh.  For each shock crossing the contour:
    :label: wave_drag
 
    c_{D,\rm wave} = \frac{\gamma+1}{6}\,
-                    \frac{\delta^{2/3} S_\varphi}{M_\infty}\,
+                    \frac{b}{M_\infty}\,
                     \int_{y_b}^{y_t} (\Delta u)^3 \, dy,
 
 where :math:`\Delta u = u_1 - u_2` is the perturbation velocity jump and
-:math:`\delta^{2/3} S_\varphi / M_\infty` (``CDFACT`` in the code) converts
+:math:`b / M_\infty` (``CDFACT`` in the code) converts
 similarity drag to physical units.  The contour integrals along the upstream,
 downstream, top, and bottom boundaries close the control volume.
 
